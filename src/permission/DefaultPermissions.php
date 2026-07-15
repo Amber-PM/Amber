@@ -80,6 +80,8 @@ abstract class DefaultPermissions{
 			Names::COMMAND_BAN_IP,
 			Names::COMMAND_BAN_LIST,
 			Names::COMMAND_BAN_PLAYER,
+			Names::COMMAND_CHECKPERM,
+			Names::COMMAND_LISTPERMS,
 			Names::COMMAND_CLEAR_OTHER,
 			Names::COMMAND_DEFAULTGAMEMODE,
 			Names::COMMAND_DIFFICULTY,

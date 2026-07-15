@@ -26,7 +26,9 @@ namespace pocketmine\command;
 use pocketmine\command\defaults\BanCommand;
 use pocketmine\command\defaults\BanIpCommand;
 use pocketmine\command\defaults\BanListCommand;
+use pocketmine\command\defaults\CheckPermCommand;
 use pocketmine\command\defaults\ClearCommand;
+use pocketmine\command\defaults\ListPermsCommand;
 use pocketmine\command\defaults\DefaultGamemodeCommand;
 use pocketmine\command\defaults\DeopCommand;
 use pocketmine\command\defaults\DifficultyCommand;
@@ -98,6 +100,7 @@ class SimpleCommandMap implements CommandMap{
 			new BanCommand(),
 			new BanIpCommand(),
 			new BanListCommand(),
+			new CheckPermCommand(),
 			new ClearCommand(),
 			new DefaultGamemodeCommand(),
 			new DeopCommand(),
@@ -112,6 +115,7 @@ class SimpleCommandMap implements CommandMap{
 			new KickCommand(),
 			new KillCommand(),
 			new ListCommand(),
+			new ListPermsCommand(),
 			new MeCommand(),
 			new OpCommand(),
 			new PardonCommand(),
