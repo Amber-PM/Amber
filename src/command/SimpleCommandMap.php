@@ -192,12 +192,15 @@ class SimpleCommandMap implements CommandMap{
 	}
 
 	private function registerAlias(Command $command, bool $isAlias, string $fallbackPrefix, string $label) : bool{
-		$this->knownCommands[$fallbackPrefix . ":" . $label] = $command;
-		if(($command instanceof VanillaCommand || $isAlias) && isset($this->knownCommands[$label])){
+		$lowerFallbackLabel = strtolower($fallbackPrefix . ":" . $label);
+		$lowerLabel = strtolower($label);
+
+		$this->knownCommands[$lowerFallbackLabel] = $command;
+		if(($command instanceof VanillaCommand || $isAlias) && isset($this->knownCommands[$lowerLabel])){
 			return false;
 		}
 
-		if(isset($this->knownCommands[$label]) && $this->knownCommands[$label]->getLabel() === $label){
+		if(isset($this->knownCommands[$lowerLabel]) && strtolower($this->knownCommands[$lowerLabel]->getLabel()) === $lowerLabel){
 			return false;
 		}
 
@@ -205,7 +208,7 @@ class SimpleCommandMap implements CommandMap{
 			$command->setLabel($label);
 		}
 
-		$this->knownCommands[$label] = $command;
+		$this->knownCommands[$lowerLabel] = $command;
 
 		return true;
 	}
@@ -243,7 +246,7 @@ class SimpleCommandMap implements CommandMap{
 	}
 
 	public function getCommand(string $name) : ?Command{
-		return $this->knownCommands[$name] ?? null;
+		return $this->knownCommands[strtolower($name)] ?? null;
 	}
 
 	/**
