@@ -1052,9 +1052,15 @@ class NetworkSession{
 				$keys[$resourcePack->getPackId()] = $key;
 			}
 		}
-		$event = new PlayerResourcePackOfferEvent($this->info, $resourcePacks, $keys, $packManager->resourcePacksRequired());
+		$event = new PlayerResourcePackOfferEvent(
+			$this->info,
+			$resourcePacks,
+			$keys,
+			$packManager->resourcePacksRequired(),
+			$this->server->getConfigGroup()->getPropertyBool("settings.default-disable-vibrant-visuals", true)
+		);
 		$event->call();
-		$this->setHandler(new ResourcePacksPacketHandler($this, $event->getResourcePacks(), $event->getEncryptionKeys(), $event->mustAccept(), function() : void{
+		$this->setHandler(new ResourcePacksPacketHandler($this, $event->getResourcePacks(), $event->getEncryptionKeys(), $event->mustAccept(), $event->isVibrantVisualsDisabled(), function() : void{
 			$this->createPlayer();
 		}));
 	}

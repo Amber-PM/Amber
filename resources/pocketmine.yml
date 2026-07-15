@@ -21,6 +21,8 @@ settings:
   #Whether to allow running development builds. Dev builds might crash, break your plugins, corrupt your world and more.
   #It is recommended to avoid using development builds where possible.
   enable-dev-builds: false
+  #Whether to disable shaders and deferred lighting (vibrant visuals) by default.
+  default-disable-vibrant-visuals: true
 
 memory:
   #Global soft memory limit in megabytes. Set to 0 to disable
