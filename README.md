@@ -59,6 +59,51 @@ You can launch the compiled server using the start scripts provided:
 * **Windows**: `start.cmd` or `start.ps1`
 * **Linux / macOS**: `./start.sh`
 
+## Command Overloading & Autocompletion
+
+This fork includes a built-in **Command Overloading** and **Network Autocompletion** system, letting you define multiple type-safe signatures for a single command. The server automatically translates these signatures into client-side Bedrock protocol command hints (`AvailableCommandsPacket`), enabling native tab-completion with items, blocks, positions, players, and textures.
+
+### Creating an Overloaded Command
+
+To create a command with overloading support, extend `OverloadedCommand` and define your overloads in the constructor using closures and PHP 8 attributes:
+
+```php
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\CommandSender;
+use pocketmine\player\Player;
+use pocketmine\item\Item;
+use pocketmine\command\overload\attribute\IntRange;
+
+class MyGiveCommand extends OverloadedCommand {
+    public function __construct() {
+        parent::__construct("mygive", "Give items to players");
+        
+        // Overload signature: /mygive <player> <item> [amount]
+        $this->addOverload(
+            function(CommandSender $sender, Player $target, Item $item, #[IntRange(1, 64)] int $amount = 1): void {
+                $target->getInventory()->addItem($item->setCount($amount));
+                $sender->sendMessage("Gave items!");
+            }
+        );
+    }
+}
+```
+
+### Supported Argument Parsers & Types
+
+The system automatically infers parsers based on the parameter types of your closures, or they can be annotated using PHP 8 attributes:
+
+| Parameter Type / Attribute | Client Autocomplete UI | Parser |
+|---|---|---|
+| `Player` / `PlayerOrSelf` | Player selectors & names | `PlayerArgumentParser` |
+| `Item` | Item Registry names (with icons) | `ItemArgumentParser` |
+| `Vector3` | X Y Z coordinate fields (`~` coordinate support) | `Vector3ArgumentParser` |
+| `bool` | True / False dropdown enum | `BoolArgumentParser` |
+| `int` / `#[IntRange(min, max)]` | Numeric integers with range bounds | `IntegerArgumentParser` |
+| `float` / `#[FloatRange(min, max)]` | Decimal values with range bounds | `FloatArgumentParser` |
+| `string` / `#[EnumValues(...)]` | Custom static dropdown options | `StringArgumentParser` |
+| `#[DynamicEnum(ProviderClass::class)]` | Dynamically calculated option enums | `DynamicEnumArgumentParser` |
+
 ## Developing Plugins
 PocketMine-MV maintains compatibility with the PocketMine-MP v5 API. Refer to the following resources:
 * [PocketMine-MP Developer Documentation](https://devdoc.pmmp.io) - General documentation for plugin developers.
