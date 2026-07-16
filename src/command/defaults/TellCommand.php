@@ -25,16 +25,14 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\GreedyStringArgumentParser;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
-use function array_shift;
-use function count;
-use function implode;
 
-class TellCommand extends VanillaCommand{
+class TellCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -44,29 +42,26 @@ class TellCommand extends VanillaCommand{
 			["w", "msg"]
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_TELL);
+
+		$this->addOverload(
+			fn(CommandSender $sender, Player $target, string $message) => $this->tell($sender, $target, $message),
+			DefaultPermissionNames::COMMAND_TELL,
+			["message" => new GreedyStringArgumentParser()]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) < 2){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$player = $sender->getServer()->getPlayerByPrefix(array_shift($args));
-
-		if($player === $sender){
+	private function tell(CommandSender $sender, Player $target, string $message) : bool{
+		if($target === $sender){
 			$sender->sendMessage(KnownTranslationFactory::commands_message_sameTarget()->prefix(TextFormat::RED));
 			return true;
 		}
 
-		if($player instanceof Player){
-			$message = implode(" ", $args);
-			$sender->sendMessage(KnownTranslationFactory::commands_message_display_outgoing($player->getDisplayName(), $message)->prefix(TextFormat::GRAY . TextFormat::ITALIC));
-			$name = $sender instanceof Player ? $sender->getDisplayName() : $sender->getName();
-			$player->sendMessage(KnownTranslationFactory::commands_message_display_incoming($name, $message)->prefix(TextFormat::GRAY . TextFormat::ITALIC));
-			Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_message_display_outgoing($player->getDisplayName(), $message), false);
-		}else{
-			$sender->sendMessage(KnownTranslationFactory::commands_generic_player_notFound());
-		}
+		$sender->sendMessage(KnownTranslationFactory::commands_message_display_outgoing($target->getDisplayName(), $message)->prefix(TextFormat::GRAY . TextFormat::ITALIC));
+
+		$name = $sender instanceof Player ? $sender->getDisplayName() : $sender->getName();
+		$target->sendMessage(KnownTranslationFactory::commands_message_display_incoming($name, $message)->prefix(TextFormat::GRAY . TextFormat::ITALIC));
+
+		Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_message_display_outgoing($target->getDisplayName(), $message), false);
 
 		return true;
 	}

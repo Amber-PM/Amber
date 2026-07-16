@@ -820,7 +820,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 					$entity->despawnFrom($this);
 				}
 			}
-			$this->getNetworkSession()->stopUsingChunk($x, $z);
+			$this->getNetworkSession()->stopUsingChunk($x, $z, $world);
 			unset($this->usedChunks[$index]);
 			unset($this->activeChunkGenerationRequests[$index]);
 		}
@@ -897,7 +897,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 					unset($this->activeChunkGenerationRequests[$index]);
 					$this->usedChunks[$index] = UsedChunkStatus::REQUESTED_SENDING;
 
-					$this->getNetworkSession()->startUsingChunk($X, $Z, function() use ($X, $Z, $index) : void{
+					$this->getNetworkSession()->startUsingChunk($X, $Z, function() use ($X, $Z, $index, $world) : void{
 						$this->usedChunks[$index] = UsedChunkStatus::SENT;
 						if($this->spawnChunkLoadCount === -1){
 							$this->spawnEntitiesOnChunk($X, $Z);
@@ -909,6 +909,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 							$this->getNetworkSession()->notifyTerrainReady();
 						}
 						(new PlayerPostChunkSendEvent($this, $X, $Z))->call();
+						if(isset($this->usedChunks[$index]) && !$this->isChunkNeededForTicking($X, $Z) && count($world->getChunkEntities($X, $Z)) === 0){
+							$world->unregisterChunkLoader($this->chunkLoader, $X, $Z);
+							$world->unloadChunk($X, $Z, true);
+						}
 					});
 				},
 				static function() : void{
@@ -1031,8 +1035,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 		$this->loadQueue = $newOrder;
 
-		$this->updateTickingChunkRegistrations($this->tickingChunks, $tickingChunks);
+		$oldTickingChunks = $this->tickingChunks;
+		$this->updateTickingChunkRegistrations($oldTickingChunks, $tickingChunks);
 		$this->tickingChunks = $tickingChunks;
+		$this->updateChunkLoaderRegistrations();
 
 		if(count($this->loadQueue) > 0 || count($unloadChunks) > 0){
 			$this->getNetworkSession()->syncViewAreaCenterPoint($this->location, $this->viewDistance);
@@ -2900,6 +2906,36 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		}
 	}
 
+	// credits to remminiscent (https://github.com/altayofficial/Altay/pull/14/changes)
+	private function isChunkNeededForTicking(int $chunkX, int $chunkZ) : bool{
+		for($x = -1; $x <= 1; ++$x){
+			for($z = -1; $z <= 1; ++$z){
+				if(isset($this->tickingChunks[World::chunkHash($chunkX + $x, $chunkZ + $z)])){
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private function updateChunkLoaderRegistrations() : void{
+		$world = $this->getWorld();
+		foreach($this->usedChunks as $hash => $status){
+			if($status === UsedChunkStatus::SENT){
+				World::getXZ($hash, $chunkX, $chunkZ);
+				if($this->isChunkNeededForTicking($chunkX, $chunkZ)){
+					$world->registerChunkLoader($this->chunkLoader, $chunkX, $chunkZ);
+				}else{
+					if(count($world->getChunkEntities($chunkX, $chunkZ)) === 0){
+						$world->unregisterChunkLoader($this->chunkLoader, $chunkX, $chunkZ);
+						$world->unloadChunk($chunkX, $chunkZ, true);
+					}
+				}
+			}
+		}
+	}
+
 	use ChunkListenerNoOpTrait {
 		onChunkChanged as private;
 		onChunkUnloaded as private;
@@ -2915,7 +2951,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	public function onChunkUnloaded(int $chunkX, int $chunkZ, Chunk $chunk) : void{
+		$hash = World::chunkHash($chunkX, $chunkZ);
 		if($this->isUsingChunk($chunkX, $chunkZ)){
+			if(($this->usedChunks[$hash] ?? null) === UsedChunkStatus::SENT && !$this->isChunkNeededForTicking($chunkX, $chunkZ)){
+				return;
+			}
 			$this->logger->debug("Detected forced unload of chunk " . $chunkX . " " . $chunkZ);
 			$this->unloadChunk($chunkX, $chunkZ);
 		}

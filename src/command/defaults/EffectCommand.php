@@ -24,17 +24,22 @@ declare(strict_types=1);
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\IntegerArgumentParser;
+use pocketmine\command\overload\PlayerOrSelfArgumentParser;
+use pocketmine\command\overload\StringArgumentParser;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\StringToEffectParser;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
+use pocketmine\player\Player;
 use pocketmine\utils\Limits;
 use pocketmine\utils\TextFormat;
 use function count;
 use function strtolower;
 
-class EffectCommand extends VanillaCommand{
+class EffectCommand extends OverloadedCommand{
+	use BoundedNumberHelperTrait;
 
 	public function __construct(){
 		parent::__construct(
@@ -46,84 +51,77 @@ class EffectCommand extends VanillaCommand{
 			DefaultPermissionNames::COMMAND_EFFECT_SELF,
 			DefaultPermissionNames::COMMAND_EFFECT_OTHER
 		]);
+
+		$effectOrClearParser = new StringArgumentParser([...StringToEffectParser::getInstance()->getKnownAliases(), "clear"]);
+
+		$this->addOverload(
+			fn(CommandSender $sender, Player $target, string $effect, ?string $duration = null, ?int $amplifier = null, ?bool $hideParticles = null)
+				=> $this->applyEffect($sender, $target, $effect, $duration, $amplifier, $hideParticles),
+			explicitParsers: [
+				"target" => new PlayerOrSelfArgumentParser(),
+				"effect" => $effectOrClearParser,
+				"amplifier" => new IntegerArgumentParser(min: 0, max: 255)
+			]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) < 2){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$player = $this->fetchPermittedPlayerTarget($sender, $args[0], DefaultPermissionNames::COMMAND_EFFECT_SELF, DefaultPermissionNames::COMMAND_EFFECT_OTHER);
-		if($player === null){
+	private function applyEffect(CommandSender $sender, Player $target, string $effectName, ?string $durationToken, ?int $amplifier, ?bool $hideParticles) : bool{
+		//permission depends on whether the resolved target is the sender itself or someone else, same as vanilla
+		if(!$this->testPermission($sender, $target === $sender ? DefaultPermissionNames::COMMAND_EFFECT_SELF : DefaultPermissionNames::COMMAND_EFFECT_OTHER)){
 			return true;
 		}
-		$effectManager = $player->getEffects();
 
-		if(strtolower($args[1]) === "clear"){
+		$effectManager = $target->getEffects();
+
+		if(strtolower($effectName) === "clear"){
 			$effectManager->clear();
-
-			$sender->sendMessage(KnownTranslationFactory::commands_effect_success_removed_all($player->getDisplayName()));
+			$sender->sendMessage(KnownTranslationFactory::commands_effect_success_removed_all($target->getDisplayName()));
 			return true;
 		}
 
-		$effect = StringToEffectParser::getInstance()->parse($args[1]);
+		$effect = StringToEffectParser::getInstance()->parse($effectName);
 		if($effect === null){
-			$sender->sendMessage(KnownTranslationFactory::commands_effect_notFound($args[1])->prefix(TextFormat::RED));
+			$sender->sendMessage(KnownTranslationFactory::commands_effect_notFound($effectName)->prefix(TextFormat::RED));
 			return true;
 		}
 
-		$amplification = 0;
 		$infinite = false;
-
-		if(count($args) >= 3){
-			if(strtolower($args[2]) === "infinite"){
-				$duration = null;
+		$duration = null;
+		if($durationToken !== null){
+			if(strtolower($durationToken) === "infinite"){
 				$infinite = true;
 			}else{
-				if(($d = $this->getBoundedInt($sender, $args[2], 0, (int) (Limits::INT32_MAX / 20))) === null){
+				$seconds = $this->getBoundedInt($sender, $durationToken, 0, (int) (Limits::INT32_MAX / 20));
+				if($seconds === null){
 					return false;
 				}
-				$duration = $d * 20; // ticks
-			}
-		}else{
-			$duration = null;
-		}
-
-		if(count($args) >= 4){
-			$amplification = $this->getBoundedInt($sender, $args[3], 0, 255);
-			if($amplification === null){
-				return false;
+				$duration = $seconds * 20; // ticks
 			}
 		}
 
-		$visible = true;
-		if(count($args) >= 5){
-			$v = strtolower($args[4]);
-			if($v === "on" || $v === "true" || $v === "t" || $v === "1"){
-				$visible = false;
-			}
-		}
+		$amplification = $amplifier ?? 0;
+		$visible = !($hideParticles ?? false);
 
 		if($duration === 0){
 			if(!$effectManager->has($effect)){
 				if(count($effectManager->all()) === 0){
-					$sender->sendMessage(KnownTranslationFactory::commands_effect_failure_notActive_all($player->getDisplayName()));
+					$sender->sendMessage(KnownTranslationFactory::commands_effect_failure_notActive_all($target->getDisplayName()));
 				}else{
-					$sender->sendMessage(KnownTranslationFactory::commands_effect_failure_notActive($effect->getName(), $player->getDisplayName()));
+					$sender->sendMessage(KnownTranslationFactory::commands_effect_failure_notActive($effect->getName(), $target->getDisplayName()));
 				}
 				return true;
 			}
 
 			$effectManager->remove($effect);
-			$sender->sendMessage(KnownTranslationFactory::commands_effect_success_removed($effect->getName(), $player->getDisplayName()));
+			$sender->sendMessage(KnownTranslationFactory::commands_effect_success_removed($effect->getName(), $target->getDisplayName()));
 		}else{
 			$instance = new EffectInstance($effect, $duration, $amplification, $visible, infinite: $infinite);
 			$effectManager->add($instance);
 
 			if($infinite){
-				self::broadcastCommandMessage($sender, KnownTranslationFactory::commands_effect_success_infinite($effect->getName(), (string) $instance->getAmplifier(), $player->getDisplayName()));
+				self::broadcastCommandMessage($sender, KnownTranslationFactory::commands_effect_success_infinite($effect->getName(), (string) $instance->getAmplifier(), $target->getDisplayName()));
 			}else{
-				self::broadcastCommandMessage($sender, KnownTranslationFactory::commands_effect_success($effect->getName(), (string) $instance->getAmplifier(), $player->getDisplayName(), (string) ($instance->getDuration() / 20)));
+				self::broadcastCommandMessage($sender, KnownTranslationFactory::commands_effect_success($effect->getName(), (string) $instance->getAmplifier(), $target->getDisplayName(), (string) ($instance->getDuration() / 20)));
 			}
 		}
 

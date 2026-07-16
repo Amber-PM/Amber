@@ -1,29 +1,11 @@
 <?php
 
-/*
- *
- *  ____            _        _   __  __ _                  __  __ ____
- * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
- * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
- * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * @author PocketMine Team
- * @link http://www.pocketmine.net/
- *
- *
- */
-
 declare(strict_types=1);
 
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\lang\KnownTranslationFactory as l10n;
 use pocketmine\lang\Translatable;
 use pocketmine\permission\DefaultPermissionNames;
@@ -36,7 +18,7 @@ use function number_format;
 use function round;
 use function strval;
 
-class StatusCommand extends VanillaCommand{
+class StatusCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -44,6 +26,10 @@ class StatusCommand extends VanillaCommand{
 			l10n::pocketmine_command_status_description()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_STATUS);
+
+		$this->addOverload(
+			fn(CommandSender $sender) => $this->showStatus($sender)
+		);
 	}
 
 	private static function send(CommandSender $sender, Translatable $message) : void{
@@ -55,7 +41,6 @@ class StatusCommand extends VanillaCommand{
 	}
 
 	private static function formatBandwidth(float $bytes) : Translatable{
-		//TODO: this should probably be number formatted?
 		return l10n::pocketmine_command_status_network_stat(strval(round($bytes / 1024, 2)))->prefix(TextFormat::RED);
 	}
 
@@ -63,7 +48,7 @@ class StatusCommand extends VanillaCommand{
 		return l10n::pocketmine_command_status_memory_stat(number_format(round(($bytes / 1024) / 1024, 2), 2))->prefix(TextFormat::RED);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
+	private function showStatus(CommandSender $sender) : bool{
 		$mUsage = Process::getAdvancedMemoryUsage();
 
 		$server = $sender->getServer();

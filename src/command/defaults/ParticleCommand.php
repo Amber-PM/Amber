@@ -1,24 +1,5 @@
 <?php
 
-/*
- *
- *  ____            _        _   __  __ _                  __  __ ____
- * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
- * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
- * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * @author PocketMine Team
- * @link http://www.pocketmine.net/
- *
- *
- */
-
 declare(strict_types=1);
 
 namespace pocketmine\command\defaults;
@@ -26,7 +7,9 @@ namespace pocketmine\command\defaults;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\color\Color;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\StringArgumentParser;
+use pocketmine\command\overload\Vector3ArgumentParser;
 use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\lang\KnownTranslationFactory;
@@ -65,15 +48,21 @@ use pocketmine\world\particle\SporeParticle;
 use pocketmine\world\particle\TerrainParticle;
 use pocketmine\world\particle\WaterDripParticle;
 use pocketmine\world\particle\WaterParticle;
-use pocketmine\world\World;
 use function count;
 use function explode;
 use function max;
 use function microtime;
 use function mt_rand;
-use function strtolower;
 
-class ParticleCommand extends VanillaCommand{
+class ParticleCommand extends OverloadedCommand{
+
+	private const NAMES = [
+		"explode", "hugeexplosion", "hugeexplosionseed", "bubble", "splash", "wake", "water", "crit",
+		"smoke", "spell", "instantspell", "dripwater", "driplava", "townaura", "spore", "portal",
+		"flame", "lava", "reddust", "snowballpoof", "slime", "itembreak", "terrain", "heart", "ink",
+		"droplet", "enchantmenttable", "happyvillager", "angryvillager", "forcefield", "mobflame",
+		"iconcrack", "blockcrack", "blockdust", "sonicexplosion"
+	];
 
 	public function __construct(){
 		parent::__construct(
@@ -82,49 +71,32 @@ class ParticleCommand extends VanillaCommand{
 			KnownTranslationFactory::pocketmine_command_particle_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_PARTICLE);
+
+		$this->addOverload(
+			fn(CommandSender $sender, string $name, Vector3 $position, float $xd, float $yd, float $zd, ?int $count = null, ?string $data = null)
+				=> $this->spawnParticles($sender, $name, $position, $xd, $yd, $zd, $count, $data),
+			explicitParsers: [
+				"name" => new StringArgumentParser(self::NAMES),
+				"position" => new Vector3ArgumentParser()
+			]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) < 7){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		if($sender instanceof Player){
-			$senderPos = $sender->getPosition();
-			$world = $senderPos->getWorld();
-			$pos = new Vector3(
-				$this->getRelativeDouble($senderPos->getX(), $sender, $args[1]),
-				$this->getRelativeDouble($senderPos->getY(), $sender, $args[2], World::Y_MIN, World::Y_MAX),
-				$this->getRelativeDouble($senderPos->getZ(), $sender, $args[3])
-			);
-		}else{
-			$world = $sender->getServer()->getWorldManager()->getDefaultWorld();
-			$pos = new Vector3((float) $args[1], (float) $args[2], (float) $args[3]);
-		}
-
-		$name = strtolower($args[0]);
-
-		$xd = (float) $args[4];
-		$yd = (float) $args[5];
-		$zd = (float) $args[6];
-
-		$count = isset($args[7]) ? max(1, (int) $args[7]) : 1;
-
-		$data = $args[8] ?? null;
-
+	private function spawnParticles(CommandSender $sender, string $name, Vector3 $position, float $xd, float $yd, float $zd, ?int $count, ?string $data) : bool{
 		$particle = $this->getParticle($name, $data);
-
 		if($particle === null){
 			$sender->sendMessage(KnownTranslationFactory::commands_particle_notFound($name)->prefix(TextFormat::RED));
 			return true;
 		}
 
-		$sender->sendMessage(KnownTranslationFactory::commands_particle_success($name, (string) $count));
+		$amount = max(1, $count ?? 1);
+		$sender->sendMessage(KnownTranslationFactory::commands_particle_success($name, (string) $amount));
 
+		$world = $sender instanceof Player ? $sender->getWorld() : $sender->getServer()->getWorldManager()->getDefaultWorld();
 		$random = new Random((int) (microtime(true) * 1000) + mt_rand());
 
-		for($i = 0; $i < $count; ++$i){
-			$world->addParticle($pos->add(
+		for($i = 0; $i < $amount; ++$i){
+			$world->addParticle($position->add(
 				$random->nextSignedFloat() * $xd,
 				$random->nextSignedFloat() * $yd,
 				$random->nextSignedFloat() * $zd
@@ -154,9 +126,9 @@ class ParticleCommand extends VanillaCommand{
 			case "smoke":
 				return new SmokeParticle((int) ($data ?? 0));
 			case "spell":
-				return new EnchantParticle(new Color(0, 0, 0, 255)); //TODO: colour support
+				return new EnchantParticle(new Color(0, 0, 0, 255));
 			case "instantspell":
-				return new InstantEnchantParticle(new Color(0, 0, 0, 255)); //TODO: colour support
+				return new InstantEnchantParticle(new Color(0, 0, 0, 255));
 			case "dripwater":
 				return new WaterDripParticle();
 			case "driplava":
@@ -220,10 +192,6 @@ class ParticleCommand extends VanillaCommand{
 				break;
 			case "blockdust":
 				if($data !== null){
-					//to preserve the old unlimited explode behaviour, allow this to split into at most 5 parts
-					//this allows the 4th argument to be processed normally if given without forcing it to also consume
-					//any unexpected parts
-					//we probably ought to error in this case, but this will do for now
 					$d = explode("_", $data, limit: 5);
 					if(count($d) >= 3){
 						return new DustParticle(new Color(

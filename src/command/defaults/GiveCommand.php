@@ -25,21 +25,20 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
-use pocketmine\item\LegacyStringToItemParser;
-use pocketmine\item\LegacyStringToItemParserException;
-use pocketmine\item\StringToItemParser;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\GreedyStringArgumentParser;
+use pocketmine\command\overload\IntegerArgumentParser;
+use pocketmine\command\overload\ItemArgumentParser;
+use pocketmine\command\overload\PlayerOrSelfArgumentParser;
+use pocketmine\item\Item;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\nbt\JsonNbtParser;
 use pocketmine\nbt\NbtDataException;
 use pocketmine\nbt\NbtException;
 use pocketmine\permission\DefaultPermissionNames;
-use pocketmine\utils\TextFormat;
-use function array_slice;
-use function count;
-use function implode;
+use pocketmine\player\Player;
 
-class GiveCommand extends VanillaCommand{
+class GiveCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -51,39 +50,28 @@ class GiveCommand extends VanillaCommand{
 			DefaultPermissionNames::COMMAND_GIVE_SELF,
 			DefaultPermissionNames::COMMAND_GIVE_OTHER
 		]);
+
+		$this->addOverload(
+			fn(CommandSender $sender, Player $target, Item $item, ?int $count = null, string $nbt = "") => $this->give($sender, $target, $item, $count, $nbt),
+			explicitParsers: [
+				"target" => new PlayerOrSelfArgumentParser(),
+				"item" => new ItemArgumentParser(),
+				"count" => new IntegerArgumentParser(1, 32767),
+				"nbt" => new GreedyStringArgumentParser()
+			]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) < 2){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$player = $this->fetchPermittedPlayerTarget($sender, $args[0], DefaultPermissionNames::COMMAND_GIVE_SELF, DefaultPermissionNames::COMMAND_GIVE_OTHER);
-		if($player === null){
+	private function give(CommandSender $sender, Player $target, Item $item, ?int $count, string $nbt) : bool{
+		if(!$this->testPermission($sender, $target === $sender ? DefaultPermissionNames::COMMAND_GIVE_SELF : DefaultPermissionNames::COMMAND_GIVE_OTHER)){
 			return true;
 		}
 
-		try{
-			$item = StringToItemParser::getInstance()->parse($args[1]) ?? LegacyStringToItemParser::getInstance()->parse($args[1]);
-		}catch(LegacyStringToItemParserException $e){
-			$sender->sendMessage(KnownTranslationFactory::commands_give_item_notFound($args[1])->prefix(TextFormat::RED));
-			return true;
-		}
+		$item->setCount($count ?? $item->getMaxStackSize());
 
-		if(!isset($args[2])){
-			$item->setCount($item->getMaxStackSize());
-		}else{
-			$count = $this->getBoundedInt($sender, $args[2], 1, 32767);
-			if($count === null){
-				return true;
-			}
-			$item->setCount($count);
-		}
-
-		if(isset($args[3])){
-			$data = implode(" ", array_slice($args, 3));
+		if($nbt !== ""){
 			try{
-				$tags = JsonNbtParser::parseJson($data);
+				$tags = JsonNbtParser::parseJson($nbt);
 			}catch(NbtDataException $e){
 				$sender->sendMessage(KnownTranslationFactory::commands_give_tagError($e->getMessage()));
 				return true;
@@ -97,13 +85,12 @@ class GiveCommand extends VanillaCommand{
 			}
 		}
 
-		//TODO: overflow
-		$player->getInventory()->addItem($item);
+		$target->getInventory()->addItem($item);
 
 		Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_give_success(
-			$item->getName() . " (" . $args[1] . ")",
+			$item->getName(),
 			(string) $item->getCount(),
-			$player->getName()
+			$target->getName()
 		));
 		return true;
 	}

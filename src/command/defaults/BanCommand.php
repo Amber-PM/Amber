@@ -25,15 +25,13 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\GreedyStringArgumentParser;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
-use function array_shift;
-use function count;
-use function implode;
 
-class BanCommand extends VanillaCommand{
+class BanCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -42,19 +40,18 @@ class BanCommand extends VanillaCommand{
 			KnownTranslationFactory::commands_ban_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_BAN_PLAYER);
+
+		$this->addOverload(
+			fn(CommandSender $sender, string $name, string $reason) => $this->run($sender, $name, $reason),
+			explicitParsers: ["reason" => new GreedyStringArgumentParser()]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$name = array_shift($args);
-		$reason = implode(" ", $args);
-
+	private function run(CommandSender $sender, string $name, string $reason) : bool{
 		$sender->getServer()->getNameBans()->addBan($name, $reason, null, $sender->getName());
 
-		if(($player = $sender->getServer()->getPlayerExact($name)) instanceof Player){
+		$player = $sender->getServer()->getPlayerExact($name);
+		if($player instanceof Player){
 			$player->kick($reason !== "" ? KnownTranslationFactory::pocketmine_disconnect_ban($reason) : KnownTranslationFactory::pocketmine_disconnect_ban_noReason());
 		}
 

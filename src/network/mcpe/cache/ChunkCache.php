@@ -56,6 +56,7 @@ class ChunkCache implements ChunkListener{
 			$world->addOnUnloadCallback(static function() use ($worldId) : void{
 				foreach(self::$instances[$worldId] as $cache){
 					$cache->caches = [];
+					$cache->usageCounts = [];
 				}
 				unset(self::$instances[$worldId]);
 				\GlobalLogger::get()->debug("Destroyed chunk packet caches for world#$worldId");
@@ -89,6 +90,12 @@ class ChunkCache implements ChunkListener{
 	 */
 	private array $caches = [];
 
+	/**
+	 * @var int[]
+	 * @phpstan-var array<int, int>
+	 */
+	private array $usageCounts = [];
+
 	private int $hits = 0;
 	private int $misses = 0;
 
@@ -100,6 +107,25 @@ class ChunkCache implements ChunkListener{
 		private Compressor $compressor,
 		private int $dimensionId = DimensionIds::OVERWORLD
 	){}
+
+	// credits to remminiscent (https://github.com/altayofficial/Altay/pull/14/changes)
+	public function retain(int $chunkX, int $chunkZ) : void{
+		$chunkHash = World::chunkHash($chunkX, $chunkZ);
+		$this->usageCounts[$chunkHash] = ($this->usageCounts[$chunkHash] ?? 0) + 1;
+	}
+
+	public function release(int $chunkX, int $chunkZ) : void{
+		$chunkHash = World::chunkHash($chunkX, $chunkZ);
+		if(isset($this->usageCounts[$chunkHash])){
+			if($this->usageCounts[$chunkHash] === 1){
+				unset($this->usageCounts[$chunkHash]);
+				$this->destroy($chunkX, $chunkZ);
+				$this->world->unregisterChunkListener($this, $chunkX, $chunkZ);
+			}else{
+				--$this->usageCounts[$chunkHash];
+			}
+		}
+	}
 
 	private function prepareChunkAsync(int $chunkX, int $chunkZ, int $chunkHash, TypeConverter $typeConverter) : CompressBatchPromise{
 		$this->world->registerChunkListener($this, $chunkX, $chunkZ);
@@ -223,6 +249,9 @@ class ChunkCache implements ChunkListener{
 	 * @see ChunkListener::onChunkUnloaded()
 	 */
 	public function onChunkUnloaded(int $chunkX, int $chunkZ, Chunk $chunk) : void{
+		if(($this->usageCounts[World::chunkHash($chunkX, $chunkZ)] ?? 0) > 0){
+			return;
+		}
 		$this->destroy($chunkX, $chunkZ);
 		$this->world->unregisterChunkListener($this, $chunkX, $chunkZ);
 	}

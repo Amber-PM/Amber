@@ -24,14 +24,14 @@ declare(strict_types=1);
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\StringArgumentParser;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\GameMode;
 use pocketmine\ServerProperties;
-use function count;
 
-class DefaultGamemodeCommand extends VanillaCommand{
+class DefaultGamemodeCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -40,22 +40,32 @@ class DefaultGamemodeCommand extends VanillaCommand{
 			KnownTranslationFactory::commands_defaultgamemode_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_DEFAULTGAMEMODE);
-	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			throw new InvalidCommandSyntaxException();
+		$modeAliases = [];
+		foreach(GameMode::cases() as $case){
+			foreach($case->getAliases() as $alias){
+				$modeAliases[] = $alias;
+			}
 		}
 
-		$gameMode = GameMode::fromString($args[0]);
+		$this->addOverload(
+			fn(CommandSender $sender, string $mode) => $this->run($sender, $mode),
+			explicitParsers: ["mode" => new StringArgumentParser($modeAliases)]
+		);
+	}
+
+	private function run(CommandSender $sender, string $mode) : bool{
+		$gameMode = GameMode::fromString($mode);
 		if($gameMode === null){
-			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_gamemode_unknown($args[0]));
+			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_gamemode_unknown($mode));
+
 			return true;
 		}
 
 		//TODO: this probably shouldn't use the enum name directly
 		$sender->getServer()->getConfigGroup()->setConfigString(ServerProperties::GAME_MODE, $gameMode->name);
 		$sender->sendMessage(KnownTranslationFactory::commands_defaultgamemode_success($gameMode->getTranslatableName()));
+
 		return true;
 	}
 }

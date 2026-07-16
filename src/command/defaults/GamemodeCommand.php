@@ -25,13 +25,14 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\StringArgumentParser;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\GameMode;
-use function count;
+use pocketmine\player\Player;
 
-class GamemodeCommand extends VanillaCommand{
+class GamemodeCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -43,21 +44,31 @@ class GamemodeCommand extends VanillaCommand{
 			DefaultPermissionNames::COMMAND_GAMEMODE_SELF,
 			DefaultPermissionNames::COMMAND_GAMEMODE_OTHER
 		]);
+
+		$modeAliases = [];
+		foreach(GameMode::cases() as $case){
+			foreach($case->getAliases() as $alias){
+				$modeAliases[] = $alias;
+			}
+		}
+		$modeParser = new StringArgumentParser($modeAliases);
+
+		$this->addOverload(
+			fn(Player $sender, string $mode) => $this->applyGamemode($sender, $sender, $mode),
+			DefaultPermissionNames::COMMAND_GAMEMODE_SELF,
+			["mode" => $modeParser]
+		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $mode, Player $target) => $this->applyGamemode($sender, $target, $mode),
+			DefaultPermissionNames::COMMAND_GAMEMODE_OTHER,
+			["mode" => $modeParser]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$gameMode = GameMode::fromString($args[0]);
+	private function applyGamemode(CommandSender $sender, Player $target, string $modeString) : bool{
+		$gameMode = GameMode::fromString($modeString);
 		if($gameMode === null){
-			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_gamemode_unknown($args[0]));
-			return true;
-		}
-
-		$target = $this->fetchPermittedPlayerTarget($sender, $args[1] ?? null, DefaultPermissionNames::COMMAND_GAMEMODE_SELF, DefaultPermissionNames::COMMAND_GAMEMODE_OTHER);
-		if($target === null){
+			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_gamemode_unknown($modeString));
 			return true;
 		}
 

@@ -25,15 +25,14 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\command\utils\InvalidCommandSyntaxException;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
-use function array_shift;
-use function count;
 
-class DeopCommand extends VanillaCommand{
+class DeopCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -42,20 +41,19 @@ class DeopCommand extends VanillaCommand{
 			KnownTranslationFactory::commands_deop_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_OP_TAKE);
+
+		$this->addOverload(fn(CommandSender $sender, string $name) => $this->run($sender, $name));
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$name = array_shift($args);
+	private function run(CommandSender $sender, string $name) : bool{
 		if(!Player::isValidUserName($name)){
 			throw new InvalidCommandSyntaxException();
 		}
 
 		$sender->getServer()->removeOp($name);
-		if(($player = $sender->getServer()->getPlayerExact($name)) !== null){
+
+		$player = $sender->getServer()->getPlayerExact($name);
+		if($player !== null){
 			$player->sendMessage(KnownTranslationFactory::commands_deop_message()->prefix(TextFormat::GRAY));
 		}
 		Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_deop_success($name));

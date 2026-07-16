@@ -25,8 +25,11 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\StringArgumentParser;
 use pocketmine\command\utils\InvalidCommandSyntaxException;
 use pocketmine\lang\KnownTranslationFactory;
+use pocketmine\lang\Translatable;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\Server;
@@ -37,7 +40,7 @@ use function sort;
 use function strtolower;
 use const SORT_STRING;
 
-class WhitelistCommand extends VanillaCommand{
+class WhitelistCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -53,86 +56,100 @@ class WhitelistCommand extends VanillaCommand{
 			DefaultPermissionNames::COMMAND_WHITELIST_ADD,
 			DefaultPermissionNames::COMMAND_WHITELIST_REMOVE
 		]);
+
+		//reload / on / off / list take no further arguments
+		$this->addOverload(
+			fn(CommandSender $sender, string $action) => $this->runAction($sender, $action),
+			explicitParsers: ["action" => new StringArgumentParser(["reload", "on", "off", "list"])]
+		);
+		//bare "add"/"remove" with no username shows the usage line, same as vanilla
+		$this->addOverload(
+			fn(CommandSender $sender, string $action) => $this->sendUserActionUsage($sender, $action),
+			explicitParsers: ["action" => new StringArgumentParser(["add", "remove"])]
+		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $action, string $username) => $this->runUserAction($sender, $action, $username),
+			explicitParsers: ["action" => new StringArgumentParser(["add", "remove"])]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 1){
-			switch(strtolower($args[0])){
-				case "reload":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_RELOAD)){
-						$server = $sender->getServer();
-						$server->getWhitelisted()->reload();
-						if($server->hasWhitelist()){
-							$this->kickNonWhitelistedPlayers($server);
-						}
-						Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_reloaded());
-					}
-
-					return true;
-				case "on":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_ENABLE)){
-						$server = $sender->getServer();
-						$server->getConfigGroup()->setConfigBool(ServerProperties::WHITELIST, true);
+	private function runAction(CommandSender $sender, string $action) : bool{
+		switch(strtolower($action)){
+			case "reload":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_RELOAD)){
+					$server = $sender->getServer();
+					$server->getWhitelisted()->reload();
+					if($server->hasWhitelist()){
 						$this->kickNonWhitelistedPlayers($server);
-						Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_enabled());
 					}
+					Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_reloaded());
+				}
+				return true;
+			case "on":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_ENABLE)){
+					$server = $sender->getServer();
+					$server->getConfigGroup()->setConfigBool(ServerProperties::WHITELIST, true);
+					$this->kickNonWhitelistedPlayers($server);
+					Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_enabled());
+				}
+				return true;
+			case "off":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_DISABLE)){
+					$sender->getServer()->getConfigGroup()->setConfigBool(ServerProperties::WHITELIST, false);
+					Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_disabled());
+				}
+				return true;
+			case "list":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_LIST)){
+					$entries = $sender->getServer()->getWhitelisted()->getAll(true);
+					sort($entries, SORT_STRING);
+					$result = implode(", ", $entries);
+					$count = (string) count($entries);
 
-					return true;
-				case "off":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_DISABLE)){
-						$sender->getServer()->getConfigGroup()->setConfigBool(ServerProperties::WHITELIST, false);
-						Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_disabled());
-					}
-
-					return true;
-				case "list":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_LIST)){
-						$entries = $sender->getServer()->getWhitelisted()->getAll(true);
-						sort($entries, SORT_STRING);
-						$result = implode(", ", $entries);
-						$count = (string) count($entries);
-
-						$sender->sendMessage(KnownTranslationFactory::commands_whitelist_list($count, $count));
-						$sender->sendMessage($result);
-					}
-
-					return true;
-
-				case "add":
-					$sender->sendMessage(KnownTranslationFactory::commands_generic_usage(KnownTranslationFactory::commands_whitelist_add_usage()));
-					return true;
-
-				case "remove":
-					$sender->sendMessage(KnownTranslationFactory::commands_generic_usage(KnownTranslationFactory::commands_whitelist_remove_usage()));
-					return true;
-			}
-		}elseif(count($args) === 2){
-			if(!Player::isValidUserName($args[1])){
+					$sender->sendMessage(KnownTranslationFactory::commands_whitelist_list($count, $count));
+					$sender->sendMessage($result);
+				}
+				return true;
+			default:
 				throw new InvalidCommandSyntaxException();
-			}
-			switch(strtolower($args[0])){
-				case "add":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_ADD)){
-						$sender->getServer()->addWhitelist($args[1]);
-						Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_add_success($args[1]));
-					}
+		}
+	}
 
-					return true;
-				case "remove":
-					if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_REMOVE)){
-						$server = $sender->getServer();
-						$server->removeWhitelist($args[1]);
-						if(!$server->isWhitelisted($args[1])){
-							$server->getPlayerExact($args[1])?->kick(KnownTranslationFactory::pocketmine_disconnect_kick(KnownTranslationFactory::pocketmine_disconnect_whitelisted()));
-						}
-						Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_remove_success($args[1]));
-					}
+	private function sendUserActionUsage(CommandSender $sender, string $action) : bool{
+		/** @var Translatable $usage */
+		$usage = match(strtolower($action)){
+			"add" => KnownTranslationFactory::commands_whitelist_add_usage(),
+			"remove" => KnownTranslationFactory::commands_whitelist_remove_usage(),
+		};
+		$sender->sendMessage(KnownTranslationFactory::commands_generic_usage($usage));
+		return true;
+	}
 
-					return true;
-			}
+	private function runUserAction(CommandSender $sender, string $action, string $username) : bool{
+		if(!Player::isValidUserName($username)){
+			throw new InvalidCommandSyntaxException();
 		}
 
-		throw new InvalidCommandSyntaxException();
+		switch(strtolower($action)){
+			case "add":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_ADD)){
+					$sender->getServer()->addWhitelist($username);
+					Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_add_success($username));
+				}
+				return true;
+			case "remove":
+				if($this->testPermission($sender, DefaultPermissionNames::COMMAND_WHITELIST_REMOVE)){
+					$server = $sender->getServer();
+					$server->removeWhitelist($username);
+					if(!$server->isWhitelisted($username)){
+						$server->getPlayerExact($username)?->kick(KnownTranslationFactory::pocketmine_disconnect_kick(KnownTranslationFactory::pocketmine_disconnect_whitelisted()));
+					}
+					Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_whitelist_remove_success($username));
+				}
+				return true;
+			default:
+				throw new InvalidCommandSyntaxException();
+		}
 	}
 
 	private function kickNonWhitelistedPlayers(Server $server) : void{

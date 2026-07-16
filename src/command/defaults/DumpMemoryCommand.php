@@ -24,12 +24,13 @@ declare(strict_types=1);
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use Symfony\Component\Filesystem\Path;
 use function date;
 
-class DumpMemoryCommand extends VanillaCommand{
+class DumpMemoryCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -38,10 +39,17 @@ class DumpMemoryCommand extends VanillaCommand{
 			"/dumpmemory [path]"
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_DUMPMEMORY);
+
+		$this->addOverload(fn(CommandSender $sender, ?string $path = null) => $this->run($sender, $path));
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		$sender->getServer()->getMemoryManager()->dumpServerMemory($args[0] ?? (Path::join($sender->getServer()->getDataPath(), "memory_dumps", date("D_M_j-H.i.s-T_Y"))), 48, 80);
+	private function run(CommandSender $sender, ?string $path) : bool{
+		$sender->getServer()->getMemoryManager()->dumpServerMemory(
+			$path ?? Path::join($sender->getServer()->getDataPath(), "memory_dumps", date("D_M_j-H.i.s-T_Y")),
+			48,
+			80
+		);
+
 		return true;
 	}
 }

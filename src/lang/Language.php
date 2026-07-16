@@ -25,12 +25,15 @@ namespace pocketmine\lang;
 
 use pocketmine\utils\Utils;
 use Symfony\Component\Filesystem\Path;
+use function array_fill_keys;
 use function array_filter;
 use function array_map;
 use function count;
 use function explode;
 use function file_exists;
+use function file_get_contents;
 use function is_dir;
+use function json_decode;
 use function max;
 use function ord;
 use function parse_ini_file;
@@ -140,6 +143,27 @@ class Language{
 		throw new LanguageNotFoundException("Language \"$languageCode\" not found");
 	}
 
+	/**
+	 * @var array<string, true>|null
+	 * @phpstan-var array<string, true>|null
+	 */
+	private static ?array $knownBadKeys = null;
+
+	/**
+	 * Some vanilla translation keys aren't actually recognised by the Bedrock client, so relying on the client to
+	 * translate them results in the raw key being shown to the player. These keys must always be translated
+	 * server-side instead, regardless of their prefix.
+	 */
+	private static function isKnownBadKey(string $key) : bool{
+		if(self::$knownBadKeys === null){
+			$path = Path::join(\pocketmine\LOCALE_DATA_PATH, "known-bad-keys.json");
+			$keys = file_exists($path) ? json_decode(Utils::assumeNotFalse(file_get_contents($path), "Missing or inaccessible known-bad-keys.json"), true) : [];
+			self::$knownBadKeys = array_fill_keys($keys, true);
+		}
+
+		return isset(self::$knownBadKeys[$key]);
+	}
+
 	private function getUsedParameterCount(string $rawString, int $given) : int{
 		$highestIndex = -1;
 		for($i = 0; $i < $given; $i++){
@@ -157,7 +181,7 @@ class Language{
 		$baseText = $this->internalGet($str);
 		$parameterCount = count($params);
 		if($baseText !== null){
-			if($onlyPrefix !== null && !str_starts_with($str, $onlyPrefix)){ //client side translation
+			if($onlyPrefix !== null && !str_starts_with($str, $onlyPrefix) && !self::isKnownBadKey($str)){ //client side translation
 				$untranslatedParameterCount = $this->getUsedParameterCount($baseText, $parameterCount);
 				return $str;
 			}
@@ -206,7 +230,7 @@ class Language{
 
 	private function replaceTranslationKey(string $replaceString, ?string $onlyPrefix, int &$untranslatedParameterCount, int $givenParameterCount) : string{
 		if(($t = $this->internalGet(substr($replaceString, 1))) !== null){
-			if($onlyPrefix !== null && strpos($replaceString, $onlyPrefix) !== 1){ //client side translation
+			if($onlyPrefix !== null && strpos($replaceString, $onlyPrefix) !== 1 && !self::isKnownBadKey(substr($replaceString, 1))){ //client side translation
 				$newString = $replaceString;
 				$untranslatedParameterCount = max($untranslatedParameterCount, $this->getUsedParameterCount($t, $givenParameterCount));
 			}else{
