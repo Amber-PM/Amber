@@ -204,6 +204,7 @@ class NetworkSession{
 	/** @phpstan-var \SplQueue<array{CompressBatchPromise|string, list<PromiseResolver<true>>, bool}> */
 	private \SplQueue $compressedQueue;
 	private bool $forceAsyncCompression = true;
+	private bool $spawnResponseReceivedEarly = false;
 	private ?int $protocolId = null;
 	protected bool $enableCompression = false; //disabled until handshake completed
 
@@ -1091,10 +1092,18 @@ class NetworkSession{
 		$this->logger->debug("Waiting for chunk radius request");
 	}
 
+	public function notifyEarlySpawnResponse() : void{
+		$this->spawnResponseReceivedEarly = true;
+	}
+
 	public function notifyTerrainReady() : void{
 		$this->logger->debug("Sending spawn notification, waiting for spawn response");
 		$this->sendDataPacket(PlayStatusPacket::create(PlayStatusPacket::PLAYER_SPAWN));
-		$this->setHandler(new SpawnResponsePacketHandler($this->onClientSpawnResponse(...)));
+		if($this->spawnResponseReceivedEarly){
+			$this->onClientSpawnResponse();
+		}else{
+			$this->setHandler(new SpawnResponsePacketHandler($this->onClientSpawnResponse(...)));
+		}
 	}
 
 	private function onClientSpawnResponse() : void{

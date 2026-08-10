@@ -35,7 +35,7 @@ define('pocketmine\_CORE_CONSTANTS_INCLUDED', true);
 
 define('pocketmine\PATH', dirname(__DIR__) . '/');
 define('pocketmine\RESOURCE_PATH', dirname(__DIR__) . '/resources/');
-define('pocketmine\BEDROCK_DATA_PATH', dirname(__DIR__) . '/vendor/nethergamesmc/bedrock-data/');
+define('pocketmine\BEDROCK_DATA_PATH', is_dir(dirname(__DIR__) . '/vendor/vapebw/bedrock-data/') ? dirname(__DIR__) . '/vendor/vapebw/bedrock-data/' : dirname(__DIR__) . '/vendor/nethergamesmc/bedrock-data/');
 define('pocketmine\LOCALE_DATA_PATH', dirname(__DIR__) . '/resources/translations/');
 define('pocketmine\BEDROCK_BLOCK_UPGRADE_SCHEMA_PATH', dirname(__DIR__) . '/vendor/pocketmine/bedrock-block-upgrade-schema/');
 define('pocketmine\BEDROCK_ITEM_UPGRADE_SCHEMA_PATH', dirname(__DIR__) . '/vendor/pocketmine/bedrock-item-upgrade-schema/');
