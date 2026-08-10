@@ -87,8 +87,10 @@ use pocketmine\network\mcpe\protocol\SetTimePacket;
 use pocketmine\network\mcpe\protocol\SetTitlePacket;
 use pocketmine\network\mcpe\protocol\TextPacket;
 use pocketmine\network\mcpe\protocol\ToastRequestPacket;
+use pocketmine\network\mcpe\protocol\PrimitiveShapesPacket;
 use pocketmine\network\mcpe\protocol\TransferPacket;
 use pocketmine\network\mcpe\protocol\types\AbilitiesData;
+use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
 use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\command\CommandData;
@@ -1399,11 +1401,15 @@ class NetworkSession{
 	/**
 	 * @phpstan-param \Closure() : void $onCompletion
 	 */
-	private function sendChunkPacket(string $chunkPacket, \Closure $onCompletion, World $world) : void{
+	private function sendChunkPacket(string $chunkPacket, \Closure $onCompletion, World $world, int $chunkX = 0, int $chunkZ = 0) : void{
 		$world->timings->syncChunkSend->startTiming();
 		try{
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
+			$shapes = $world->getChunkShapes($chunkX, $chunkZ);
+			if(count($shapes) > 0){
+				$this->sendDataPacket(\pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create($shapes));
+			}
 		}finally{
 			$world->timings->syncChunkSend->stopTiming();
 		}
@@ -1426,7 +1432,7 @@ class NetworkSession{
 		}
 		$promiseOrPacket = $chunkCache->request($chunkX, $chunkZ, $this->getTypeConverter());
 		if(is_string($promiseOrPacket)){
-			$this->sendChunkPacket($promiseOrPacket, $onCompletion, $world);
+			$this->sendChunkPacket($promiseOrPacket, $onCompletion, $world, $chunkX, $chunkZ);
 			return;
 		}
 		$promiseOrPacket->onResolve(
@@ -1447,7 +1453,7 @@ class NetworkSession{
 					//to NEEDED if they want to be resent.
 					return;
 				}
-				$this->sendChunkPacket($promise->getResult(), $onCompletion, $world);
+				$this->sendChunkPacket($promise->getResult(), $onCompletion, $world, $chunkX, $chunkZ);
 			}
 		);
 	}
@@ -1547,6 +1553,18 @@ class NetworkSession{
 			GlobalItemDataHandlers::getSerializer()->serializeType($item)->getName(),
 			$ticks
 		));
+	}
+
+	public function sendShapes(array $shapes) : void{
+		$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+	}
+
+	public function removeShapes(array $networkIds) : void{
+		$removes = [];
+		foreach($networkIds as $id){
+			$removes[] = PacketShapeData::remove($id);
+		}
+		$this->sendDataPacket(PrimitiveShapesPacket::create($removes));
 	}
 
 	public function tick() : void{
