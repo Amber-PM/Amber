@@ -219,11 +219,9 @@ final class CraftingDataCache{
 		$potionTypeRecipes = [];
 		foreach($manager->getPotionTypeRecipes() as $recipe){
 			try{
-				$input = $converter->coreRecipeIngredientToNet($recipe->getInput())->getDescriptor();
-				$ingredient = $converter->coreRecipeIngredientToNet($recipe->getIngredient())->getDescriptor();
-				if(!$input instanceof IntIdMetaItemDescriptor || !$ingredient instanceof IntIdMetaItemDescriptor){
-					throw new AssumptionFailedError();
-				}
+				//potion recipes carry raw numeric IDs, even on protocols where ingredients are name-based
+				$input = $converter->coreRecipeIngredientToNetIntIdMeta($recipe->getInput());
+				$ingredient = $converter->coreRecipeIngredientToNetIntIdMeta($recipe->getIngredient());
 				$output = $converter->coreItemStackToNet($recipe->getOutput());
 				$potionTypeRecipes[] = new ProtocolPotionTypeRecipe(
 					$input->getId(),
@@ -243,10 +241,7 @@ final class CraftingDataCache{
 		foreach($manager->getPotionContainerChangeRecipes() as $recipe){
 			try{
 				$input = $itemTypeDictionary->fromStringId($recipe->getInputItemId());
-				$ingredient = $converter->coreRecipeIngredientToNet($recipe->getIngredient())->getDescriptor();
-				if(!$ingredient instanceof IntIdMetaItemDescriptor){
-					throw new AssumptionFailedError();
-				}
+				$ingredient = $converter->coreRecipeIngredientToNetIntIdMeta($recipe->getIngredient());
 				$output = $itemTypeDictionary->fromStringId($recipe->getOutputItemId());
 				$potionContainerChangeRecipes[] = new ProtocolPotionContainerChangeRecipe(
 					$input,

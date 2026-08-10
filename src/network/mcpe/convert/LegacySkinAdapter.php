@@ -37,7 +37,21 @@ use const JSON_THROW_ON_ERROR;
 
 class LegacySkinAdapter implements SkinAdapter{
 
+	/**
+	 * @phpstan-var \WeakMap<Skin, SkinData>
+	 */
+	private static ?\WeakMap $personaSkins = null;
+
+	public function __construct(){
+		self::$personaSkins ??= new \WeakMap();
+	}
+
 	public function toSkinData(Skin $skin) : SkinData{
+		$persona = self::$personaSkins[$skin] ?? null;
+		if($persona !== null){
+			return $persona;
+		}
+
 		$capeData = $skin->getCapeData();
 		$capeImage = $capeData === "" ? new SkinImage(0, 0, "") : new SkinImage(32, 64, $capeData);
 		$geometryName = $skin->getGeometryName();
@@ -56,7 +70,9 @@ class LegacySkinAdapter implements SkinAdapter{
 
 	public function fromSkinData(SkinData $data) : Skin{
 		if($data->isPersona()){
-			return new Skin("Standard_Custom", str_repeat(random_bytes(3) . "\xff", 4096));
+			$skin = new Skin("Standard_Custom", str_repeat(random_bytes(3) . "\xff", 4096));
+			self::$personaSkins[$skin] = $data;
+			return $skin;
 		}
 
 		$capeData = $data->isPersonaCapeOnClassic() ? "" : $data->getCapeImage()->getData();

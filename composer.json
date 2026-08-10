@@ -35,9 +35,9 @@
       "adhocore/json-comment": "~1.2.0",
       "netresearch/jsonmapper": "~v5.0.0",
       "pocketmine/bedrock-block-upgrade-schema": "~5.2.0+bedrock-1.21.110",
-      "nethergamesmc/bedrock-data": "dev-master",
+      "vapebw/bedrock-data": "*@dev",
       "pocketmine/bedrock-item-upgrade-schema": "~1.17.0+bedrock-1.26.20",
-      "nethergamesmc/bedrock-protocol": "dev-master",
+      "vapebw/bedrock-protocol": "*@dev",
       "pocketmine/binaryutils": "^0.2.1",
       "pocketmine/callback-validator": "~1.0.4",
       "pocketmine/color": "^0.3.0",
@@ -94,8 +94,8 @@
       "update-codegen": [
          "@php build/codegen/bedrockdata-path-consts.php",
          "@php build/codegen/biome-ids.php",
-         "@php build/codegen/block-serializer-consts.php vendor/nethergamesmc/bedrock-data/canonical_block_states.nbt",
-         "@php build/codegen/item-type-names.php vendor/nethergamesmc/bedrock-data/required_item_list.json",
+         "@php build/codegen/block-serializer-consts.php vendor/vapebw/bedrock-data/canonical_block_states.nbt",
+         "@php build/codegen/item-type-names.php vendor/vapebw/bedrock-data/required_item_list.json",
          "@php build/codegen/known-translation-apis.php",
          "@php build/codegen/pocketmine-yml-property-consts.php",
          "@php build/codegen/registry-interface.php src generated"
@@ -103,12 +103,26 @@
    },
    "repositories": [
       {
-         "type": "vcs",
-         "url":  "git@github.com:NetherGamesMC/BedrockProtocol.git"
+         "type": "path",
+         "url":  "../BedrockProtocol",
+         "options": {
+            "symlink": false
+         }
+      },
+      {
+         "type": "path",
+         "url":  "../BedrockData/BedrockData",
+         "options": {
+            "symlink": false
+         }
       },
       {
          "type": "vcs",
-         "url":  "git@github.com:NetherGamesMC/BedrockData.git"
+         "url":  "https://github.com/vapebw/BedrockProtocol.git"
+      },
+      {
+         "type": "vcs",
+         "url":  "https://github.com/vapebw/BedrockData.git"
       }
    ]
 }

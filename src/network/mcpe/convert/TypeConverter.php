@@ -50,6 +50,7 @@ use pocketmine\nbt\TreeRoot;
 use pocketmine\nbt\UnexpectedTagTypeException;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\serializer\ItemTypeDictionary;
 use pocketmine\network\mcpe\protocol\types\GameMode as ProtocolGameMode;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStack;
@@ -151,17 +152,19 @@ class TypeConverter{
 		};
 	}
 
+	private function usesNameBasedItemDescriptors() : bool{
+		return $this->protocolId >= ProtocolInfo::PROTOCOL_1_26_40;
+	}
+
 	public function coreRecipeIngredientToNet(?RecipeIngredient $ingredient) : ProtocolRecipeIngredient{
 		if($ingredient === null){
 			return new ProtocolRecipeIngredient(null, 0);
 		}
 		if($ingredient instanceof MetaWildcardRecipeIngredient){
-			$oldStringId = $ingredient->getItemId();
-			[$stringId, $meta] = $this->itemDataDowngrader->downgrade($oldStringId, 0);
-
-			$id = $this->itemTypeDictionary->fromStringId($stringId);
-			$meta = $meta === 0 && $stringId === $oldStringId ? self::RECIPE_INPUT_WILDCARD_META : $meta; // downgrader returns the same meta
-			$descriptor = new IntIdMetaItemDescriptor($id, $meta);
+			[$stringId, $meta] = $this->metaWildcardIngredientToNet($ingredient);
+			$descriptor = $this->usesNameBasedItemDescriptors() ?
+				new StringIdMetaItemDescriptor($stringId, $meta) :
+				new IntIdMetaItemDescriptor($this->itemTypeDictionary->fromStringId($stringId), $meta);
 		}elseif($ingredient instanceof ExactRecipeIngredient){
 			$item = $ingredient->getItem();
 			[$id, $meta, $blockRuntimeId] = $this->itemTranslator->toNetworkId($item);
@@ -171,7 +174,9 @@ class TypeConverter{
 					throw new AssumptionFailedError("Every block state should have an associated meta value");
 				}
 			}
-			$descriptor = new IntIdMetaItemDescriptor($id, $meta);
+			$descriptor = $this->usesNameBasedItemDescriptors() ?
+				new StringIdMetaItemDescriptor($this->itemTypeDictionary->fromIntId($id), $meta) :
+				new IntIdMetaItemDescriptor($id, $meta);
 		}elseif($ingredient instanceof TagWildcardRecipeIngredient){
 			$descriptor = new TagItemDescriptor($ingredient->getTagName());
 		}else{
@@ -179,6 +184,25 @@ class TypeConverter{
 		}
 
 		return new ProtocolRecipeIngredient($descriptor, 1);
+	}
+
+	private function metaWildcardIngredientToNet(MetaWildcardRecipeIngredient $ingredient) : array{
+		$oldStringId = $ingredient->getItemId();
+		[$stringId, $meta] = $this->itemDataDowngrader->downgrade($oldStringId, 0);
+
+		return [$stringId, $meta === 0 && $stringId === $oldStringId ? self::RECIPE_INPUT_WILDCARD_META : $meta];
+	}
+
+	public function coreRecipeIngredientToNetIntIdMeta(?RecipeIngredient $ingredient) : IntIdMetaItemDescriptor{
+		$descriptor = $this->coreRecipeIngredientToNet($ingredient)->getDescriptor();
+		if($descriptor instanceof IntIdMetaItemDescriptor){
+			return $descriptor;
+		}
+		if($descriptor instanceof StringIdMetaItemDescriptor){
+			return new IntIdMetaItemDescriptor($this->itemTypeDictionary->fromStringId($descriptor->getId()), $descriptor->getMeta());
+		}
+
+		throw new AssumptionFailedError("Recipe ingredient cannot be represented as a numeric item ID");
 	}
 
 	public function netRecipeIngredientToCore(ProtocolRecipeIngredient $ingredient) : ?RecipeIngredient{
