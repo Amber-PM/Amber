@@ -142,6 +142,9 @@ use pocketmine\world\sound\FireExtinguishSound;
 use pocketmine\world\sound\ItemBreakSound;
 use pocketmine\world\sound\RespawnAnchorDepleteSound;
 use pocketmine\world\sound\Sound;
+use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeHandle;
+use pocketmine\world\shape\ShapeRegistry;
 use pocketmine\world\World;
 use pocketmine\YmlServerProperties;
 use Ramsey\Uuid\UuidInterface;
@@ -317,6 +320,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	protected \Logger $logger;
 
 	protected ?SurvivalBlockBreakHandler $blockBreakHandler = null;
+
+	// networkId => ShapeHandle — shapes only visible to this player
+	// @phpstan-var array<int, ShapeHandle>
+	private array $playerShapes = [];
 
 	public function __construct(Server $server, NetworkSession $session, PlayerInfo $playerInfo, bool $authenticated, Location $spawnLocation, ?CompoundTag $namedtag){
 		$username = TextFormat::clean($playerInfo->getUsername());
@@ -2207,6 +2214,35 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$this->sendSubTitle($subtitle);
 		}
 		$this->getNetworkSession()->onTitle($title);
+	}
+
+	// send a shape only to this player, track it for cleanup
+	public function addShape(Shape $shape) : ShapeHandle{
+		$networkId = ShapeRegistry::nextId();
+		$shapeData = $shape->toShapeData($networkId);
+		$handle = new ShapeHandle($networkId, function() use ($networkId) : void{
+			unset($this->playerShapes[$networkId]);
+			if($this->networkSession !== null){
+				$this->networkSession->removeShapes([$networkId]);
+			}
+		});
+		$this->playerShapes[$networkId] = $handle;
+		$this->networkSession?->sendShapes([$shapeData]);
+		return $handle;
+	}
+
+	public function removeShape(ShapeHandle $handle) : void{
+		$handle->remove();
+	}
+
+	// nuke all player-specific shapes in a single packet
+	public function clearShapes() : void{
+		if(count($this->playerShapes) === 0){
+			return;
+		}
+		$ids = array_keys($this->playerShapes);
+		$this->playerShapes = [];
+		$this->networkSession?->removeShapes($ids);
 	}
 
 	/**

@@ -75,6 +75,7 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\event\world\WorldShapeEvent;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
@@ -117,6 +118,9 @@ use pocketmine\world\sound\BlockPlaceSound;
 use pocketmine\world\sound\BlockSound;
 use pocketmine\world\sound\ProtocolSound;
 use pocketmine\world\sound\Sound;
+use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeHandle;
+use pocketmine\world\shape\ShapeRegistry;
 use pocketmine\world\utils\SubChunkExplorer;
 use pocketmine\YmlServerProperties;
 use function abs;
@@ -807,6 +811,51 @@ class World implements ChunkManager{
 				}
 			}
 		}
+	}
+
+	// [chunkHash => [networkId => ShapeData]] shapes visible from that chunk
+	// @phpstan-var array<int, array<int, \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData>>
+	private array $activeShapes = [];
+
+	public function addShape(\pocketmine\math\Vector3 $pos, Shape $shape, ?array $players = null) : ShapeHandle{
+		$players ??= $this->getViewersForPosition($pos);
+
+		if(WorldShapeEvent::hasHandlers()){
+			$ev = new WorldShapeEvent($this, $shape, $pos, $players);
+			$ev->call();
+			if($ev->isCancelled()){
+				// cancelled but still return a handle remove() on it is a noop
+				return new ShapeHandle(0, static function() : void{});
+			}
+			$shape = $ev->getShape();
+			$players = $ev->getRecipients();
+		}
+
+		$networkId = ShapeRegistry::nextId();
+		$shapeData = $shape->toShapeData($networkId);
+		$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$shapeData]);
+
+		$chunkHash = self::chunkHash($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE);
+		$this->activeShapes[$chunkHash][$networkId] = $shapeData;
+
+		NetworkBroadcastUtils::broadcastPackets($players, [$pk]);
+
+		return new ShapeHandle($networkId, function() use ($pos, $networkId, $chunkHash) : void{
+			unset($this->activeShapes[$chunkHash][$networkId]);
+			if(empty($this->activeShapes[$chunkHash])){
+				unset($this->activeShapes[$chunkHash]);
+			}
+			$removePk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([
+				\pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId)
+			]);
+			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$removePk]);
+		});
+	}
+
+	// returns all live shapes for a chunk
+	public function getChunkShapes(int $chunkX, int $chunkZ) : array{
+		$hash = self::chunkHash($chunkX, $chunkZ);
+		return array_values($this->activeShapes[$hash] ?? []);
 	}
 
 	public function getAutoSave() : bool{
