@@ -2220,12 +2220,23 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	public function addShape(Shape $shape) : ShapeHandle{
 		$networkId = ShapeRegistry::nextId();
 		$shapeData = $shape->toShapeData($networkId);
-		$handle = new ShapeHandle($networkId, function() use ($networkId) : void{
+
+		$remover = function() use ($networkId) : void{
 			unset($this->playerShapes[$networkId]);
 			if($this->networkSession !== null){
 				$this->networkSession->removeShapes([$networkId]);
 			}
-		});
+		};
+
+		$updater = function(Shape $newShape) use ($networkId) : void{
+			if(!isset($this->playerShapes[$networkId])){
+				return;
+			}
+			$shapeData = $newShape->toShapeData($networkId);
+			$this->networkSession?->sendShapes([$shapeData]);
+		};
+
+		$handle = new ShapeHandle($networkId, $remover, $updater);
 		$this->playerShapes[$networkId] = $handle;
 		$this->networkSession?->sendShapes([$shapeData]);
 		return $handle;

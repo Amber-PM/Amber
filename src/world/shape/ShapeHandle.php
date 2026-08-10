@@ -23,13 +23,16 @@ declare(strict_types=1);
 
 namespace pocketmine\world\shape;
 
+use pocketmine\math\Vector3;
+
 final class ShapeHandle{
 
 	private bool $removed = false;
 
 	public function __construct(
 		private readonly int $networkId,
-		private readonly \Closure $remover
+		private readonly \Closure $remover,
+		private readonly ?\Closure $updater = null
 	){}
 
 	public function getNetworkId() : int{
@@ -38,6 +41,13 @@ final class ShapeHandle{
 
 	public function isRemoved() : bool{
 		return $this->removed;
+	}
+
+	public function update(Shape $newShape, ?Vector3 $newPos = null) : void{
+		if($this->removed || $this->updater === null){
+			return;
+		}
+		($this->updater)($newShape, $newPos);
 	}
 
 	// idempotent, safe to call twice
