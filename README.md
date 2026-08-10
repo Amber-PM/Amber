@@ -110,7 +110,15 @@ PocketMine-MV maintains compatibility with the PocketMine-MP v5 API. Refer to th
 * [ExamplePlugin](https://github.com/pmmp/ExamplePlugin/) - Reference implementation demonstrating core API usage.
 * [DevTools](https://github.com/pmmp/DevTools/) - Development tools plugin for packaging plugins.
 
+## Need Help?
+Contact this fork developers on [Discord](https://discord.gg/k55gScjTs3).
+We will provide full support for this fork on that server!
+
 ## Licensing
 This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0). Please see the [LICENSE](/LICENSE) file for complete details.
 
 *PocketMine-MV and PocketMine-MP are not affiliated with Mojang Studios or Microsoft. All trademarks belong to their respective owners.*
+
+## This fork is currently maintained by:
+* [vapebw](https://github.com/vapebw)
+* [funaoo](https://github.com/funaoo)
