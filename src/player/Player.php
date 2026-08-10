@@ -909,7 +909,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 							$this->getNetworkSession()->notifyTerrainReady();
 						}
 						(new PlayerPostChunkSendEvent($this, $X, $Z))->call();
-						if(isset($this->usedChunks[$index]) && !$this->isChunkNeededForTicking($X, $Z) && count($world->getChunkEntities($X, $Z)) === 0){
+						if($this->spawnChunkLoadCount === -1 && isset($this->usedChunks[$index]) && !$this->isChunkNeededForTicking($X, $Z) && count($world->getChunkEntities($X, $Z)) === 0){
 							$world->unregisterChunkLoader($this->chunkLoader, $X, $Z);
 							$world->unloadChunk($X, $Z, true);
 						}
