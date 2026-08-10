@@ -34,5 +34,3 @@ final class ShapeRegistry{
 
 	private function __construct(){}
 }
-
-}
