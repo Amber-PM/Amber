@@ -6,7 +6,7 @@
  * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
  * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
  * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
+ * |_|   \___/ \___|_|\_\___|\___|_|  |_|_|_| |_|\___|     |_|  |_|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,8 @@ namespace pocketmine\world\shape\shapes;
 use pocketmine\color\Color;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapePyramidPayload;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeType;
 use pocketmine\world\shape\Shape;
 
 final class PyramidShape implements Shape{
@@ -38,10 +40,23 @@ final class PyramidShape implements Shape{
 		private readonly ?float $depth = null,
 		private readonly ?Color $color = null,
 		private readonly ?int $dimensionId = null,
-		private readonly ?int $attachedEntityId = null
+		private readonly ?int $attachedEntityId = null,
+		private readonly ?Vector3 $rotation = null
 	){}
 
 	public function toShapeData(int $networkId) : PacketShapeData{
-		return PacketShapeData::pyramid($networkId, $this->base, $this->width, $this->height, $this->depth, $this->color, $this->dimensionId, $this->attachedEntityId);
+		return new PacketShapeData(
+			$networkId,
+			PrimitiveShapeType::PYRAMID,
+			$this->base,
+			null,
+			$this->rotation,
+			null,
+			null,
+			$this->color,
+			$this->dimensionId,
+			$this->attachedEntityId,
+			new PrimitiveShapePyramidPayload($this->width, $this->depth, $this->height)
+		);
 	}
 }

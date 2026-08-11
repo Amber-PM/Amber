@@ -6,7 +6,7 @@
  * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
  * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
  * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
+ * |_|   \___/ \___|_|\_\___|\___|_|  |_|_|_| |_|\___|     |_|  |_|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,8 @@ use pocketmine\color\Color;
 use pocketmine\math\Vector2;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeConePayload;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeType;
 use pocketmine\world\shape\Shape;
 
 final class ConeShape implements Shape{
@@ -38,10 +40,23 @@ final class ConeShape implements Shape{
 		private readonly int $segments,
 		private readonly ?Color $color = null,
 		private readonly ?int $dimensionId = null,
-		private readonly ?int $attachedEntityId = null
+		private readonly ?int $attachedEntityId = null,
+		private readonly ?Vector3 $rotation = null
 	){}
 
 	public function toShapeData(int $networkId) : PacketShapeData{
-		return PacketShapeData::cone($networkId, $this->base, $this->radii, $this->height, $this->segments, $this->color, $this->dimensionId, $this->attachedEntityId);
+		return new PacketShapeData(
+			$networkId,
+			PrimitiveShapeType::CONE,
+			$this->base,
+			null,
+			$this->rotation,
+			null,
+			null,
+			$this->color,
+			$this->dimensionId,
+			$this->attachedEntityId,
+			new PrimitiveShapeConePayload($this->radii, $this->height, $this->segments)
+		);
 	}
 }
