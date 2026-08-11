@@ -1655,8 +1655,7 @@ abstract class Entity{
 	}
 
 	public function attachShape(Shape $shape, ?\pocketmine\math\Vector3 $offset = null) : ShapeHandle{
-		$relPos = $offset ?? \pocketmine\math\Vector3::zero();
-		$handle = $this->getWorld()->addShape($relPos, new EntityAttachedShape($shape, $this->id));
+		$handle = $this->getWorld()->addShape($this->getPosition(), new EntityAttachedShape($shape, $this->id, $offset));
 		$this->attachedShapes[] = $handle;
 		return $handle;
 	}
