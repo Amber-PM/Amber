@@ -2232,8 +2232,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			if(!isset($this->playerShapes[$networkId])){
 				return;
 			}
+			$removeData = \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId);
 			$shapeData = $newShape->toShapeData($networkId);
-			$this->networkSession?->sendShapes([$shapeData]);
+			$this->networkSession?->sendShapes([$removeData, $shapeData]);
 		};
 
 		$handle = new ShapeHandle($networkId, $remover, $updater);
