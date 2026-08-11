@@ -6,7 +6,7 @@
  * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
  * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
  * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
+ * |_|   \___/ \___|_|\_\___|\___|_|  |_|_|_| |_|\___|     |_|  |_|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,8 @@ namespace pocketmine\world\shape\shapes;
 use pocketmine\color\Color;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeEllipsoidPayload;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeType;
 use pocketmine\world\shape\Shape;
 
 final class EllipsoidShape implements Shape{
@@ -36,10 +38,23 @@ final class EllipsoidShape implements Shape{
 		private readonly int $segmentsPerAxis,
 		private readonly ?Color $color = null,
 		private readonly ?int $dimensionId = null,
-		private readonly ?int $attachedEntityId = null
+		private readonly ?int $attachedEntityId = null,
+		private readonly ?Vector3 $rotation = null
 	){}
 
 	public function toShapeData(int $networkId) : PacketShapeData{
-		return PacketShapeData::ellipsoid($networkId, $this->center, $this->radii, $this->segmentsPerAxis, $this->color, $this->dimensionId, $this->attachedEntityId);
+		return new PacketShapeData(
+			$networkId,
+			PrimitiveShapeType::ELLIPSOID,
+			$this->center,
+			null,
+			$this->rotation,
+			null,
+			null,
+			$this->color,
+			$this->dimensionId,
+			$this->attachedEntityId,
+			new PrimitiveShapeEllipsoidPayload($this->radii, $this->segmentsPerAxis)
+		);
 	}
 }

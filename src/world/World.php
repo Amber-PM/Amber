@@ -118,9 +118,13 @@ use pocketmine\world\sound\BlockPlaceSound;
 use pocketmine\world\sound\BlockSound;
 use pocketmine\world\sound\ProtocolSound;
 use pocketmine\world\sound\Sound;
+use pocketmine\scheduler\ClosureTask;
+use pocketmine\world\shape\EntityAttachedShape;
 use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeGroup;
 use pocketmine\world\shape\ShapeHandle;
 use pocketmine\world\shape\ShapeRegistry;
+use pocketmine\world\shape\TemporaryShape;
 use pocketmine\world\utils\SubChunkExplorer;
 use pocketmine\YmlServerProperties;
 use function abs;
@@ -877,6 +881,22 @@ class World implements ChunkManager{
 	public function getChunkShapes(int $chunkX, int $chunkZ) : array{
 		$hash = self::chunkHash($chunkX, $chunkZ);
 		return array_values($this->activeShapes[$hash] ?? []);
+	}
+
+	public function addTemporaryShape(\pocketmine\math\Vector3 $pos, Shape $shape, int $durationTicks, ?array $players = null) : ShapeHandle{
+		$handle = $this->addShape($pos, new TemporaryShape($shape, $durationTicks / 20.0), $players);
+		$this->server->getScheduler()->scheduleDelayedTask(new ClosureTask(function() use ($handle) : void{
+			$handle->remove();
+		}), $durationTicks);
+		return $handle;
+	}
+
+	public function addShapeGroup(array $shapeDefs, ?array $players = null) : ShapeGroup{
+		$group = new ShapeGroup();
+		foreach($shapeDefs as [$pos, $shape]){
+			$group->add($this->addShape($pos, $shape, $players));
+		}
+		return $group;
 	}
 
 	public function getAutoSave() : bool{

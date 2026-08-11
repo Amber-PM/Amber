@@ -6,7 +6,7 @@
  * |  _ \ ___   ___| | _____| |_|  \/  (_)_ __   ___      |  \/  |  _ \
  * | |_) / _ \ / __| |/ / _ \ __| |\/| | | '_ \ / _ \_____| |\/| | |_) |
  * |  __/ (_) | (__|   <  __/ |_| |  | | | | | |  __/_____| |  | |  __/
- * |_|   \___/ \___|_|\_\___|\__|_|  |_|_|_| |_|\___|     |_|  |_|_|
+ * |_|   \___/ \___|_|\_\___|\___|_|  |_|_|_| |_|\___|     |_|  |_|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,8 @@ namespace pocketmine\world\shape\shapes;
 use pocketmine\color\Color;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeCircleOrSpherePayload;
+use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeType;
 use pocketmine\world\shape\Shape;
 
 final class CircleShape implements Shape{
@@ -36,11 +38,24 @@ final class CircleShape implements Shape{
 		private readonly ?float $scale = null,
 		private readonly ?Color $color = null,
 		private readonly ?int $dimensionId = null,
-		private readonly ?int $attachedEntityId = null
+		private readonly ?int $attachedEntityId = null,
+		private readonly ?Vector3 $rotation = null
 	){}
 
 	// flat circle, use SphereShape if you want 3D
 	public function toShapeData(int $networkId) : PacketShapeData{
-		return PacketShapeData::circle($networkId, $this->center, $this->segments, $this->scale, $this->color, $this->dimensionId, $this->attachedEntityId);
+		return new PacketShapeData(
+			$networkId,
+			PrimitiveShapeType::CIRCLE,
+			$this->center,
+			$this->scale,
+			$this->rotation,
+			null,
+			null,
+			$this->color,
+			$this->dimensionId,
+			$this->attachedEntityId,
+			new PrimitiveShapeCircleOrSpherePayload($this->segments)
+		);
 	}
 }

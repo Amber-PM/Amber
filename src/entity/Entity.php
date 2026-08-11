@@ -68,6 +68,9 @@ use pocketmine\utils\Utils;
 use pocketmine\VersionInfo;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
+use pocketmine\world\shape\EntityAttachedShape;
+use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeHandle;
 use pocketmine\world\sound\Sound;
 use pocketmine\world\World;
 use function abs;
@@ -188,6 +191,9 @@ abstract class Entity{
 	protected ?int $targetId = null;
 
 	private bool $constructorCalled = false;
+
+	/** @var ShapeHandle[] */
+	private array $attachedShapes = [];
 
 	public function __construct(Location $location, ?CompoundTag $nbt = null){
 		if($this->constructorCalled){
@@ -1641,10 +1647,28 @@ abstract class Entity{
 	 * because it may be needed by descendent classes.
 	 */
 	protected function onDispose() : void{
+		$this->detachShapes();
 		$this->despawnFromAll();
 		if($this->location->isValid()){
 			$this->getWorld()->removeEntity($this);
 		}
+	}
+
+	public function attachShape(Shape $shape, ?\pocketmine\math\Vector3 $offset = null) : ShapeHandle{
+		$pos = $this->getPosition();
+		if($offset !== null){
+			$pos = $pos->add($offset->x, $offset->y, $offset->z);
+		}
+		$handle = $this->getWorld()->addShape($pos, new EntityAttachedShape($shape, $this->id));
+		$this->attachedShapes[] = $handle;
+		return $handle;
+	}
+
+	public function detachShapes() : void{
+		foreach($this->attachedShapes as $handle){
+			$handle->remove();
+		}
+		$this->attachedShapes = [];
 	}
 
 	/**

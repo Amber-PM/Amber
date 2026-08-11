@@ -21,40 +21,32 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\world\shape\shapes;
+namespace pocketmine\world\shape;
 
-use pocketmine\color\Color;
-use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
-use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeBoxPayload;
 use pocketmine\network\mcpe\protocol\types\shape\PrimitiveShapeType;
-use pocketmine\world\shape\Shape;
 
-final class BoxShape implements Shape{
+final class TemporaryShape implements Shape{
 
 	public function __construct(
-		private readonly Vector3 $origin,
-		private readonly Vector3 $bound,
-		private readonly ?float $scale = null,
-		private readonly ?Color $color = null,
-		private readonly ?int $dimensionId = null,
-		private readonly ?int $attachedEntityId = null,
-		private readonly ?Vector3 $rotation = null
+		private readonly Shape $inner,
+		private readonly float $totalTimeSeconds
 	){}
 
 	public function toShapeData(int $networkId) : PacketShapeData{
+		$d = $this->inner->toShapeData($networkId);
 		return new PacketShapeData(
-			$networkId,
-			PrimitiveShapeType::BOX,
-			$this->origin,
-			$this->scale,
-			$this->rotation,
-			null,
-			null,
-			$this->color,
-			$this->dimensionId,
-			$this->attachedEntityId,
-			new PrimitiveShapeBoxPayload($this->bound)
+			$d->getNetworkId(),
+			$d->getType() ?? PrimitiveShapeType::LINE,
+			$d->getLocation(),
+			$d->getScale(),
+			$d->getRotation(),
+			$this->totalTimeSeconds,
+			$d->getMaximumRenderDistance(),
+			$d->getColor(),
+			$d->getDimensionId(),
+			$d->getAttachedToEntityId(),
+			$d->getPayload()
 		);
 	}
 }
