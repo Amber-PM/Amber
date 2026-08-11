@@ -142,6 +142,7 @@ use pocketmine\world\sound\FireExtinguishSound;
 use pocketmine\world\sound\ItemBreakSound;
 use pocketmine\world\sound\RespawnAnchorDepleteSound;
 use pocketmine\world\sound\Sound;
+use pocketmine\world\shape\PositionedShape;
 use pocketmine\world\shape\Shape;
 use pocketmine\world\shape\ShapeHandle;
 use pocketmine\world\shape\ShapeRegistry;
@@ -324,6 +325,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	// networkId => ShapeHandle — shapes only visible to this player
 	// @phpstan-var array<int, ShapeHandle>
 	private array $playerShapes = [];
+
+	// self-attached shapes: [ShapeHandle, Shape, Vector3 offset][] — position-tracked because Bedrock doesn't render attachedToEntityId for the local player
+	private array $selfAttachedShapes = [];
 
 	public function __construct(Server $server, NetworkSession $session, PlayerInfo $playerInfo, bool $authenticated, Location $spawnLocation, ?CompoundTag $namedtag){
 		$username = TextFormat::clean($playerInfo->getUsername());
@@ -1462,6 +1466,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			}
 
 			$this->lastLocation = $to;
+			$this->updateSelfAttachedShapes();
 			$this->broadcastMovement();
 
 			$horizontalDistanceTravelled = sqrt((($from->x - $to->x) ** 2) + (($from->z - $to->z) ** 2));
@@ -2232,9 +2237,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			if(!isset($this->playerShapes[$networkId])){
 				return;
 			}
-			$removeData = \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId);
 			$shapeData = $newShape->toShapeData($networkId);
-			$this->networkSession?->sendShapes([$removeData, $shapeData]);
+			$this->networkSession?->sendShapes([$shapeData]);
 		};
 
 		$handle = new ShapeHandle($networkId, $remover, $updater);
@@ -2255,6 +2259,34 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$ids = array_keys($this->playerShapes);
 		$this->playerShapes = [];
 		$this->networkSession?->removeShapes($ids);
+	}
+
+	// position-tracked self-attach — Bedrock doesn't render attachedToEntityId for the local player entity
+	public function attachShape(\pocketmine\world\shape\Shape $shape, ?\pocketmine\math\Vector3 $offset = null) : ShapeHandle{
+		$off = $offset ?? \pocketmine\math\Vector3::zero();
+		$absPos = $this->getPosition()->addVector($off);
+		$handle = $this->addShape(new PositionedShape($shape, $absPos));
+		$this->selfAttachedShapes[] = ['handle' => $handle, 'shape' => $shape, 'offset' => $off];
+		return $handle;
+	}
+
+	public function detachShapes() : void{
+		foreach($this->selfAttachedShapes as $entry){
+			$entry['handle']->remove();
+		}
+		$this->selfAttachedShapes = [];
+		parent::detachShapes();
+	}
+
+	private function updateSelfAttachedShapes() : void{
+		foreach($this->selfAttachedShapes as $key => $entry){
+			if($entry['handle']->isRemoved()){
+				unset($this->selfAttachedShapes[$key]);
+				continue;
+			}
+			$newPos = $this->getPosition()->addVector($entry['offset']);
+			$entry['handle']->update(new PositionedShape($entry['shape'], $newPos));
+		}
 	}
 
 	/**

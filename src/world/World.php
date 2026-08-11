@@ -869,12 +869,11 @@ class World implements ChunkManager{
 				$chunkHash = $newChunkHash;
 			}
 
-			$removeData = \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId);
 			$shapeData = $newShape->toShapeData($networkId);
 			$this->activeShapes[$chunkHash][$networkId] = $shapeData;
 			$pos = $targetPos;
 
-			$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$removeData, $shapeData]);
+			$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$shapeData]);
 			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$pk]);
 		};
 
