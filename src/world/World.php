@@ -821,6 +821,9 @@ class World implements ChunkManager{
 	// @phpstan-var array<int, array<int, \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData>>
 	private array $activeShapes = [];
 
+	/** @var array<int, ShapeHandle[]> [targetTick => ShapeHandle[]] */
+	private array $temporaryShapeTimers = [];
+
 	public function addShape(\pocketmine\math\Vector3 $pos, Shape $shape, ?array $players = null) : ShapeHandle{
 		$players ??= $this->getViewersForPosition($pos);
 
@@ -885,9 +888,8 @@ class World implements ChunkManager{
 
 	public function addTemporaryShape(\pocketmine\math\Vector3 $pos, Shape $shape, int $durationTicks, ?array $players = null) : ShapeHandle{
 		$handle = $this->addShape($pos, new TemporaryShape($shape, $durationTicks / 20.0), $players);
-		$this->server->getScheduler()->scheduleDelayedTask(new ClosureTask(function() use ($handle) : void{
-			$handle->remove();
-		}), $durationTicks);
+		$targetTick = $this->server->getTick() + $durationTicks;
+		$this->temporaryShapeTimers[$targetTick][] = $handle;
 		return $handle;
 	}
 
@@ -1109,6 +1111,13 @@ class World implements ChunkManager{
 			}else{
 				$this->time++;
 			}
+		}
+
+		if(isset($this->temporaryShapeTimers[$currentTick])){
+			foreach($this->temporaryShapeTimers[$currentTick] as $handle){
+				$handle->remove();
+			}
+			unset($this->temporaryShapeTimers[$currentTick]);
 		}
 
 		$this->sunAnglePercentage = $this->computeSunAnglePercentage(); //Sun angle depends on the current time
