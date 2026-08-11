@@ -178,6 +178,13 @@ class PreSpawnPacketHandler extends PacketHandler{
 		return true;
 	}
 
+	/**
+	 * WaterdogPE (and other proxies) fast-forward the client through the spawn sequence on a
+	 * server-to-server transfer, so the client can send SetLocalPlayerAsInitialized while we are
+	 * still in the pre-spawn phase (before terrain is ready). Record it so notifyTerrainReady()
+	 * completes the spawn instead of waiting forever for a response that already arrived — otherwise
+	 * the spawn deadlocks and PlayerJoinEvent never fires (no scoreboard/chat/join handling).
+	 */
 	public function handleSetLocalPlayerAsInitialized(SetLocalPlayerAsInitializedPacket $packet) : bool{
 		$this->session->notifyEarlySpawnResponse();
 

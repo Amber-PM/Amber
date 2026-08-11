@@ -75,6 +75,7 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\event\world\WorldShapeEvent;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
@@ -117,6 +118,13 @@ use pocketmine\world\sound\BlockPlaceSound;
 use pocketmine\world\sound\BlockSound;
 use pocketmine\world\sound\ProtocolSound;
 use pocketmine\world\sound\Sound;
+use pocketmine\scheduler\ClosureTask;
+use pocketmine\world\shape\EntityAttachedShape;
+use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeGroup;
+use pocketmine\world\shape\ShapeHandle;
+use pocketmine\world\shape\ShapeRegistry;
+use pocketmine\world\shape\TemporaryShape;
 use pocketmine\world\utils\SubChunkExplorer;
 use pocketmine\YmlServerProperties;
 use function abs;
@@ -809,6 +817,90 @@ class World implements ChunkManager{
 		}
 	}
 
+	// [chunkHash => [networkId => ShapeData]] shapes visible from that chunk
+	// @phpstan-var array<int, array<int, \pocketmine\network\mcpe\protocol\types\shape\PacketShapeData>>
+	private array $activeShapes = [];
+
+	/** @var array<int, ShapeHandle[]> [targetTick => ShapeHandle[]] */
+	private array $temporaryShapeTimers = [];
+
+	public function addShape(\pocketmine\math\Vector3 $pos, Shape $shape, ?array $players = null) : ShapeHandle{
+		$players ??= $this->getViewersForPosition($pos);
+
+		if(WorldShapeEvent::hasHandlers()){
+			$ev = new WorldShapeEvent($this, $shape, $pos, $players);
+			$ev->call();
+			if($ev->isCancelled()){
+				// cancelled but still return a handle remove() on it is a noop
+				return new ShapeHandle(0, static function() : void{});
+			}
+			$shape = $ev->getShape();
+			$players = $ev->getRecipients();
+		}
+
+		$networkId = ShapeRegistry::nextId();
+		$shapeData = $shape->toShapeData($networkId);
+		$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$shapeData]);
+
+		$chunkHash = self::chunkHash($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE);
+		$this->activeShapes[$chunkHash][$networkId] = $shapeData;
+
+		NetworkBroadcastUtils::broadcastPackets($players, [$pk]);
+
+		$remover = function() use ($pos, $networkId, &$chunkHash) : void{
+			unset($this->activeShapes[$chunkHash][$networkId]);
+			if(empty($this->activeShapes[$chunkHash])){
+				unset($this->activeShapes[$chunkHash]);
+			}
+			$removePk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([
+				\pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId)
+			]);
+			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$removePk]);
+		};
+
+		$updater = function(Shape $newShape, ?\pocketmine\math\Vector3 $newPos = null) use (&$pos, $networkId, &$chunkHash) : void{
+			$targetPos = $newPos ?? $pos;
+			$newChunkHash = self::chunkHash($targetPos->getFloorX() >> Chunk::COORD_BIT_SIZE, $targetPos->getFloorZ() >> Chunk::COORD_BIT_SIZE);
+			if($newChunkHash !== $chunkHash){
+				unset($this->activeShapes[$chunkHash][$networkId]);
+				if(empty($this->activeShapes[$chunkHash])){
+					unset($this->activeShapes[$chunkHash]);
+				}
+				$chunkHash = $newChunkHash;
+			}
+
+			$shapeData = $newShape->toShapeData($networkId);
+			$this->activeShapes[$chunkHash][$networkId] = $shapeData;
+			$pos = $targetPos;
+
+			$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$shapeData]);
+			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$pk]);
+		};
+
+		return new ShapeHandle($networkId, $remover, $updater);
+	}
+
+	// returns all live shapes for a chunk
+	public function getChunkShapes(int $chunkX, int $chunkZ) : array{
+		$hash = self::chunkHash($chunkX, $chunkZ);
+		return array_values($this->activeShapes[$hash] ?? []);
+	}
+
+	public function addTemporaryShape(\pocketmine\math\Vector3 $pos, Shape $shape, int $durationTicks, ?array $players = null) : ShapeHandle{
+		$handle = $this->addShape($pos, new TemporaryShape($shape, $durationTicks / 20.0), $players);
+		$targetTick = $this->server->getTick() + $durationTicks;
+		$this->temporaryShapeTimers[$targetTick][] = $handle;
+		return $handle;
+	}
+
+	public function addShapeGroup(array $shapeDefs, ?array $players = null) : ShapeGroup{
+		$group = new ShapeGroup();
+		foreach($shapeDefs as [$pos, $shape]){
+			$group->add($this->addShape($pos, $shape, $players));
+		}
+		return $group;
+	}
+
 	public function getAutoSave() : bool{
 		return $this->autoSave;
 	}
@@ -1019,6 +1111,13 @@ class World implements ChunkManager{
 			}else{
 				$this->time++;
 			}
+		}
+
+		if(isset($this->temporaryShapeTimers[$currentTick])){
+			foreach($this->temporaryShapeTimers[$currentTick] as $handle){
+				$handle->remove();
+			}
+			unset($this->temporaryShapeTimers[$currentTick]);
 		}
 
 		$this->sunAnglePercentage = $this->computeSunAnglePercentage(); //Sun angle depends on the current time
