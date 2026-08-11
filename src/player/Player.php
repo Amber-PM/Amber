@@ -73,6 +73,7 @@ use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerJumpEvent;
 use pocketmine\event\player\PlayerKickEvent;
 use pocketmine\event\player\PlayerMissSwingEvent;
+use pocketmine\event\player\PlayerInputLockEvent;
 use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerPostChunkSendEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -114,6 +115,7 @@ use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
+use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
@@ -325,6 +327,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	// networkId => ShapeHandle — shapes only visible to this player
 	// @phpstan-var array<int, ShapeHandle>
 	private array $playerShapes = [];
+
+	private int $activeInputLocks = 0;
 
 	// self-attached shapes: [ShapeHandle, Shape, Vector3 offset][] — position-tracked because Bedrock doesn't render attachedToEntityId for the local player
 	private array $selfAttachedShapes = [];
@@ -2261,6 +2265,64 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->networkSession?->removeShapes($ids);
 	}
 
+	public function lockInputs(InputLockFlags ...$flags) : void{
+		$mask = 0;
+		foreach($flags as $flag){
+			$mask |= $flag->value;
+		}
+		$newLocks = $this->activeInputLocks | $mask;
+		if($newLocks === $this->activeInputLocks){
+			return;
+		}
+		if(PlayerInputLockEvent::hasHandlers()){
+			$ev = new PlayerInputLockEvent($this, $newLocks);
+			$ev->call();
+			if($ev->isCancelled()){
+				return;
+			}
+			$newLocks = $ev->getFlags();
+		}
+		$this->activeInputLocks = $newLocks;
+		$this->networkSession?->sendDataPacket(UpdateClientInputLocksPacket::create($this->activeInputLocks, $this->getPosition()));
+	}
+
+	public function unlockInputs(InputLockFlags ...$flags) : void{
+		$mask = 0;
+		foreach($flags as $flag){
+			$mask |= $flag->value;
+		}
+		$newLocks = $this->activeInputLocks & ~$mask;
+		if($newLocks === $this->activeInputLocks){
+			return;
+		}
+		if(PlayerInputLockEvent::hasHandlers()){
+			$ev = new PlayerInputLockEvent($this, $newLocks);
+			$ev->call();
+			if($ev->isCancelled()){
+				return;
+			}
+			$newLocks = $ev->getFlags();
+		}
+		$this->activeInputLocks = $newLocks;
+		$this->networkSession?->sendDataPacket(UpdateClientInputLocksPacket::create($this->activeInputLocks, $this->getPosition()));
+	}
+
+	public function clearInputLocks() : void{
+		if($this->activeInputLocks === 0){
+			return;
+		}
+		$this->activeInputLocks = 0;
+		$this->networkSession?->sendDataPacket(UpdateClientInputLocksPacket::create(0, $this->getPosition()));
+	}
+
+	public function hasInputLock(InputLockFlags $flag) : bool{
+		return ($this->activeInputLocks & $flag->value) !== 0;
+	}
+
+	public function getInputLocks() : int{
+		return $this->activeInputLocks;
+	}
+
 	// position-tracked self-attach — Bedrock doesn't render attachedToEntityId for the local player entity
 	public function attachShape(\pocketmine\world\shape\Shape $shape, ?\pocketmine\math\Vector3 $offset = null) : ShapeHandle{
 		$off = $offset ?? \pocketmine\math\Vector3::zero();
@@ -2503,6 +2565,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 		$this->stopSleep();
 		$this->blockBreakHandler = null;
+		$this->activeInputLocks = 0;
 		$this->despawnFromAll();
 
 		$this->server->removeOnlinePlayer($this);
