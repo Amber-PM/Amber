@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "36703ad5ba19fec3d683c020d5757855",
+    "content-hash": "784d5ca7419aa2d4454e171f8aa26ff6",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -872,29 +872,43 @@
         },
         {
             "name": "vapebw/bedrock-data",
-            "version": "26.40.x-dev",
-            "dist": {
-                "type": "path",
-                "url": "../BedrockData/BedrockData",
-                "reference": "65016073d15cfcca9e28571227627109ef162f3b"
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/vapebw/BedrockData.git",
+                "reference": "e4d2f1c079e959e80df13a07a835f99542a7c364"
             },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/vapebw/BedrockData/zipball/e4d2f1c079e959e80df13a07a835f99542a7c364",
+                "reference": "e4d2f1c079e959e80df13a07a835f99542a7c364",
+                "shasum": ""
+            },
+            "default-branch": true,
             "type": "library",
             "license": [
                 "CC0-1.0"
             ],
             "description": "Blobs of data generated from Minecraft: Bedrock Edition, used by PocketMine-MP",
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/vapebw/BedrockData/tree/main",
+                "issues": "https://github.com/vapebw/BedrockData/issues"
+            },
+            "time": "2026-08-10T21:59:43+00:00"
         },
         {
             "name": "vapebw/bedrock-protocol",
-            "version": "26.40.x-dev",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/vapebw/BedrockProtocol.git",
+                "reference": "973f790c693d0c860ab0a2941beeb84094f17371"
+            },
             "dist": {
-                "type": "path",
-                "url": "../BedrockProtocol",
-                "reference": "93af261b05dde2f0c265eef705f96d6c1951c844"
+                "type": "zip",
+                "url": "https://api.github.com/repos/vapebw/BedrockProtocol/zipball/973f790c693d0c860ab0a2941beeb84094f17371",
+                "reference": "973f790c693d0c860ab0a2941beeb84094f17371",
+                "shasum": ""
             },
             "require": {
                 "ext-encoding": "~1.0.0",
@@ -912,6 +926,7 @@
                 "phpstan/phpstan-strict-rules": "^2.0.0",
                 "phpunit/phpunit": "^9.5 || ^10.0 || ^11.0"
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -932,10 +947,11 @@
                 "LGPL-3.0"
             ],
             "description": "An implementation of the Minecraft: Bedrock Edition protocol in PHP",
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/vapebw/BedrockProtocol/tree/main",
+                "issues": "https://github.com/vapebw/BedrockProtocol/issues"
+            },
+            "time": "2026-08-10T21:59:18+00:00"
         }
     ],
     "packages-dev": [
