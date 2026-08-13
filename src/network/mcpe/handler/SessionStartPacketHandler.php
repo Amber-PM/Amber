@@ -66,7 +66,7 @@ final class SessionStartPacketHandler extends PacketHandler{
 			return false;
 		}
 
-		$configGroup = $this->server->getConfigGroup();
+		$configGroup = \pocketmine\Server::getInstance()->getConfigGroup();
 		$disabled = (array) $configGroup->getProperty("network.disabled-protocols", []);
 		if(in_array($protocolVersion, $disabled, true) || in_array((string) $protocolVersion, $disabled, true)){
 			return false;
