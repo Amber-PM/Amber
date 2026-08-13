@@ -111,7 +111,7 @@
       },
       {
          "type": "path",
-         "url":  "../BedrockData/BedrockData",
+         "url":  "../BedrockData",
          "options": {
             "symlink": false
          }
