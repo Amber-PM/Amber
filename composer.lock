@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "784d5ca7419aa2d4454e171f8aa26ff6",
+    "content-hash": "8f4c6ce7f8652f033fb26cfa28110ece",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -899,16 +899,10 @@
         {
             "name": "vapebw/bedrock-protocol",
             "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/vapebw/BedrockProtocol.git",
-                "reference": "973f790c693d0c860ab0a2941beeb84094f17371"
-            },
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/vapebw/BedrockProtocol/zipball/973f790c693d0c860ab0a2941beeb84094f17371",
-                "reference": "973f790c693d0c860ab0a2941beeb84094f17371",
-                "shasum": ""
+                "type": "path",
+                "url": "../BedrockProtocol",
+                "reference": "973f790c693d0c860ab0a2941beeb84094f17371"
             },
             "require": {
                 "ext-encoding": "~1.0.0",
@@ -920,13 +914,16 @@
                 "pocketmine/nbt": "^1.0.0",
                 "ramsey/uuid": "^4.1"
             },
+            "replace": {
+                "nethergamesmc/bedrock-protocol": "*",
+                "pocketmine/bedrock-protocol": "*"
+            },
             "require-dev": {
                 "phpstan/phpstan": "2.1.0",
                 "phpstan/phpstan-phpunit": "^2.0.0",
                 "phpstan/phpstan-strict-rules": "^2.0.0",
                 "phpunit/phpunit": "^9.5 || ^10.0 || ^11.0"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -947,11 +944,10 @@
                 "LGPL-3.0"
             ],
             "description": "An implementation of the Minecraft: Bedrock Edition protocol in PHP",
-            "support": {
-                "source": "https://github.com/vapebw/BedrockProtocol/tree/main",
-                "issues": "https://github.com/vapebw/BedrockProtocol/issues"
-            },
-            "time": "2026-08-10T21:59:18+00:00"
+            "transport-options": {
+                "symlink": false,
+                "relative": true
+            }
         }
     ],
     "packages-dev": [
