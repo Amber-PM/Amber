@@ -62,6 +62,21 @@ final class SessionStartPacketHandler extends PacketHandler{
 	}
 
 	protected function isCompatibleProtocol(int $protocolVersion) : bool{
-		return in_array($protocolVersion, ProtocolInfo::ACCEPTED_PROTOCOL, true);
+		if(!in_array($protocolVersion, ProtocolInfo::ACCEPTED_PROTOCOL, true)){
+			return false;
+		}
+
+		$configGroup = $this->server->getConfigGroup();
+		$disabled = (array) $configGroup->getProperty("network.disabled-protocols", []);
+		if(in_array($protocolVersion, $disabled, true) || in_array((string) $protocolVersion, $disabled, true)){
+			return false;
+		}
+
+		$allowed = (array) $configGroup->getProperty("network.allowed-protocols", []);
+		if(count($allowed) > 0){
+			return in_array($protocolVersion, $allowed, true) || in_array((string) $protocolVersion, $allowed, true);
+		}
+
+		return true;
 	}
 }
