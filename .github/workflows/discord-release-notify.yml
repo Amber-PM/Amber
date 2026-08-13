@@ -11,47 +11,57 @@ on:
         required: true
 
 jobs:
-  build:
+  notify:
+    name: Send Discord Release Webhook
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: PocketmineMV
 
     steps:
       - name: Checkout PocketmineMV
         uses: actions/checkout@v4
         with:
-          submodules: true
+          path: PocketmineMV
+
+      - name: Checkout BedrockProtocol
+        uses: actions/checkout@v4
+        with:
+          repository: vapebw/BedrockProtocol
+          path: BedrockProtocol
+
+      - name: Checkout BedrockData
+        uses: actions/checkout@v4
+        with:
+          repository: vapebw/BedrockData
+          path: BedrockData
 
       - name: Setup PHP and tools
-        uses: shivammathur/setup-php@2.37.1
+        uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.2
-
-      - name: Strip local path repositories for composer install
-        run: php -r '$j=json_decode(file_get_contents("composer.json"), true); unset($j["repositories"]); file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));'
-
-      - name: Restore Composer package cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/composer/files
-            ~/.cache/composer/vcs
-          key: "composer-v2-cache-${{ hashFiles('./composer.lock') }}"
-          restore-keys: |
-            composer-v2-cache-
+          php-version: '8.2'
+          extensions: mbstring, gd, zip, curl, json
+          coverage: none
 
       - name: Install Composer dependencies
-        run: composer install --no-dev --prefer-dist --no-interaction --ignore-platform-reqs
+        run: composer install --no-dev --ignore-platform-reqs --optimize-autoloader
 
       - name: Get tag name
         id: tag-name
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo TAG_NAME="${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo TAG_NAME="${{ github.event.inputs.release }}" >> $GITHUB_OUTPUT
+            echo "TAG_NAME=${{ github.event.inputs.release }}" >> $GITHUB_OUTPUT
           else
             echo "Unsupported event type: ${{ github.event_name }}"
             exit 1
           fi
 
       - name: Run webhook post script
-        run: php .github/workflows/discord-release-embed.php "${{ github.repository }}" "${{ steps.tag-name.outputs.TAG_NAME }}" "${{ github.token }}" "${{ secrets.DISCORD_RELEASE_WEBHOOK }}" "${{ secrets.DISCORD_NEWS_PING_ROLE_ID }}"
+        env:
+          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          DISCORD_NEWS_PING_ROLE_ID: ${{ secrets.DISCORD_NEWS_PING_ROLE_ID }}
+        run: |
+          php .github/workflows/discord-release-embed.php "${{ github.repository }}" "${{ steps.tag-name.outputs.TAG_NAME }}" "${{ github.token }}" "${{ secrets.DISCORD_RELEASE_WEBHOOK }}" "${{ secrets.DISCORD_NEWS_PING_ROLE_ID }}"
