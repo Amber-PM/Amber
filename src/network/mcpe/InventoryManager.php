@@ -521,7 +521,7 @@ class InventoryManager{
 		 * cost performance. Instead, clear the slot(s) first, then send the new item(s).
 		 * The network cost of doing this is fortunately minimal, as an air itemstack is only 1 byte.
 		 */
-		if($itemStackWrapper->getStackId() !== 0){
+		if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_20_10 && $itemStackWrapper->getStackId() !== 0){
 			$this->session->sendDataPacket(InventorySlotPacket::create(
 				$windowId,
 				$netSlot,
@@ -554,13 +554,15 @@ class InventoryManager{
 		 * cost performance. Instead, clear the slot(s) first, then send the new item(s).
 		 * The network cost of doing this is fortunately minimal, as an air itemstack is only 1 byte.
 		 */
-		$this->session->sendDataPacket(InventoryContentPacket::create(
-			$windowId,
-			array_fill_keys(array_keys($itemStackWrappers), new ItemStackWrapper(0, ItemStack::null())),
-			new FullContainerName($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20 ? 0 : $this->lastInventoryNetworkId, null),
-			0,
-			new ItemStackWrapper(0, ItemStack::null())
-		));
+		if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_20_10){
+			$this->session->sendDataPacket(InventoryContentPacket::create(
+				$windowId,
+				array_fill_keys(array_keys($itemStackWrappers), new ItemStackWrapper(0, ItemStack::null())),
+				new FullContainerName($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20 ? 0 : $this->lastInventoryNetworkId, null),
+				0,
+				new ItemStackWrapper(0, ItemStack::null())
+			));
+		}
 		//now send the real contents
 		$this->session->sendDataPacket(InventoryContentPacket::create($windowId, $itemStackWrappers, new FullContainerName($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20 ? 0 : $this->lastInventoryNetworkId, null), 0, new ItemStackWrapper(0, ItemStack::null())));
 	}

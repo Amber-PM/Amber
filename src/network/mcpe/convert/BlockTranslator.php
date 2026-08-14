@@ -157,6 +157,14 @@ final class BlockTranslator{
 		ProtocolInfo::PROTOCOL_1_20_0 => [
 			self::CANONICAL_BLOCK_STATES_PATH => '-1.20.0',
 			self::BLOCK_STATE_META_MAP_PATH => '-1.20.0',
+		],
+		ProtocolInfo::PROTOCOL_1_18_10 => [
+			self::CANONICAL_BLOCK_STATES_PATH => '-1.18.10',
+			self::BLOCK_STATE_META_MAP_PATH => '-1.17.40',
+		],
+		ProtocolInfo::PROTOCOL_1_16_100 => [
+			self::CANONICAL_BLOCK_STATES_PATH => '-1.16.100',
+			self::BLOCK_STATE_META_MAP_PATH => '-1.16.100',
 		]
 	];
 

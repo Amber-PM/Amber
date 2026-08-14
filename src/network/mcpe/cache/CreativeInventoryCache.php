@@ -29,6 +29,7 @@ use pocketmine\lang\Translatable;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\CreativeContentPacket;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\inventory\CreativeGroupEntry;
 use pocketmine\network\mcpe\protocol\types\inventory\CreativeItemEntry;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStack;
@@ -94,11 +95,17 @@ final class CreativeInventoryCache{
 
 		//creative inventory may have holes if items were unregistered - ensure network IDs used are always consistent
 		$items = [];
+		$itemTranslator = $typeConverter->getItemTranslator();
+		$netEntryId = 1;
 		foreach($inventory->getAllEntries() as $k => $entry){
+			$coreItem = $entry->getItem();
+			if($itemTranslator->toNetworkIdQuiet($coreItem) === null){
+				continue;
+			}
 			$items[] = new CreativeItemEntry(
-				$k,
-				$typeConverter->coreItemStackToNet($entry->getItem()),
-				$itemGroupIndexes[$k]
+				$this->getProtocolId() < ProtocolInfo::PROTOCOL_1_21_60 ? $netEntryId++ : $k,
+				$typeConverter->coreItemStackToNet($coreItem),
+				$itemGroupIndexes[$k] ?? 0
 			);
 		}
 

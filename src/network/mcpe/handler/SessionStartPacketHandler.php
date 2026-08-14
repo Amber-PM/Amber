@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\handler;
 
 use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\LoginPacket;
 use pocketmine\network\mcpe\protocol\NetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\RequestNetworkSettingsPacket;
@@ -59,6 +60,19 @@ final class SessionStartPacketHandler extends PacketHandler{
 		($this->onSuccess)();
 
 		return true;
+	}
+
+	public function handleLogin(LoginPacket $packet) : bool{
+		$protocolVersion = $packet->protocol;
+		if(!$this->isCompatibleProtocol($protocolVersion)){
+			$this->session->disconnectIncompatibleProtocol($protocolVersion);
+
+			return true;
+		}
+		$this->session->setProtocolId($protocolVersion);
+		($this->onSuccess)();
+
+		return $this->session->getHandler()?->handleLogin($packet) ?? false;
 	}
 
 	protected function isCompatibleProtocol(int $protocolVersion) : bool{

@@ -28,6 +28,7 @@ use pocketmine\crafting\RecipeIngredient;
 use pocketmine\crafting\ShapedRecipe;
 use pocketmine\crafting\ShapelessRecipe;
 use pocketmine\crafting\TagWildcardRecipeIngredient;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\utils\ProtocolSingletonTrait;
 use pocketmine\utils\Utils;
 use function array_key_first;
@@ -53,7 +54,11 @@ final class ItemTagDowngrader{
 		$latestMap = ItemTagToIdMap::getInstance();
 		$this->map = ItemTagToIdMap::getInstance($protocolId);
 
-		$this->tagToIdsMap = $latestMap->diff($this->map);
+		if($this->protocolId < ProtocolInfo::PROTOCOL_1_19_30){
+			$this->tagToIdsMap = $this->map->getAll();
+		}else{
+			$this->tagToIdsMap = $latestMap->diff($this->map);
+		}
 	}
 
 	/**
@@ -69,6 +74,18 @@ final class ItemTagDowngrader{
 		}
 
 		return true;
+	}
+
+	/**
+	 * @param RecipeIngredient[] $ingredients
+	 */
+	private function hasTagIngredients(array $ingredients) : bool{
+		foreach($ingredients as $ingredient){
+			if($ingredient instanceof TagWildcardRecipeIngredient){
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -150,16 +167,20 @@ final class ItemTagDowngrader{
 	 * @return list<ShapelessRecipe>
 	 */
 	public function downgradeShapelessRecipe(ShapelessRecipe $recipe) : array {
-		$notIncludedWildcardIngredients = $this->getNotIncludedWildcardIds($ingredients = $recipe->getIngredientList());
+		$ingredients = $recipe->getIngredientList();
 		$downgradedRecipes = [];
 
-		if($this->mapHasTags(array_keys($notIncludedWildcardIngredients))){
+		$hasTags = $this->hasTagIngredients($ingredients);
+		if(!$hasTags || ($this->protocolId >= ProtocolInfo::PROTOCOL_1_19_30 && $this->mapHasTags(array_keys($this->getNotIncludedWildcardIds($ingredients))))){
 			$downgradedRecipes[] = $recipe;
 		}
 
-		foreach($this->getIngredientCombinations($notIncludedWildcardIngredients) as $ingredientCombination){
-			$downgradedIngredients = array_map(fn(RecipeIngredient $ingredient) => $this->getDowngradedIngredient($ingredient, $ingredientCombination), $ingredients);
-			$downgradedRecipes[] = new ShapelessRecipe($downgradedIngredients, $recipe->getResults(), $recipe->getType());
+		if($hasTags){
+			$notIncludedWildcardIngredients = $this->getNotIncludedWildcardIds($ingredients);
+			foreach($this->getIngredientCombinations($notIncludedWildcardIngredients) as $ingredientCombination){
+				$downgradedIngredients = array_map(fn(RecipeIngredient $ingredient) => $this->getDowngradedIngredient($ingredient, $ingredientCombination), $ingredients);
+				$downgradedRecipes[] = new ShapelessRecipe($downgradedIngredients, $recipe->getResults(), $recipe->getType());
+			}
 		}
 
 		return $downgradedRecipes;
@@ -171,16 +192,20 @@ final class ItemTagDowngrader{
 	 * @return list<ShapedRecipe>
 	 */
 	public function downgradeShapedRecipe(ShapedRecipe $recipe) : array {
-		$notIncludedWildcardIngredients = $this->getNotIncludedWildcardIds($ingredients = $recipe->getIngredientsByChar());
+		$ingredients = $recipe->getIngredientsByChar();
 		$downgradedRecipes = [];
 
-		if($this->mapHasTags(array_keys($notIncludedWildcardIngredients))){
+		$hasTags = $this->hasTagIngredients($ingredients);
+		if(!$hasTags || ($this->protocolId >= ProtocolInfo::PROTOCOL_1_19_30 && $this->mapHasTags(array_keys($this->getNotIncludedWildcardIds($ingredients))))){
 			$downgradedRecipes[] = $recipe;
 		}
 
-		foreach($this->getIngredientCombinations($notIncludedWildcardIngredients) as $ingredientCombination){
-			$downgradedIngredients = Utils::arrayMapPreserveKeys(fn(RecipeIngredient $ingredient) => $this->getDowngradedIngredient($ingredient, $ingredientCombination), $ingredients);
-			$downgradedRecipes[] = new ShapedRecipe($recipe->getShape(), $downgradedIngredients, $recipe->getResults());
+		if($hasTags){
+			$notIncludedWildcardIngredients = $this->getNotIncludedWildcardIds($ingredients);
+			foreach($this->getIngredientCombinations($notIncludedWildcardIngredients) as $ingredientCombination){
+				$downgradedIngredients = Utils::arrayMapPreserveKeys(fn(RecipeIngredient $ingredient) => $this->getDowngradedIngredient($ingredient, $ingredientCombination), $ingredients);
+				$downgradedRecipes[] = new ShapedRecipe($recipe->getShape(), $downgradedIngredients, $recipe->getResults());
+			}
 		}
 
 		return $downgradedRecipes;

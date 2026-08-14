@@ -72,7 +72,7 @@ class ChunkRequestTask extends AsyncTask{
 		$chunk = FastChunkSerializer::deserializeTerrain($this->chunk);
 		$dimensionId = $this->dimensionId;
 
-		$subCount = ChunkSerializer::getSubChunkCount($chunk, $dimensionId);
+		$subCount = ChunkSerializer::getSubChunkCount($chunk, $dimensionId, $this->mappingProtocol);
 		$converter = TypeConverter::getInstance($this->mappingProtocol);
 		$payload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, $converter, $this->tiles);
 

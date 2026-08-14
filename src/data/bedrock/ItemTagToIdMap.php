@@ -74,6 +74,8 @@ final class ItemTagToIdMap{
 		ProtocolInfo::PROTOCOL_1_20_30 => "-1.20.0",
 		ProtocolInfo::PROTOCOL_1_20_10 => "-1.20.0",
 		ProtocolInfo::PROTOCOL_1_20_0 => "-1.20.0",
+		ProtocolInfo::PROTOCOL_1_18_10 => "-1.20.0",
+		ProtocolInfo::PROTOCOL_1_16_100 => "-1.20.0",
 	];
 
 	private static function make(int $protocolId) : self{
@@ -153,5 +155,16 @@ final class ItemTagToIdMap{
 			}
 		}
 		return $diff;
+	}
+
+	/**
+	 * @return array<string, list<string>>
+	 */
+	public function getAll() : array{
+		$all = [];
+		foreach(Utils::stringifyKeys($this->tagToIdsMap) as $tag => $ids){
+			$all[$tag] = array_keys($ids);
+		}
+		return $all;
 	}
 }

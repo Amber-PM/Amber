@@ -1322,6 +1322,9 @@ class Server{
 	private function startupPrepareNetworkInterfaces() : bool{
 		$useQuery = $this->configGroup->getConfigBool(ServerProperties::ENABLE_QUERY, true);
 
+		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $acceptedProtocol){
+			TypeConverter::getInstance($acceptedProtocol);
+		}
 		$typeConverter = TypeConverter::getInstance();
 		$packetBroadcaster = $this->getPacketBroadcaster(ProtocolInfo::CURRENT_PROTOCOL);
 		$entityEventBroadcaster = $this->getEntityEventBroadcaster($packetBroadcaster, $typeConverter);

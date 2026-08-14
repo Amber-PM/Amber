@@ -732,6 +732,37 @@ class InGamePacketHandler extends PacketHandler{
 			case PlayerAction::STOP_ITEM_USE_ON:
 				//TODO: this has no obvious use and seems only used for analytics in vanilla - ignore it
 				break;
+			case PlayerAction::JUMP:
+				$this->player->jump();
+				return true;
+			case PlayerAction::START_SPRINT:
+				$this->player->setSprinting(true);
+				return true;
+			case PlayerAction::STOP_SPRINT:
+				$this->player->setSprinting(false);
+				return true;
+			case PlayerAction::START_SNEAK:
+				$this->player->setSneaking(true);
+				return true;
+			case PlayerAction::STOP_SNEAK:
+				$this->player->setSneaking(false);
+				return true;
+			case PlayerAction::START_GLIDE:
+				$this->player->setGliding(true);
+				return true;
+			case PlayerAction::STOP_GLIDE:
+				$this->player->setGliding(false);
+				return true;
+			case PlayerAction::START_SWIMMING:
+				$this->player->setSwimming(true);
+				return true;
+			case PlayerAction::STOP_SWIMMING:
+				$this->player->setSwimming(false);
+				return true;
+			case PlayerAction::START_SPIN_ATTACK:
+			case PlayerAction::STOP_SPIN_ATTACK:
+			case PlayerAction::MISSED_SWING:
+				return true;
 			default:
 				$this->session->getLogger()->debug("Unhandled/unknown player action type " . $action);
 				return false;

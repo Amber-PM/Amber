@@ -456,7 +456,7 @@ class NetworkSession{
 			}
 
 			if($this->enableCompression){
-				if($this->protocolId >= ProtocolInfo::PROTOCOL_1_20_60){
+				if($this->protocolId !== null && $this->protocolId >= ProtocolInfo::PROTOCOL_1_20_60){
 					$compressionType = ord($payload[0]);
 					$compressed = substr($payload, 1);
 					if($compressionType === CompressionAlgorithm::NONE){
@@ -486,7 +486,15 @@ class NetworkSession{
 					}
 				}
 			}else{
-				$decompressed = $payload;
+				try{
+					Timings::$playerNetworkReceiveDecompress->startTiming();
+					$decompressed = $this->compressor->decompress($payload);
+					$this->enableCompression = true;
+				}catch(DecompressionException){
+					$decompressed = $payload;
+				}finally{
+					Timings::$playerNetworkReceiveDecompress->stopTiming();
+				}
 			}
 
 			$count = 0;
@@ -1048,7 +1056,9 @@ class NetworkSession{
 				}
 				$this->sendDataPacket(ServerToClientHandshakePacket::create($handshakeJwt), true); //make sure this gets sent before encryption is enabled
 
-				$this->cipher = EncryptionContext::fakeGCM($encryptionKey);
+				$this->cipher = ($this->protocolId !== null && $this->protocolId < ProtocolInfo::PROTOCOL_1_16_210) ?
+					EncryptionContext::cfb8($encryptionKey) :
+					EncryptionContext::fakeGCM($encryptionKey);
 
 				$this->setHandler(new HandshakePacketHandler($this->onServerLoginSuccess(...)));
 				$this->logger->debug("Enabled encryption");
@@ -1407,7 +1417,7 @@ class NetworkSession{
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
 			$shapes = $world->getChunkShapes($chunkX, $chunkZ);
-			if(count($shapes) > 0){
+			if($this->protocolId >= ProtocolInfo::PROTOCOL_1_21_70 && count($shapes) > 0){
 				$this->sendDataPacket(\pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create($shapes));
 			}
 		}finally{

@@ -35,7 +35,6 @@ use raklib\server\ipc\RakLibToUserThreadMessageSender;
 use raklib\server\ipc\UserToRakLibThreadMessageReceiver;
 use raklib\server\Server;
 use raklib\server\ServerSocket;
-use raklib\server\SimpleProtocolAcceptor;
 use raklib\utils\ExceptionTraceCleaner;
 use raklib\utils\InternetAddress;
 use function gc_disable;
@@ -96,7 +95,7 @@ class RakLibServer extends Thread{
 			$this->logger,
 			$socket,
 			$this->maxMtuSize,
-			new SimpleProtocolAcceptor($this->protocolVersion),
+			new MultiProtocolAcceptor($this->protocolVersion),
 			new UserToRakLibThreadMessageReceiver(new PthreadsChannelReader($this->mainToThreadBuffer)),
 			new RakLibToUserThreadMessageSender(new SnoozeAwarePthreadsChannelWriter($this->threadToMainBuffer, $this->sleeperEntry->createNotifier())),
 			new ExceptionTraceCleaner($this->mainPath),
