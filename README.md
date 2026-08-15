@@ -1,24 +1,18 @@
 <p align="center">
-	<a href="https://pmmp.io">
-		<!--[if IE]>
-			<img src="https://github.com/pmmp/PocketMine-MP/blob/stable/.github/readme/pocketmine.png" alt="The PocketMine-MP logo" title="PocketMine" loading="eager" />
-		<![endif]-->
-		<picture>
-			<source srcset="https://raw.githubusercontent.com/pmmp/PocketMine-MP/stable/.github/readme/pocketmine-dark-rgb.gif" media="(prefers-color-scheme: dark)">
-			<img src="https://raw.githubusercontent.com/pmmp/PocketMine-MP/stable/.github/readme/pocketmine-rgb.gif" loading="eager" />
-		</picture>
+	<a href="https://github.com/Amber-PM/Amber">
+		<img src=".github/readme/amberpm.png" width="128" height="128" alt="AmberPM Logo" title="AmberPM" />
 	</a><br>
-	<b>PocketMine-MV: A high-performance, multi-version fork of PocketMine-MP written in PHP</b>
+	<b>AmberPM: A high-performance, multi-version fork of PocketMine-MP written in PHP</b>
 </p>
 
 <p align="center">
-	<a href="https://github.com/pmmp/PocketMine-MP/actions/workflows/main.yml"><img src="https://github.com/pmmp/PocketMine-MP/actions/workflows/main.yml/badge.svg" alt="CI" /></a>
-	<a href="https://github.com/pmmp/PocketMine-MP/releases/latest"><img alt="GitHub release (latest SemVer)" src="https://img.shields.io/github/v/release/pmmp/PocketMine-MP?label=release&sort=semver"></a>
-	<a href="https://discord.gg/bmSAZBG"><img src="https://img.shields.io/discord/373199722573201408?label=discord&color=7289DA&logo=discord" alt="Discord" /></a>
+	<a href="https://github.com/Amber-PM/Amber/releases/latest"><img alt="GitHub release (latest SemVer)" src="https://img.shields.io/github/v/release/Amber-PM/Amber?label=release&sort=semver"></a>
+	<a href="https://discord.gg/k55gScjTs3"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+	<a href="LICENSE"><img src="https://img.shields.io/badge/License-LGPL--3.0-blue.svg" alt="License" /></a>
 </p>
 
-## What is PocketMine-MV?
-**PocketMine-MV** is a high-performance, production-ready fork of PocketMine-MP designed specifically for server networks that require simultaneous multi-version (MV) client compatibility. 
+## What is AmberPM?
+**AmberPM** is a high-performance, production-ready fork of PocketMine-MP designed specifically for server networks that require simultaneous multi-version (MV) client compatibility. 
 
 Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorporates a dynamic protocol translation layer. This allows Minecraft: Bedrock Edition clients ranging from version **v1.20.0 (Protocol 589)** to **v1.26.30 (Protocol 1001)** to connect and play concurrently on the same server without requiring external proxies or translators.
 
@@ -30,7 +24,7 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 * 🧩 **Extensible Plugin API** - Keeps full compatibility with the official PocketMine-MP v5 plugin API, enabling most standard plugins to run without modifications.
 * ⚡ **Performance & Compression** - Features optimized protocol translation overhead and dynamic packet compression adjustments adapted to the connection's protocol level.
 
-## :x: PocketMine-MV is NOT a vanilla Minecraft server software.
+## :x: AmberPM is NOT a vanilla Minecraft server software.
 **It is designed primarily for custom game modes, minigames, and lobby servers.**
 Just like official PocketMine-MP, it does not ship with most survival features from the vanilla game (such as vanilla mob AI, redstone simulation, or vanilla world generation).
 
@@ -39,7 +33,7 @@ If you are trying to host a purely **vanilla survival multiplayer** server, plea
 ## Getting Started
 
 ### Installation & Compilation
-To compile PocketMine-MV from source, you can use the integrated scripts or composer:
+To compile AmberPM from source, you can use the integrated scripts or composer:
 
 #### On Windows:
 Simply run the included `compile.bat`:
@@ -105,7 +99,7 @@ The system automatically infers parsers based on the parameter types of your clo
 | `#[DynamicEnum(ProviderClass::class)]` | Dynamically calculated option enums | `DynamicEnumArgumentParser` |
 
 ## Developing Plugins
-PocketMine-MV maintains compatibility with the PocketMine-MP v5 API. Refer to the following resources:
+AmberPM maintains compatibility with the PocketMine-MP v5 API. Refer to the following resources:
 * [PocketMine-MP Developer Documentation](https://devdoc.pmmp.io) - General documentation for plugin developers.
 * [ExamplePlugin](https://github.com/pmmp/ExamplePlugin/) - Reference implementation demonstrating core API usage.
 * [DevTools](https://github.com/pmmp/DevTools/) - Development tools plugin for packaging plugins.
@@ -117,7 +111,7 @@ We will provide full support for this fork on that server!
 ## Licensing
 This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0). Please see the [LICENSE](/LICENSE) file for complete details.
 
-*PocketMine-MV and PocketMine-MP are not affiliated with Mojang Studios or Microsoft. All trademarks belong to their respective owners.*
+*AmberPM and PocketMine-MP are not affiliated with Mojang Studios or Microsoft. All trademarks belong to their respective owners.*
 
 ## This fork is currently maintained by:
 * [vapebw](https://github.com/vapebw)

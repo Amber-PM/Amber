@@ -118,11 +118,11 @@
       },
       {
          "type": "vcs",
-         "url":  "https://github.com/vapebw/BedrockProtocol.git"
+         "url":  "https://github.com/Amber-PM/BedrockProtocol.git"
       },
       {
          "type": "vcs",
-         "url":  "https://github.com/vapebw/BedrockData.git"
+         "url":  "https://github.com/Amber-PM/BedrockData.git"
       }
    ]
 }

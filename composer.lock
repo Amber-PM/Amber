@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8f4c6ce7f8652f033fb26cfa28110ece",
+    "content-hash": "66cfafc2a83013fc6d33edf740a12e33",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -873,28 +873,20 @@
         {
             "name": "vapebw/bedrock-data",
             "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/vapebw/BedrockData.git",
+            "dist": {
+                "type": "path",
+                "url": "../BedrockData",
                 "reference": "e4d2f1c079e959e80df13a07a835f99542a7c364"
             },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/vapebw/BedrockData/zipball/e4d2f1c079e959e80df13a07a835f99542a7c364",
-                "reference": "e4d2f1c079e959e80df13a07a835f99542a7c364",
-                "shasum": ""
-            },
-            "default-branch": true,
             "type": "library",
             "license": [
                 "CC0-1.0"
             ],
             "description": "Blobs of data generated from Minecraft: Bedrock Edition, used by PocketMine-MP",
-            "support": {
-                "source": "https://github.com/vapebw/BedrockData/tree/main",
-                "issues": "https://github.com/vapebw/BedrockData/issues"
-            },
-            "time": "2026-08-10T21:59:43+00:00"
+            "transport-options": {
+                "symlink": false,
+                "relative": true
+            }
         },
         {
             "name": "vapebw/bedrock-protocol",
@@ -902,7 +894,7 @@
             "dist": {
                 "type": "path",
                 "url": "../BedrockProtocol",
-                "reference": "973f790c693d0c860ab0a2941beeb84094f17371"
+                "reference": "486fb785b6bd1e7411ac7f539ad2b037476585c6"
             },
             "require": {
                 "ext-encoding": "~1.0.0",
