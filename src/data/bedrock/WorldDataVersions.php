@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\data\bedrock;
 
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\world\format\io\leveldb\ChunkVersion;
 use pocketmine\world\format\io\leveldb\SubChunkVersion;
 
@@ -54,13 +55,13 @@ final class WorldDataVersions{
 	 * This may be lower than the current protocol version if PocketMine-MP does not yet support features of the newer
 	 * version. This allows the protocol to be updated independently of world format support.
 	 */
-	public const NETWORK = 924;
+	public const NETWORK = ProtocolInfo::CURRENT_PROTOCOL;
 
 	public const LAST_OPENED_IN = [
 		1, //major
 		26, //minor
-		0, //patch
-		2, //revision
+		44, //patch
+		1, //revision
 		0 //is beta
 	];
 }
