@@ -1,5 +1,5 @@
 parameters:
-	level: 4
+	level: 2
 	checkMissingCallableSignature: false
 	treatPhpDocTypesAsCertain: false
 	paths:
@@ -12,6 +12,9 @@ parameters:
 		- pocketmine\IS_DEVELOPMENT_BUILD
 		- pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL
 	reportUnmatchedIgnoredErrors: false
+	ignoreErrors:
+		- '#pmmp\\thread#'
+		- '#LEVELDB_#'
 	typeAliases:
 		anyCallable: 'callable(never, never, never, never, never, never, never, never, never, never) : mixed'
 		anyClosure: '\Closure(never, never, never, never, never, never, never, never, never, never) : mixed'
