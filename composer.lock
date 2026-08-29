@@ -894,7 +894,7 @@
             "dist": {
                 "type": "path",
                 "url": "../BedrockProtocol",
-                "reference": "486fb785b6bd1e7411ac7f539ad2b037476585c6"
+                "reference": "5a61984c34245f3d3a80d6e03aa9626bf817b08d"
             },
             "require": {
                 "ext-encoding": "~1.0.0",
