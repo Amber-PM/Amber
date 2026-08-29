@@ -93,8 +93,7 @@ use pocketmine\network\mcpe\protocol\types\inventory\UseItemOnEntityTransactionD
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\PlayerAction;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
-use pocketmine\network\mcpe\protocol\types\PlayerBlockActionStopBreak;
-use pocketmine\network\mcpe\protocol\types\PlayerBlockActionWithBlockInfo;
+use pocketmine\network\mcpe\protocol\types\PlayerBlockAction;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\player\Player;
 use pocketmine\utils\AssumptionFailedError;
@@ -286,12 +285,7 @@ class InGamePacketHandler extends PacketHandler{
 				throw new PacketHandlingException("Too many block actions in PlayerAuthInputPacket");
 			}
 			foreach(Utils::promoteKeys($blockActions) as $k => $blockAction){
-				$actionHandled = false;
-				if($blockAction instanceof PlayerBlockActionStopBreak){
-					$actionHandled = $this->handlePlayerActionFromData($blockAction->getActionType(), new BlockPosition(0, 0, 0), Facing::DOWN);
-				}elseif($blockAction instanceof PlayerBlockActionWithBlockInfo){
-					$actionHandled = $this->handlePlayerActionFromData($blockAction->getActionType(), $blockAction->getBlockPosition(), $blockAction->getFace());
-				}
+				$actionHandled = $this->handlePlayerActionFromData($blockAction->getActionType(), $blockAction->getBlockPosition(), $blockAction->getFace());
 
 				if(!$actionHandled){
 					$packetHandled = false;
