@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord Community & Support
+    url: https://discord.gg/k55gScjTs3
+    about: Ask questions, get help setting up your server, or discuss ideas with the AmberPM community.
+  - name: GitHub Discussions
+    url: https://github.com/Amber-PM/Amber/discussions
+    about: Ask general questions, request plugin recommendations, or start community discussions.

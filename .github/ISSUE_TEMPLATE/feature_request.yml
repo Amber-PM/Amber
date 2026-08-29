@@ -1,0 +1,54 @@
+name: Feature Request
+description: Suggest an enhancement, new API, or architectural improvement for AmberPM
+title: "[Feature]: "
+labels: ["type: enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an idea! Please note that AmberPM is a high-performance multi-version server software designed for networks and minigames, not a vanilla survival emulator.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear and concise description of what the problem is.
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: A clear and concise description of what you want to happen and how it benefits AmberPM.
+      placeholder: "Add an event or method that allows..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Describe alternatives you've considered
+      description: Any alternative solutions, workarounds, or features you've considered.
+      placeholder: "Handling this via custom packet interception, but..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or protocol details here.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and discussions to make sure this feature hasn't been proposed yet.
+          required: true
+        - label: This request aligns with AmberPM's focus (multi-version networking, performance, extensible API).
+          required: true
