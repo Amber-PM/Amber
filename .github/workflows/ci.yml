@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Test & Build (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[ci skip]')"
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        php: ['8.2', '8.3']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout BedrockProtocol
+        uses: actions/checkout@v4
+        with:
+          repository: Amber-PM/BedrockProtocol
+          path: BedrockProtocol
+
+      - name: Checkout BedrockData
+        uses: actions/checkout@v4
+        with:
+          repository: Amber-PM/BedrockData
+          path: BedrockData
+
+      - name: Move dependencies to parent directory
+        run: |
+          mv BedrockProtocol ../BedrockProtocol
+          mv BedrockData ../BedrockData
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          ini-values: memory_limit=-1, phar.readonly=0
+          extensions: pmmpthread-pmmp/ext-pmmpthread@master, encoding-pmmp/ext-encoding@master, crypto-pmmp/ext-crypto@master, libdeflate-pmmp/ext-libdeflate@master, morton-pmmp/ext-morton@master, chunkutils2-pmmp/ext-chunkutils2@master, igbinary, leveldb, sockets, curl, yaml
+
+      - name: Load Composer package cache
+        uses: actions/cache@v4
+        with:
+          path: "~/.cache/composer"
+          key: "php-${{ matrix.php }}-composer-${{ hashFiles('**/composer.json') }}"
+          restore-keys: "php-${{ matrix.php }}-composer-"
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --ignore-platform-reqs
+
+      - name: Syntax Check
+        run: find src generated -type f -name "*.php" -print0 | xargs -0 -n1 -P4 php -l
+
+      - name: Build PocketMine-MP.phar
+        if: matrix.php == '8.2'
+        run: |
+          composer install --no-dev --classmap-authoritative --ignore-platform-reqs
+          php -dphar.readonly=0 build/server-phar.php
+
+      - name: Upload Phar Artifact
+        if: matrix.php == '8.2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketMine-MP-phar
+          path: PocketMine-MP.phar
+          if-no-files-found: error
+
+      - name: Publish Phar to Release
+        if: startsWith(github.ref, 'refs/tags/') && matrix.php == '8.2'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PocketMine-MP.phar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
