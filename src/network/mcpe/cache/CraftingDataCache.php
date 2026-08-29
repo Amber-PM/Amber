@@ -43,6 +43,7 @@ use pocketmine\network\mcpe\protocol\types\recipe\FurnaceRecipeBlockName;
 use pocketmine\network\mcpe\protocol\types\recipe\IntIdMetaItemDescriptor;
 use pocketmine\network\mcpe\protocol\types\recipe\PotionContainerChangeRecipe as ProtocolPotionContainerChangeRecipe;
 use pocketmine\network\mcpe\protocol\types\recipe\PotionTypeRecipe as ProtocolPotionTypeRecipe;
+use pocketmine\network\mcpe\protocol\types\recipe\RecipeUnlockingContext;
 use pocketmine\network\mcpe\protocol\types\recipe\RecipeUnlockingRequirement;
 use pocketmine\network\mcpe\protocol\types\recipe\ShapedRecipe as ProtocolShapedRecipe;
 use pocketmine\network\mcpe\protocol\types\recipe\ShapelessRecipe as ProtocolShapelessRecipe;
@@ -91,9 +92,11 @@ final class CraftingDataCache{
 		$nullUUID = Uuid::fromString(Uuid::NIL);
 		$converter = TypeConverter::getInstance($this->protocolId);
 		$itemTagDowngrader = ItemTagDowngrader::getInstance($this->protocolId);
-		$recipesWithTypeIds = [];
+		$shapedRecipes = [];
+		$shapelessRecipes = [];
+		$furnaceRecipes = [];
 
-		$noUnlockingRequirement = new RecipeUnlockingRequirement(null);
+		$noUnlockingRequirement = new RecipeUnlockingRequirement(RecipeUnlockingContext::ALWAYS_UNLOCKED, null);
 		$recipeNetId = self::RECIPE_ID_OFFSET;
 		foreach($manager->getCraftingRecipeIndex() as $index => $recipe){
 			//the client doesn't like recipes with an ID of 0, so we need to offset them
@@ -107,8 +110,7 @@ final class CraftingDataCache{
 				};
 				foreach($itemTagDowngrader->downgradeShapelessRecipe($recipe) as $r){
 					try{
-						$recipesWithTypeIds[] = new ProtocolShapelessRecipe(
-							CraftingDataPacket::ENTRY_SHAPELESS,
+						$shapelessRecipes[] = new ProtocolShapelessRecipe(
 							BE::packUnsignedInt($recipeNetId), //TODO: this should probably be changed to something human-readable
 							array_map($converter->coreRecipeIngredientToNet(...), $r->getIngredientList()),
 							array_map($converter->coreItemStackToNet(...), $r->getResults()),
@@ -131,8 +133,7 @@ final class CraftingDataCache{
 								$inputs[$row][$column] = $converter->coreRecipeIngredientToNet($r->getIngredient($column, $row));
 							}
 						}
-						$recipesWithTypeIds[] = new ProtocolShapedRecipe(
-							CraftingDataPacket::ENTRY_SHAPED,
+						$shapedRecipes[] = new ProtocolShapedRecipe(
 							BE::packUnsignedInt($recipeNetId), //TODO: this should probably be changed to something human-readable
 							$inputs,
 							array_map($converter->coreItemStackToNet(...), $r->getResults()),
@@ -166,8 +167,7 @@ final class CraftingDataCache{
 			foreach($manager->getFurnaceRecipeManager($furnaceType)->getAll() as $recipe){
 				try{
 					if($this->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20){
-						$recipesWithTypeIds[] = new ProtocolShapelessRecipe(
-							CraftingDataPacket::ENTRY_SHAPELESS,
+						$shapelessRecipes[] = new ProtocolShapelessRecipe(
 							BE::packUnsignedInt($recipeNetId), //TODO: this should probably be changed to something human-readable
 							[$converter->coreRecipeIngredientToNet($recipe->getInput())],
 							[$converter->coreItemStackToNet($recipe->getResult())],
@@ -187,7 +187,7 @@ final class CraftingDataCache{
 									throw new AssumptionFailedError();
 								}
 
-								$recipesWithTypeIds[] = new ProtocolFurnaceRecipe(
+								$furnaceRecipes[] = new ProtocolFurnaceRecipe(
 									CraftingDataPacket::ENTRY_FURNACE_DATA,
 									$input->getId(),
 									$input->getMeta(),
@@ -201,7 +201,7 @@ final class CraftingDataCache{
 								throw new AssumptionFailedError();
 							}
 
-							$recipesWithTypeIds[] = new ProtocolFurnaceRecipe(
+							$furnaceRecipes[] = new ProtocolFurnaceRecipe(
 								CraftingDataPacket::ENTRY_FURNACE_DATA,
 								$input->getId(),
 								$input->getMeta(),
@@ -254,6 +254,20 @@ final class CraftingDataCache{
 		}
 
 		Timings::$craftingDataCacheRebuild->stopTiming();
-		return CraftingDataPacket::create($recipesWithTypeIds, $potionTypeRecipes, $potionContainerChangeRecipes, [], true);
+		return CraftingDataPacket::create(
+			$shapedRecipes,
+			$shapelessRecipes,
+			[],
+			[],
+			[],
+			[],
+			[],
+			[],
+			$furnaceRecipes,
+			$potionTypeRecipes,
+			$potionContainerChangeRecipes,
+			[],
+			true
+		);
 	}
 }
