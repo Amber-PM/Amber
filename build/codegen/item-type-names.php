@@ -45,7 +45,7 @@ use const STDERR;
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
 function constifyMcId(string $id) : string{
-	return strtoupper(explode(":", $id, 2)[1]);
+	return strtoupper(str_replace(".", "_", explode(":", $id, 2)[1]));
 }
 
 /** @return resource */

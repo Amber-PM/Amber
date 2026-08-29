@@ -333,7 +333,7 @@ final class ItemTypeNames{
 	public const IRON_SHOVEL = "minecraft:iron_shovel";
 	public const IRON_SPEAR = "minecraft:iron_spear";
 	public const IRON_SWORD = "minecraft:iron_sword";
-	public const ITEM.STRAW_BED = "minecraft:item.straw_bed";
+	public const ITEM_STRAW_BED = "minecraft:item.straw_bed";
 	public const JUNGLE_BOAT = "minecraft:jungle_boat";
 	public const JUNGLE_CHEST_BOAT = "minecraft:jungle_chest_boat";
 	public const JUNGLE_DOOR = "minecraft:jungle_door";
