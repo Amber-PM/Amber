@@ -1,0 +1,108 @@
+name: Bug Report
+description: Report a bug, unexpected behavior, or protocol mismatch in AmberPM
+title: "[Bug]: "
+labels: ["status: unconfirmed", "type: bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this issue! Please make sure you are testing on the **latest AmberPM release** and review whether third-party plugins might be causing the problem before submitting.
+
+  - type: input
+    id: version
+    attributes:
+      label: AmberPM Version
+      description: Provide the output of running `version` in the console or `/version` in-game.
+      placeholder: "AmberPM 5.44.2+dev [Protocol 2169] (git: 7ba8a2f...)"
+    validations:
+      required: true
+
+  - type: input
+    id: bedrock_version
+    attributes:
+      label: Minecraft: Bedrock Edition Version(s)
+      description: What client version(s) were tested when the issue occurred?
+      placeholder: "e.g. 1.26.44, 1.26.20, 1.20.80"
+    validations:
+      required: true
+
+  - type: input
+    id: php_version
+    attributes:
+      label: PHP Version & OS
+      description: Provide the output of `php -v` and your Operating System.
+      placeholder: "PHP 8.2.30 (Linux x86_64 / Windows 11)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproduced_without_plugins
+    attributes:
+      label: Does this issue occur on a clean server without plugins?
+      options:
+        - "Yes, tested on a clean AmberPM installation with no plugins"
+        - "No, only occurs when specific plugins are loaded"
+        - "I have not tested without plugins yet"
+    validations:
+      required: true
+
+  - type: textarea
+    id: plugins
+    attributes:
+      label: Loaded Plugins (if applicable)
+      description: List any active plugins on the server (`plugins` command output).
+      placeholder: "MyPlugin v1.0.0, ScoreboardPlugin v2.1..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Clear, step-by-step instructions to reproduce the bug.
+      placeholder: |
+        1. Start the server with ...
+        2. Connect with client version ...
+        3. Perform action ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "The inventory window should open and show the custom items..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: "The client disconnects with packet error..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Server Logs / Error Output
+      description: Paste any relevant console output or stack traces.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true
+        - label: I am using the latest build of AmberPM.
+          required: true
+        - label: I have filled out all required fields accurately.
+          required: true
