@@ -66,6 +66,18 @@ class PreSpawnPacketHandler extends PacketHandler{
 		private InventoryManager $inventoryManager
 	){}
 
+	private static ?\pocketmine\network\mcpe\protocol\JigsawStructureDataPacket $jigsawStructureData = null;
+
+	/** BDS 26.50 jigsaw structure definitions, required by 1.26.50+ clients before StartGamePacket. */
+	private static function jigsawStructureData() : \pocketmine\network\mcpe\protocol\JigsawStructureDataPacket{
+		if(self::$jigsawStructureData === null){
+			$json = json_decode(\pocketmine\utils\Filesystem::fileGetContents(\pocketmine\BEDROCK_DATA_PATH . 'jigsaw_structures-1.26.50.json'), true, flags: JSON_THROW_ON_ERROR);
+			$nbt = (new \pocketmine\network\mcpe\protocol\serializer\NetworkNbtSerializer())->read(base64_decode($json['nbtB64'], true))->mustGetCompoundTag();
+			self::$jigsawStructureData = \pocketmine\network\mcpe\protocol\JigsawStructureDataPacket::create(new \pocketmine\network\mcpe\protocol\types\CacheableNbt($nbt));
+		}
+		return self::$jigsawStructureData;
+	}
+
 	public function setUp() : void{
 		Timings::$playerNetworkSendPreSpawnGameData->startTiming();
 		try{
@@ -94,6 +106,9 @@ class PreSpawnPacketHandler extends PacketHandler{
 			];
 			$levelSettings->experiments = new Experiments([], false);
 
+			if($protocolId >= \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_50){
+				$this->session->sendDataPacket(self::jigsawStructureData());
+			}
 			$this->session->sendDataPacket(StartGamePacket::create(
 				$this->player->getId(),
 				$this->player->getId(),
@@ -115,7 +130,7 @@ class PreSpawnPacketHandler extends PacketHandler{
 				sprintf("%s %s", VersionInfo::NAME, VersionInfo::VERSION()->getFullVersion(true)),
 				Uuid::fromString(Uuid::NIL),
 				false,
-				false,
+				$protocolId >= \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_50, //1.26.50+: block ids are BDS hashes
 				false,
 				new NetworkPermissions(disableClientSounds: true),
 				true,

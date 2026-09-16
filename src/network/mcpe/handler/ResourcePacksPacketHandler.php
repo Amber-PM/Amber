@@ -218,15 +218,13 @@ class ResourcePacksPacketHandler extends PacketHandler{
 					return new ResourcePackStackEntry($pack->getPackId(), $pack->getPackVersion(), ""); //TODO: subpacks
 				}, $this->resourcePackStack);
 
-				//we support chemistry blocks by default, the client should already have these installed
-				foreach(self::CHEMISTRY_RESOURCE_PACKS as [$uuid, $version]){
-					$stack[] = new ResourcePackStackEntry($uuid, $version, "");
+				if($this->session->getProtocolId() < ProtocolInfo::PROTOCOL_1_26_0){
+					foreach(self::CHEMISTRY_RESOURCE_PACKS as [$uuid, $version]){
+						$stack[] = new ResourcePackStackEntry($uuid, $version, "");
+					}
 				}
 
-				//we don't force here, because it doesn't have user-facing effects
-				//but it does have an annoying side-effect when true: it makes
-				//the client remove its own non-server-supplied resource packs.
-				$this->session->sendDataPacket(ResourcePackStackPacket::create($stack, [], false, ProtocolInfo::MINECRAFT_VERSION_NETWORK, new Experiments([], false), false));
+				$this->session->sendDataPacket(ResourcePackStackPacket::create($stack, [], false, "*", new Experiments([], false), false));
 				$this->session->getLogger()->debug("Applying resource pack stack");
 				break;
 			case ResourcePackClientResponsePacket::STATUS_COMPLETED:
