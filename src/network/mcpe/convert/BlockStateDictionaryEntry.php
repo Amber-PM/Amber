@@ -50,7 +50,8 @@ final class BlockStateDictionaryEntry{
 		private string $stateName,
 		array $stateProperties,
 		private int $meta,
-		private ?BlockStateData $oldBlockStateData
+		private ?BlockStateData $oldBlockStateData,
+		private bool $strippedProperties = false
 	){
 		$rawStateProperties = self::encodeStateProperties($stateProperties);
 		$this->rawStateProperties = self::$uniqueRawStates[$rawStateProperties] ??= $rawStateProperties;
@@ -73,6 +74,9 @@ final class BlockStateDictionaryEntry{
 	}
 
 	public function getMeta() : int{ return $this->meta; }
+
+	/** True when network-only properties were removed from this state's server-side form. */
+	public function hasStrippedProperties() : bool{ return $this->strippedProperties; }
 
 	/**
 	 * @return Tag[]
