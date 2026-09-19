@@ -327,6 +327,11 @@ class TypeConverter{
 			return ItemStack::null();
 		}
 		$nbt = $itemStack->getNamedTag();
+		//CanPlaceOn and CanDestroy are sent in their dedicated ItemStackExtraData fields, which is where the client reads them
+		if($nbt->getTag("CanPlaceOn") !== null || $nbt->getTag("CanDestroy") !== null){
+			$nbt = clone $nbt;
+			$nbt->removeTag("CanPlaceOn", "CanDestroy");
+		}
 		if($nbt->count() === 0){
 			$nbt = null;
 		}else{
@@ -347,8 +352,8 @@ class TypeConverter{
 		}
 
 		$extraData = $id === $this->shieldRuntimeId ?
-			new ItemStackExtraDataShield($nbt, canPlaceOn: [], canDestroy: [], blockingTick: 0) :
-			new ItemStackExtraData($nbt, canPlaceOn: [], canDestroy: []);
+			new ItemStackExtraDataShield($nbt, canPlaceOn: array_values($itemStack->getCanPlaceOn()), canDestroy: array_values($itemStack->getCanDestroy()), blockingTick: 0) :
+			new ItemStackExtraData($nbt, canPlaceOn: array_values($itemStack->getCanPlaceOn()), canDestroy: array_values($itemStack->getCanDestroy()));
 
 		$extraDataSerializer = new ByteBufferWriter();
 		$extraData->write($extraDataSerializer);
@@ -391,6 +396,12 @@ class TypeConverter{
 			}catch(NbtException $e){
 				throw TypeConversionException::wrap($e, "Bad itemstack NBT data");
 			}
+		}
+		if(count($extraData->getCanPlaceOn()) > 0){
+			$itemResult->setCanPlaceOn($extraData->getCanPlaceOn());
+		}
+		if(count($extraData->getCanDestroy()) > 0){
+			$itemResult->setCanDestroy($extraData->getCanDestroy());
 		}
 
 		return $itemResult;
