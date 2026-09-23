@@ -129,10 +129,13 @@ final class AddonRecipes{
 		$ingredients = [];
 		$width = 0;
 		foreach($pattern as $row){
-			if(!is_string($row) || strlen($row) > 3){
-				throw new AddonException("shaped recipe rows must be strings of up to 3 characters");
+			if(!is_string($row) || strlen($row) === 0 || strlen($row) > 3){
+				throw new AddonException("shaped recipe rows must be strings of 1 to 3 characters");
 			}
 			$width = max($width, strlen($row));
+		}
+		if($width === 0){
+			throw new AddonException("shaped recipe pattern cannot be zero-width");
 		}
 		$shape = [];
 		foreach($pattern as $row){
@@ -149,7 +152,13 @@ final class AddonRecipes{
 			}
 			$shape[] = $row;
 		}
-		$this->manager->registerShapedRecipe(new ShapedRecipe($shape, $ingredients, $this->results($recipe["result"] ?? null)));
+		$results = $this->results($recipe["result"] ?? null);
+		try{
+			$shaped = new ShapedRecipe($shape, $ingredients, $results);
+		}catch(\InvalidArgumentException $e){
+			throw new AddonException("invalid shaped recipe: " . $e->getMessage(), 0, $e);
+		}
+		$this->manager->registerShapedRecipe($shaped);
 		$this->registered++;
 	}
 

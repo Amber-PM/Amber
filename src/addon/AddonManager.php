@@ -75,6 +75,10 @@ use function basename;
 use function count;
 use function explode;
 use function file_get_contents;
+use function hash_file;
+use function hash_final;
+use function hash_init;
+use function hash_update;
 use function in_array;
 use function is_bool;
 use function is_dir;
@@ -85,6 +89,7 @@ use function mkdir;
 use function scandir;
 use function sha1_file;
 use function sort;
+use function str_replace;
 use function strtolower;
 use function usort;
 
@@ -236,8 +241,6 @@ final class AddonManager{
 		$manager->setResourceStack($stack);
 	}
 
-	// ---------------------------------------------------------------- unpacking
-
 	/**
 	 * @return list<AddonPack>
 	 * @throws AddonException
@@ -323,8 +326,28 @@ final class AddonManager{
 
 	/** @throws AddonException */
 	private function zipPack(AddonPack $pack) : string{
+		$root = Path::canonicalize($pack->getPath());
+		/** @var array<string, string> $files */
+		$files = [];
+		$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
+		foreach($iterator as $file){
+			if($file instanceof \SplFileInfo && $file->isFile()){
+				$pathname = $file->getPathname();
+				$rel = str_replace('\\', '/', Path::makeRelative(Path::canonicalize($pathname), $root));
+				$files[$rel] = $pathname;
+			}
+		}
+		ksort($files);
+
+		$ctx = hash_init("sha256");
+		foreach($files as $rel => $pathname){
+			$fileHash = hash_file("sha256", $pathname);
+			hash_update($ctx, $rel . "\0" . $fileHash . "\0");
+		}
+		$fingerprint = hash_final($ctx);
+
 		$safeVersion = $pack->getVersionString() === "" ? "0" : $pack->getVersionString();
-		$zipPath = Path::join($this->path, ".cache", "packs", $pack->getUuid() . "_" . $safeVersion . ".mcpack");
+		$zipPath = Path::join($this->path, ".cache", "packs", $pack->getUuid() . "_" . $safeVersion . "_" . $fingerprint . ".mcpack");
 		@mkdir(Path::getDirectory($zipPath), 0777, true);
 		if(is_file($zipPath)){
 			return $zipPath;
@@ -333,18 +356,12 @@ final class AddonManager{
 		if($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true){
 			throw new AddonException("cannot create $zipPath");
 		}
-		$root = Path::canonicalize($pack->getPath());
-		$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
-		foreach($iterator as $file){
-			if($file instanceof \SplFileInfo && $file->isFile()){
-				$zip->addFile($file->getPathname(), Path::makeRelative(Path::canonicalize($file->getPathname()), $root));
-			}
+		foreach($files as $rel => $pathname){
+			$zip->addFile($pathname, $rel);
 		}
 		$zip->close();
 		return $zipPath;
 	}
-
-	// ---------------------------------------------------------------- behavior packs
 
 	private function readBehaviorPack(AddonPack $pack) : void{
 		$unsupported = [];
@@ -422,8 +439,6 @@ final class AddonManager{
 			$this->logger->logException($e);
 		}
 	}
-
-	// ---------------------------------------------------------------- registration
 
 	private function registerItem(AddonItemDefinition $definition) : void{
 		$id = $definition->getIdentifier();
@@ -526,8 +541,6 @@ final class AddonManager{
 		}
 		return $this->creativeGroups[$name] ??= new CreativeGroup($name, $icon);
 	}
-
-	// ---------------------------------------------------------------- network data (engine hooks)
 
 	/**
 	 * Item registry entries for add-on items and add-on block items, appended to every protocol's
@@ -680,8 +693,6 @@ final class AddonManager{
 		}
 		return $entries;
 	}
-
-	// ---------------------------------------------------------------- plugin API
 
 	/** @return AddonPack[] */
 	public function getPacks() : array{ return $this->packs; }

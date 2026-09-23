@@ -31,14 +31,17 @@ use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\nbt\tag\Tag;
 use function array_is_list;
+use function count;
 use function is_array;
 use function is_bool;
 use function is_float;
 use function is_int;
 use function is_string;
 use function json_decode;
-use function preg_replace;
+use function preg_match;
+use function str_starts_with;
 use function strlen;
+use function substr;
 use const JSON_BIGINT_AS_STRING;
 
 /**
@@ -59,18 +62,103 @@ final class AddonJson{
 	 * @throws AddonException
 	 */
 	public static function decode(string $contents, string $sourceName) : array{
-		//strip a UTF-8 BOM, comments outside strings, and trailing commas
-		if(str_starts_with($contents, "\xEF\xBB\xBF")){
-			$contents = substr($contents, 3);
-		}
-		$contents = preg_replace('~("(?:\\\\.|[^"\\\\])*")|/\*.*?\*/|//[^\r\n]*~s', '$1', $contents) ?? $contents;
-		$contents = preg_replace('~,(\s*[}\]])~', '$1', $contents) ?? $contents;
+		$contents = self::cleanJson($contents, $sourceName);
 
 		$decoded = json_decode($contents, true, 512, JSON_BIGINT_AS_STRING);
 		if(!is_array($decoded)){
 			throw new AddonException("$sourceName is not valid JSON");
 		}
 		return $decoded;
+	}
+
+	/** @throws AddonException */
+	private static function cleanJson(string $contents, string $sourceName) : string{
+		if(str_starts_with($contents, "\xEF\xBB\xBF")){
+			$contents = substr($contents, 3);
+		}
+
+		$len = strlen($contents);
+		$strippedComments = "";
+		$inString = false;
+		$escaped = false;
+		for($i = 0; $i < $len; ++$i){
+			$c = $contents[$i];
+			if($inString){
+				$strippedComments .= $c;
+				if($escaped){
+					$escaped = false;
+				}elseif($c === "\\"){
+					$escaped = true;
+				}elseif($c === '"'){
+					$inString = false;
+				}
+				continue;
+			}
+			if($c === '"'){
+				$inString = true;
+				$strippedComments .= $c;
+			}elseif($c === '/' && $i + 1 < $len && $contents[$i + 1] === '/'){
+				$i += 2;
+				while($i < $len && $contents[$i] !== "\r" && $contents[$i] !== "\n"){
+					++$i;
+				}
+				if($i < $len){
+					$strippedComments .= $contents[$i];
+				}
+			}elseif($c === '/' && $i + 1 < $len && $contents[$i + 1] === '*'){
+				$closed = false;
+				$i += 2;
+				while($i + 1 < $len){
+					if($contents[$i] === '*' && $contents[$i + 1] === '/'){
+						$closed = true;
+						++$i;
+						break;
+					}
+					++$i;
+				}
+				if(!$closed){
+					throw new AddonException("$sourceName has an unterminated block comment");
+				}
+			}else{
+				$strippedComments .= $c;
+			}
+		}
+
+		$len = strlen($strippedComments);
+		$result = "";
+		$inString = false;
+		$escaped = false;
+		for($i = 0; $i < $len; ++$i){
+			$c = $strippedComments[$i];
+			if($inString){
+				$result .= $c;
+				if($escaped){
+					$escaped = false;
+				}elseif($c === "\\"){
+					$escaped = true;
+				}elseif($c === '"'){
+					$inString = false;
+				}
+				continue;
+			}
+			if($c === '"'){
+				$inString = true;
+				$result .= $c;
+			}elseif($c === ','){
+				$next = $i + 1;
+				while($next < $len && ($strippedComments[$next] === ' ' || $strippedComments[$next] === "\t" || $strippedComments[$next] === "\r" || $strippedComments[$next] === "\n")){
+					++$next;
+				}
+				if($next < $len && ($strippedComments[$next] === '}' || $strippedComments[$next] === ']')){
+					continue;
+				}
+				$result .= $c;
+			}else{
+				$result .= $c;
+			}
+		}
+
+		return $result;
 	}
 
 	/**
