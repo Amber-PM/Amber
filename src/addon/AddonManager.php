@@ -197,7 +197,9 @@ final class AddonManager{
 		foreach($this->itemDefinitions as $definition){
 			$this->tryRegister("item", $definition->getIdentifier(), fn() => $this->registerItem($definition));
 		}
+		$this->assignBlockIds();
 		$this->registerEntities();
+		$this->reportUnsentComponents();
 
 		$resourcePacks = count(array_filter($this->packs, fn(AddonPack $p) => $p->isResourcePack()));
 		if($this->packs !== []){
@@ -479,7 +481,6 @@ final class AddonManager{
 		BlockItemIdMap::getInstance()->register($id, $id);
 		$this->registerAliases($id, static fn() => $block->asItem());
 
-		$this->blockNumericIds[$id] = self::BLOCK_NUMERIC_ID_BASE + count($this->blockNumericIds);
 		$this->blocks[$id] = $block;
 		CreativeInventory::getInstance()->add($block->asItem(), $definition->getCategory(), $this->creativeGroup($definition->getGroup(), $block->asItem()));
 	}
@@ -556,12 +557,55 @@ final class AddonManager{
 	 *
 	 * @return list<BlockPaletteEntry>
 	 */
-	public function getBlockPaletteEntries() : array{
-		$entries = [];
-		foreach($this->blocks as $id => $block){
-			$entries[] = new BlockPaletteEntry($id, new CacheableNbt($block->getAddonDefinition()->buildPaletteNbt($this->blockNumericIds[$id])));
+	public function getBlockPaletteEntries(int $protocolId) : array{
+		if(isset($this->paletteEntries[$protocolId])){
+			return $this->paletteEntries[$protocolId];
 		}
-		return $entries;
+		$entries = [];
+		//in block id order, which is the client's order (see assignBlockIds())
+		foreach($this->blockNumericIds as $id => $numericId){
+			$entries[] = new BlockPaletteEntry($id, new CacheableNbt($this->blocks[$id]->getAddonDefinition()->buildPaletteNbt($numericId, $protocolId)));
+		}
+		return $this->paletteEntries[$protocolId] = $entries;
+	}
+
+	/** @var array<int, list<BlockPaletteEntry>> protocol => palette entries */
+	private array $paletteEntries = [];
+
+	/**
+	 * Numbers the registered blocks the way the client does: since 1.20.60 every custom block's "block_id" is
+	 * 10000 plus its index among all custom blocks sorted by the FNV-1 64 hash of the name. A block numbered in
+	 * any other order shows as a different block on the client once there are two or more.
+	 */
+	private function assignBlockIds() : void{
+		$names = array_keys($this->blocks);
+		usort($names, static fn(string $a, string $b) : int => strcmp(BlockNetworkHash::nameOrderKey($a), BlockNetworkHash::nameOrderKey($b)));
+		$this->blockNumericIds = [];
+		foreach($names as $i => $name){
+			$this->blockNumericIds[$name] = self::BLOCK_NUMERIC_ID_BASE + $i;
+		}
+	}
+
+	/** Warns once per pack about components the client is not sent because the loader does not know them. */
+	private function reportUnsentComponents() : void{
+		$byPack = [];
+		foreach($this->itemDefinitions as $id => $definition){
+			if(isset($this->items[$id])){
+				foreach($definition->getUnknownComponents() as $name){
+					$byPack[$definition->getPackName()][$name] = true;
+				}
+			}
+		}
+		foreach($this->blockDefinitions as $id => $definition){
+			if(isset($this->blocks[$id])){
+				foreach($definition->getUnknownComponents() as $name){
+					$byPack[$definition->getPackName()][$name] = true;
+				}
+			}
+		}
+		foreach($byPack as $pack => $names){
+			$this->logger->warning("Add-on $pack: component(s) not sent to clients, the loader does not support them yet: " . implode(", ", array_keys($names)));
+		}
 	}
 
 	/**

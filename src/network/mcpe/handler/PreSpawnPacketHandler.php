@@ -137,7 +137,7 @@ class PreSpawnPacketHandler extends PacketHandler{
 				true,
 				null,
 				new ServerTelemetryData("", "", "", ""),
-				\pocketmine\addon\AddonManager::getInstance()?->getBlockPaletteEntries() ?? [],
+				\pocketmine\addon\AddonManager::getInstance()?->getBlockPaletteEntries($this->session->getProtocolId()) ?? [],
 				0,
 				$typeConverter->getItemTypeDictionary()->getEntries(),
 			));
