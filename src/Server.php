@@ -1090,6 +1090,7 @@ class Server{
 			$this->addonManager->load();
 			$this->commandMap->register("pocketmine", new \pocketmine\addon\AddonsCommand($this->addonManager));
 			$this->craftingManager = CraftingManagerFromDataHelper::make(BedrockDataFiles::RECIPES);
+			$this->addonManager->registerRecipes($this->craftingManager);
 			if(!$this->educationContentEnabled){
 				CreativeInventory::getInstance()->removeEducationEditionContent();
 			}
