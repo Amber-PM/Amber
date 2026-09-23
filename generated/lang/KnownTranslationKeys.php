@@ -101,6 +101,7 @@ final class KnownTranslationKeys{
 	public const COMMANDS_PARTICLE_NOTFOUND = "commands.particle.notFound";
 	public const COMMANDS_PARTICLE_SUCCESS = "commands.particle.success";
 	public const COMMANDS_PLAYERS_LIST = "commands.players.list";
+	public const COMMANDS_PROTOCOLS_USAGE = "commands.protocols.usage";
 	public const COMMANDS_SAVE_DISABLED = "commands.save.disabled";
 	public const COMMANDS_SAVE_ENABLED = "commands.save.enabled";
 	public const COMMANDS_SAY_USAGE = "commands.say.usage";
@@ -383,6 +384,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_COMMAND_PARTICLE_USAGE = "pocketmine.command.particle.usage";
 	public const POCKETMINE_COMMAND_PLUGINS_DESCRIPTION = "pocketmine.command.plugins.description";
 	public const POCKETMINE_COMMAND_PLUGINS_SUCCESS = "pocketmine.command.plugins.success";
+	public const POCKETMINE_COMMAND_PROTOCOLS_DESCRIPTION = "pocketmine.command.protocols.description";
 	public const POCKETMINE_COMMAND_SAVE_DESCRIPTION = "pocketmine.command.save.description";
 	public const POCKETMINE_COMMAND_SAVEOFF_DESCRIPTION = "pocketmine.command.saveoff.description";
 	public const POCKETMINE_COMMAND_SAVEON_DESCRIPTION = "pocketmine.command.saveon.description";
@@ -533,6 +535,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_PERMISSION_COMMAND_OP_TAKE = "pocketmine.permission.command.op.take";
 	public const POCKETMINE_PERMISSION_COMMAND_PARTICLE = "pocketmine.permission.command.particle";
 	public const POCKETMINE_PERMISSION_COMMAND_PLUGINS = "pocketmine.permission.command.plugins";
+	public const POCKETMINE_PERMISSION_COMMAND_PROTOCOLS = "pocketmine.permission.command.protocols";
 	public const POCKETMINE_PERMISSION_COMMAND_SAVE_DISABLE = "pocketmine.permission.command.save.disable";
 	public const POCKETMINE_PERMISSION_COMMAND_SAVE_ENABLE = "pocketmine.permission.command.save.enable";
 	public const POCKETMINE_PERMISSION_COMMAND_SAVE_PERFORM = "pocketmine.permission.command.save.perform";

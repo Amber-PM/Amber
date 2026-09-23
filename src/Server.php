@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -340,6 +340,24 @@ class Server{
 
 	public function getApiVersion() : string{
 		return VersionInfo::BASE_VERSION;
+	}
+
+	public function isProtocolAllowed(int $protocolId) : bool{
+		if(!in_array($protocolId, ProtocolInfo::ACCEPTED_PROTOCOL, true)){
+			return false;
+		}
+
+		$disabled = (array) $this->configGroup->getProperty("network.disabled-protocols", []);
+		if(in_array($protocolId, $disabled, true) || in_array((string) $protocolId, $disabled, true)){
+			return false;
+		}
+
+		$allowed = (array) $this->configGroup->getProperty("network.allowed-protocols", []);
+		if(count($allowed) > 0){
+			return in_array($protocolId, $allowed, true) || in_array((string) $protocolId, $allowed, true);
+		}
+
+		return true;
 	}
 
 	public function getFilePath() : string{

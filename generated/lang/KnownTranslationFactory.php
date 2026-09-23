@@ -427,6 +427,10 @@ final class KnownTranslationFactory{
 		]);
 	}
 
+	public static function commands_protocols_usage() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_PROTOCOLS_USAGE, []);
+	}
+
 	public static function commands_save_disabled() : Translatable{
 		return new Translatable(KnownTranslationKeys::COMMANDS_SAVE_DISABLED, []);
 	}
@@ -1708,6 +1712,10 @@ final class KnownTranslationFactory{
 		]);
 	}
 
+	public static function pocketmine_command_protocols_description() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_PROTOCOLS_DESCRIPTION, []);
+	}
+
 	public static function pocketmine_command_save_description() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_SAVE_DESCRIPTION, []);
 	}
@@ -2451,6 +2459,10 @@ final class KnownTranslationFactory{
 
 	public static function pocketmine_permission_command_plugins() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_PLUGINS, []);
+	}
+
+	public static function pocketmine_permission_command_protocols() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_PROTOCOLS, []);
 	}
 
 	public static function pocketmine_permission_command_save_disable() : Translatable{
