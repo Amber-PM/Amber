@@ -46,6 +46,7 @@ use pocketmine\event\player\PlayerDataSaveEvent;
 use pocketmine\event\player\PlayerLoginEvent;
 use pocketmine\event\server\CommandEvent;
 use pocketmine\event\server\QueryRegenerateEvent;
+use pocketmine\inventory\CreativeInventory;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Language;
 use pocketmine\lang\LanguageNotFoundException;
@@ -299,6 +300,7 @@ class Server{
 	private QueryInfo $queryInfo;
 
 	private ServerConfigGroup $configGroup;
+	private bool $educationContentEnabled;
 
 	/** @var Player[] */
 	private array $playerList = [];
@@ -715,6 +717,11 @@ class Server{
 		return $this->configGroup;
 	}
 
+	/** @internal */
+	public function isEducationContentEnabled() : bool{
+		return $this->educationContentEnabled;
+	}
+
 	/**
 	 * @return Command|PluginOwned|null
 	 * @phpstan-return (Command&PluginOwned)|null
@@ -889,6 +896,7 @@ class Server{
 					ServerProperties::LANGUAGE => "eng"
 				])
 			);
+			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
@@ -1056,6 +1064,9 @@ class Server{
 			$this->commandMap = new SimpleCommandMap($this);
 
 			$this->craftingManager = CraftingManagerFromDataHelper::make(BedrockDataFiles::RECIPES);
+			if(!$this->educationContentEnabled){
+				CreativeInventory::getInstance()->removeEducationEditionContent();
+			}
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
 
