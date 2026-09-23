@@ -131,6 +131,7 @@ abstract class DefaultPermissions{
 			Names::COMMAND_WHITELIST_LIST,
 			Names::COMMAND_WHITELIST_RELOAD,
 			Names::COMMAND_WHITELIST_REMOVE,
+			Names::COMMAND_WORLD,
 			Names::COMMAND_XP_OTHER,
 			Names::COMMAND_XP_SELF,
 		] as $permission){

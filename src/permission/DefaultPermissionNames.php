@@ -79,6 +79,7 @@ final class DefaultPermissionNames{
 	public const COMMAND_UNBAN_IP = "pocketmine.command.unban.ip";
 	public const COMMAND_UNBAN_PLAYER = "pocketmine.command.unban.player";
 	public const COMMAND_VERSION = "pocketmine.command.version";
+	public const COMMAND_WORLD = "pocketmine.command.world";
 	public const COMMAND_CHECKPERM = "pocketmine.command.checkperm";
 	public const COMMAND_LISTPERMS = "pocketmine.command.listperms";
 	public const COMMAND_WHITELIST_ADD = "pocketmine.command.whitelist.add";
