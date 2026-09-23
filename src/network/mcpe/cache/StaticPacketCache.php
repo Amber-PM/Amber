@@ -104,11 +104,28 @@ class StaticPacketCache{
 		return $entries;
 	}
 
+	/** Appends add-on entity identifiers, so the client accepts spawn packets for them. */
+	private static function withAddonActors(CacheableNbt $identifiers) : CacheableNbt{
+		$entries = \pocketmine\addon\AddonManager::getInstance()?->getActorIdentifierEntries() ?? [];
+		if($entries === []){
+			return $identifiers;
+		}
+		$root = clone $identifiers->getRoot();
+		$list = $root->getListTag("idlist");
+		if($list === null){
+			return $identifiers;
+		}
+		foreach($entries as $entry){
+			$list->push($entry);
+		}
+		return new CacheableNbt($root);
+	}
+
 	private static function make() : self{
 		return new self(
 			BiomeDefinitionListPacket::fromDefinitions(self::loadBiomeDefinitionModel(BedrockDataFiles::BIOME_DEFINITIONS_JSON)),
 			BiomeDefinitionListPacket::createLegacy(self::loadCompoundFromFile(BedrockDataFiles::BIOME_DEFINITIONS_NBT)),
-			AvailableActorIdentifiersPacket::create(self::loadCompoundFromFile(BedrockDataFiles::ENTITY_IDENTIFIERS_NBT))
+			AvailableActorIdentifiersPacket::create(self::withAddonActors(self::loadCompoundFromFile(BedrockDataFiles::ENTITY_IDENTIFIERS_NBT)))
 		);
 	}
 

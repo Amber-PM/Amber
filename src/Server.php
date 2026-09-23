@@ -269,7 +269,7 @@ class Server{
 	private CraftingManager $craftingManager;
 
 	private ResourcePackManager $resourceManager;
-
+	private \pocketmine\addon\AddonManager $addonManager;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -479,6 +479,10 @@ class Server{
 		return $this->resourceManager;
 	}
 
+	/** Bedrock add-ons (addons/ directory): resource packs, custom items, blocks and entities. */
+	public function getAddonManager() : \pocketmine\addon\AddonManager{
+		return $this->addonManager;
+	}
 	public function getWorldManager() : WorldManager{
 		return $this->worldManager;
 	}
@@ -1081,13 +1085,17 @@ class Server{
 
 			$this->commandMap = new SimpleCommandMap($this);
 
+			//add-on items, blocks and entities must exist before recipes, worlds and the network tables are built
+			$this->addonManager = new \pocketmine\addon\AddonManager($this, Path::join($this->dataPath, "addons"), $this->logger);
+			$this->addonManager->load();
+			$this->commandMap->register("pocketmine", new \pocketmine\addon\AddonsCommand($this->addonManager));
 			$this->craftingManager = CraftingManagerFromDataHelper::make(BedrockDataFiles::RECIPES);
 			if(!$this->educationContentEnabled){
 				CreativeInventory::getInstance()->removeEducationEditionContent();
 			}
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
-
+			$this->addonManager->registerResourcePacks($this->resourceManager);
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
