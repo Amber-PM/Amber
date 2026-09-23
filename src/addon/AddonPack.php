@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\addon;
 
+use Ramsey\Uuid\Uuid;
 use function implode;
 use function is_array;
 use function is_int;
@@ -39,6 +40,7 @@ final class AddonPack{
 	/**
 	 * @param int[] $version
 	 * @phpstan-param list<int> $version
+	 * @throws AddonException
 	 */
 	public function __construct(
 		private string $uuid,
@@ -47,7 +49,11 @@ final class AddonPack{
 		private string $type,
 		private string $path,
 		private string $source
-	){}
+	){
+		if(!Uuid::isValid($this->uuid)){
+			throw new AddonException("$source: pack UUID '$this->uuid' is not a valid UUID");
+		}
+	}
 
 	/**
 	 * @throws AddonException
@@ -61,6 +67,9 @@ final class AddonPack{
 		$header = $manifest["header"] ?? null;
 		if(!is_array($header) || !is_string($header["uuid"] ?? null)){
 			throw new AddonException("$source: manifest.json has no header uuid");
+		}
+		if(!Uuid::isValid($header["uuid"])){
+			throw new AddonException("$source: manifest.json header uuid is not a valid UUID");
 		}
 		$type = null;
 		$hasScript = false;
