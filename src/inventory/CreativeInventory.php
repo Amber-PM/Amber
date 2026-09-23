@@ -27,6 +27,7 @@ use pocketmine\crafting\CraftingManagerFromDataHelper;
 use pocketmine\data\bedrock\BedrockDataFiles;
 use pocketmine\inventory\json\CreativeGroupData;
 use pocketmine\item\Item;
+use pocketmine\lang\KnownTranslationKeys;
 use pocketmine\lang\Translatable;
 use pocketmine\utils\DestructorCallbackTrait;
 use pocketmine\utils\ObjectSet;
@@ -39,11 +40,20 @@ final class CreativeInventory{
 	use SingletonTrait;
 	use DestructorCallbackTrait;
 
+	private const EDUCATION_GROUP_NAMES = [
+		KnownTranslationKeys::ITEMGROUP_NAME_ELEMENT => true,
+		KnownTranslationKeys::ITEMGROUP_NAME_CHEMISTRYTABLE => true,
+		KnownTranslationKeys::ITEMGROUP_NAME_COMPOUNDS => true,
+		KnownTranslationKeys::ITEMGROUP_NAME_PRODUCTS => true
+	];
+
 	/**
 	 * @var CreativeInventoryEntry[]
 	 * @phpstan-var array<int, CreativeInventoryEntry>
 	 */
 	private array $creative = [];
+	/** @var array<int, true> */
+	private array $builtInEducationEntryIndexes = [];
 
 	/** @phpstan-var ObjectSet<\Closure() : void> */
 	private ObjectSet $contentChangedCallbacks;
@@ -63,6 +73,7 @@ final class CreativeInventory{
 			);
 
 			foreach($groups as $groupData){
+				$isEducationGroup = isset(self::EDUCATION_GROUP_NAMES[$groupData->group_name]);
 				$icon = $groupData->group_icon === null ? null : CraftingManagerFromDataHelper::deserializeItemStack($groupData->group_icon);
 
 				$group = $icon === null ? null : new CreativeGroup(
@@ -73,7 +84,11 @@ final class CreativeInventory{
 				$items = array_filter(array_map(static fn($itemStack) => CraftingManagerFromDataHelper::deserializeItemStack($itemStack), $groupData->items));
 
 				foreach($items as $item){
+					$index = count($this->creative);
 					$this->add($item, $categoryEnum, $group);
+					if($isEducationGroup){
+						$this->builtInEducationEntryIndexes[$index] = true;
+					}
 				}
 			}
 		}
@@ -85,7 +100,26 @@ final class CreativeInventory{
 	 */
 	public function clear() : void{
 		$this->creative = [];
+		$this->builtInEducationEntryIndexes = [];
 		$this->onContentChange();
+	}
+
+	/**
+	 * Removes built-in Education entries from the creative menu during server startup.
+	 * @internal
+	 */
+	public function removeEducationEditionContent() : void{
+		$changed = false;
+		foreach($this->builtInEducationEntryIndexes as $index => $_){
+			if(isset($this->creative[$index])){
+				unset($this->creative[$index]);
+				$changed = true;
+			}
+		}
+		$this->builtInEducationEntryIndexes = [];
+		if($changed){
+			$this->onContentChange();
+		}
 	}
 
 	/**
@@ -139,6 +173,7 @@ final class CreativeInventory{
 		$index = $this->getItemIndex($item);
 		if($index !== -1){
 			unset($this->creative[$index]);
+			unset($this->builtInEducationEntryIndexes[$index]);
 			$this->onContentChange();
 		}
 	}

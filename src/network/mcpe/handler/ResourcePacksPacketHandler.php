@@ -107,6 +107,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 		private array $encryptionKeys,
 		private bool $mustAccept,
 		private bool $forceDisableVibrantVisuals,
+		private bool $educationContentEnabled,
 		private \Closure $completionCallback
 	){
 		$this->requestQueue = new \SplQueue();
@@ -218,7 +219,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 					return new ResourcePackStackEntry($pack->getPackId(), $pack->getPackVersion(), ""); //TODO: subpacks
 				}, $this->resourcePackStack);
 
-				if($this->session->getProtocolId() < ProtocolInfo::PROTOCOL_1_26_0){
+				if($this->session->getProtocolId() < ProtocolInfo::PROTOCOL_1_26_0 && $this->educationContentEnabled){
 					foreach(self::CHEMISTRY_RESOURCE_PACKS as [$uuid, $version]){
 						$stack[] = new ResourcePackStackEntry($uuid, $version, "");
 					}

@@ -1147,6 +1147,10 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::ITEMGROUP_NAME_CHALKBOARD, []);
 	}
 
+	public static function itemGroup_name_chemistrytable() : Translatable{
+		return new Translatable(KnownTranslationKeys::ITEMGROUP_NAME_CHEMISTRYTABLE, []);
+	}
+
 	public static function itemGroup_name_chest() : Translatable{
 		return new Translatable(KnownTranslationKeys::ITEMGROUP_NAME_CHEST, []);
 	}
@@ -1193,6 +1197,10 @@ final class KnownTranslationFactory{
 
 	public static function itemGroup_name_dye() : Translatable{
 		return new Translatable(KnownTranslationKeys::ITEMGROUP_NAME_DYE, []);
+	}
+
+	public static function itemGroup_name_element() : Translatable{
+		return new Translatable(KnownTranslationKeys::ITEMGROUP_NAME_ELEMENT, []);
 	}
 
 	public static function itemGroup_name_enchantedBook() : Translatable{
