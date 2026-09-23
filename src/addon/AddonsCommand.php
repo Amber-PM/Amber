@@ -61,7 +61,7 @@ final class AddonsCommand extends Command{
 				foreach($packs as $pack){
 					$sender->sendMessage(TF::GRAY . "- " . TF::WHITE . $pack->getName() . TF::GRAY . " v" . $pack->getVersionString() . " (" . ($pack->isResourcePack() ? "resource" : "behavior") . ", " . $pack->getSource() . ")");
 				}
-				$sender->sendMessage(TF::GRAY . count($this->manager->getItemDefinitions()) . " items, " . count($this->manager->getBlockDefinitions()) . " blocks, " . count($this->manager->getEntityDefinitions()) . " entities");
+				$sender->sendMessage(TF::GRAY . count($this->manager->getItemDefinitions()) . " items, " . count($this->manager->getBlockDefinitions()) . " blocks, " . count($this->manager->getEntityDefinitions()) . " entities, " . $this->manager->getRecipeCount() . " recipes");
 				return true;
 			case "items":
 				$this->listIds($sender, "Items", array_keys($this->manager->getItemDefinitions()));

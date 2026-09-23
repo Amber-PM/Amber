@@ -33,6 +33,7 @@ use pocketmine\addon\item\AddonFoodItem;
 use pocketmine\addon\item\AddonItem;
 use pocketmine\addon\item\AddonItemDefinition;
 use pocketmine\block\Block;
+use pocketmine\crafting\CraftingManager;
 use pocketmine\block\BlockBreakInfo;
 use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockToolType;
@@ -131,6 +132,9 @@ final class AddonManager{
 
 	/** @var array<string, list<\Closure>> */
 	private array $itemUseHandlers = [];
+	/** @var list<array{0: string, 1: string}> source label and path of every behavior pack recipe file */
+	private array $recipeFiles = [];
+	private int $recipeCount = 0;
 	/** @var array<string, list<\Closure>> */
 	private array $blockInteractHandlers = [];
 
@@ -344,7 +348,7 @@ final class AddonManager{
 
 	private function readBehaviorPack(AddonPack $pack) : void{
 		$unsupported = [];
-		foreach(["scripts" => "scripts", "loot_tables" => "loot tables", "recipes" => "recipes", "spawn_rules" => "spawn rules", "trading" => "trades", "functions" => "functions"] as $dir => $label){
+		foreach(["scripts" => "scripts", "loot_tables" => "loot tables", "spawn_rules" => "spawn rules", "trading" => "trades", "functions" => "functions"] as $dir => $label){
 			if(is_dir(Path::join($pack->getPath(), $dir))){
 				$unsupported[] = $label;
 			}
@@ -354,6 +358,9 @@ final class AddonManager{
 		}
 
 		$vanillaOverrides = [];
+		foreach($this->jsonFiles(Path::join($pack->getPath(), "recipes")) as $file){
+			$this->recipeFiles[] = [$pack->getName() . "/" . Path::makeRelative($file, $pack->getPath()), $file];
+		}
 		foreach(["items" => "item", "blocks" => "block", "entities" => "entity"] as $dir => $kind){
 			foreach($this->jsonFiles(Path::join($pack->getPath(), $dir)) as $file){
 				$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
@@ -585,6 +592,32 @@ final class AddonManager{
 			$this->blockNumericIds[$name] = self::BLOCK_NUMERIC_ID_BASE + $i;
 		}
 	}
+
+	/**
+	 * Registers the add-ons' recipes. Runs once the crafting manager exists, after every add-on item and block is
+	 * registered, so recipes can use items from any add-on.
+	 */
+	public function registerRecipes(CraftingManager $manager) : void{
+		if($this->recipeFiles === []){
+			return;
+		}
+		$recipes = new AddonRecipes($manager);
+		foreach($this->recipeFiles as [$source, $file]){
+			try{
+				$recipes->register(AddonJson::decode((string) file_get_contents($file), $source), $source);
+			}catch(AddonException $e){
+				$this->logger->error("Skipped recipe " . $e->getMessage());
+			}
+		}
+		foreach($recipes->getErrors() as $error){
+			$this->logger->warning("Skipped recipe $error");
+		}
+		$this->recipeCount = $recipes->getRegisteredCount();
+		$this->logger->info("Registered " . $recipes->getRegisteredCount() . " add-on recipe(s)" . ($recipes->getUnsupportedCount() > 0
+			? ", skipped " . $recipes->getUnsupportedCount() . " of a type the server does not support (brewing, smithing transforms, other stations)" : ""));
+	}
+
+	public function getRecipeCount() : int{ return $this->recipeCount; }
 
 	/** Warns once per pack about components the client is not sent because the loader does not know them. */
 	private function reportUnsentComponents() : void{
