@@ -347,8 +347,12 @@ final class AddonManager{
 		$fingerprint = hash_final($ctx);
 
 		$safeVersion = $pack->getVersionString() === "" ? "0" : $pack->getVersionString();
-		$zipPath = Path::join($this->path, ".cache", "packs", $pack->getUuid() . "_" . $safeVersion . "_" . $fingerprint . ".mcpack");
-		@mkdir(Path::getDirectory($zipPath), 0777, true);
+		$cacheDir = Path::join($this->path, ".cache", "packs");
+		$zipPath = Path::join($cacheDir, $pack->getUuid() . "_" . $safeVersion . "_" . $fingerprint . ".mcpack");
+		if(!Path::isBasePath($cacheDir, $zipPath)){
+			throw new AddonException("pack cache path escapes cache directory");
+		}
+		@mkdir($cacheDir, 0777, true);
 		if(is_file($zipPath)){
 			return $zipPath;
 		}
