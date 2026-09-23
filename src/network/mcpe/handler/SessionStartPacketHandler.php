@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,9 +25,8 @@ namespace pocketmine\network\mcpe\handler;
 
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\NetworkSettingsPacket;
-use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\RequestNetworkSettingsPacket;
-use function in_array;
+use pocketmine\Server;
 
 final class SessionStartPacketHandler extends PacketHandler{
 
@@ -62,21 +61,6 @@ final class SessionStartPacketHandler extends PacketHandler{
 	}
 
 	protected function isCompatibleProtocol(int $protocolVersion) : bool{
-		if(!in_array($protocolVersion, ProtocolInfo::ACCEPTED_PROTOCOL, true)){
-			return false;
-		}
-
-		$configGroup = \pocketmine\Server::getInstance()->getConfigGroup();
-		$disabled = (array) $configGroup->getProperty("network.disabled-protocols", []);
-		if(in_array($protocolVersion, $disabled, true) || in_array((string) $protocolVersion, $disabled, true)){
-			return false;
-		}
-
-		$allowed = (array) $configGroup->getProperty("network.allowed-protocols", []);
-		if(count($allowed) > 0){
-			return in_array($protocolVersion, $allowed, true) || in_array((string) $protocolVersion, $allowed, true);
-		}
-
-		return true;
+		return Server::getInstance()->isProtocolAllowed($protocolVersion);
 	}
 }
