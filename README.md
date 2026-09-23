@@ -7,6 +7,7 @@
 
 <p align="center">
 	<a href="https://github.com/Amber-PM/Amber/releases/latest"><img alt="GitHub release (latest SemVer)" src="https://img.shields.io/github/v/release/Amber-PM/Amber?label=release&sort=semver"></a>
+	<a href="https://github.com/Amber-PM/Amber/releases"><img alt="Total GitHub release downloads" src="https://img.shields.io/github/downloads/Amber-PM/Amber/total?label=downloads"></a>
 	<a href="https://discord.gg/k55gScjTs3"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 	<a href="LICENSE"><img src="https://img.shields.io/badge/License-LGPL--3.0-blue.svg" alt="License" /></a>
 </p>
@@ -14,7 +15,7 @@
 ## What is AmberPM?
 **AmberPM** is a high-performance, production-ready fork of PocketMine-MP designed specifically for server networks that require simultaneous multi-version (MV) client compatibility. 
 
-Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorporates a dynamic protocol translation layer. This allows Minecraft: Bedrock Edition clients ranging from version **v1.20.0 (Protocol 589)** to **v1.26.30 (Protocol 1001)** to connect and play concurrently on the same server without requiring external proxies or translators
+Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorporates a dynamic protocol translation layer. This allows Minecraft: Bedrock Edition clients ranging from version **v1.20.0 (Protocol 589)** to **v1.26.50 (Protocol 2193)** to connect and play concurrently on the same server without requiring external proxies or translators
 
 ### Key Features
 * 🌐 **Dynamic Multi-Version Support** - Concurrently supports Minecraft: Bedrock protocols from **589 to 2193** (v1.20.0 to v1.26.50) out of the box.
