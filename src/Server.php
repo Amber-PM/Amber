@@ -27,6 +27,7 @@ declare(strict_types=1);
  */
 namespace pocketmine;
 
+use pocketmine\camera\preset\CameraPresetRegistry;
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
 use pocketmine\command\SimpleCommandMap;
@@ -1123,6 +1124,8 @@ class Server{
 				$this->forceShutdownExit();
 				return;
 			}
+
+			CameraPresetRegistry::getInstance()->freeze();
 
 			if(!$this->startupPrepareNetworkInterfaces()){
 				$this->forceShutdownExit();
