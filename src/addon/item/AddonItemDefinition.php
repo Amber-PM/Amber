@@ -26,9 +26,14 @@ namespace pocketmine\addon\item;
 use pocketmine\addon\AddonException;
 use pocketmine\addon\AddonJson;
 use pocketmine\inventory\CreativeCategory;
+use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\IntTag;
+use function array_filter;
 use function array_is_list;
+use function array_values;
 use function explode;
+use function in_array;
 use function is_array;
 use function is_numeric;
 use function is_string;
@@ -223,56 +228,69 @@ final class AddonItemDefinition{
 	 * item's behaviour and appearance from this, since it never sees the behavior pack itself.
 	 */
 	public function buildNetworkNbt(int $runtimeId) : CompoundTag{
-		$properties = CompoundTag::create()
-			->setInt("max_stack_size", $this->getMaxStackSize())
-			->setTag("minecraft:icon", CompoundTag::create()->setTag("textures", CompoundTag::create()->setString("default", $this->getIconTexture())))
-			->setInt("creative_category", self::categoryId($this->category))
-			->setString("creative_group", $this->group ?? "")
-			->setByte("hand_equipped", (bool) AddonJson::scalar($this->components["minecraft:hand_equipped"] ?? ($this->getKind() === self::KIND_TOOL)) ? 1 : 0)
-			->setByte("allow_off_hand", (bool) AddonJson::scalar($this->components["minecraft:allow_off_hand"] ?? false) ? 1 : 0)
-			->setByte("foil", (bool) AddonJson::scalar($this->components["minecraft:glint"] ?? false) ? 1 : 0)
-			->setByte("can_destroy_in_creative", (bool) AddonJson::scalar($this->components["minecraft:can_destroy_in_creative"] ?? true) ? 1 : 0);
-
-		$damage = $this->getAttackDamage();
-		if($damage > 0){
-			$properties->setInt("damage", $damage);
-		}
-		$enchantable = $this->components["minecraft:enchantable"] ?? null;
-		if(is_array($enchantable)){
-			$properties->setString("enchantable_slot", (string) ($enchantable["slot"] ?? "all"));
-			$properties->setInt("enchantable_value", (int) ($enchantable["value"] ?? 1));
-		}
-		$useModifiers = $this->components["minecraft:use_modifiers"] ?? null;
-		$food = $this->getFood();
-		if(is_array($useModifiers) && is_numeric($useModifiers["use_duration"] ?? null)){
-			$properties->setInt("use_duration", (int) round((float) $useModifiers["use_duration"] * 20));
-		}elseif($food !== null){
-			$properties->setInt("use_duration", 32);
-		}
-		$useAnimation = AddonJson::scalar($this->components["minecraft:use_animation"] ?? ($food !== null ? "eat" : null));
-		if(is_string($useAnimation)){
-			$properties->setInt("use_animation", match($useAnimation){ "eat" => 1, "drink" => 2, "bow" => 4, "block" => 5, "spear" => 6, default => 0 });
-		}
-
-		$components = CompoundTag::create()->setTag("item_properties", $properties);
+		$components = CompoundTag::create();
+		$properties = CompoundTag::create();
+		$unsent = [];
 		foreach($this->components as $name => $value){
 			$name = (string) $name;
-			if($name === "minecraft:icon"){
-				continue; //sent inside item_properties
+			if(!ItemComponentCodec::encode($name, $value, $components, $properties)){
+				$unsent[] = $name;
 			}
-			//components that are a bare value in JSON are {"value": x} on the network
-			if(!is_array($value) || array_is_list($value)){
-				$value = ["value" => $value];
+		}
+		$this->unsentComponents = $unsent;
+
+		//always present, whatever the JSON gave
+		$icon = $this->getIconTexture();
+		$properties->setTag("minecraft:icon", CompoundTag::create()
+			->setString("texture", $icon)
+			->setTag("textures", CompoundTag::create()->setString("default", $icon)));
+		$properties->setInt("max_stack_size", $this->getMaxStackSize());
+		$properties->setInt("creative_category", self::categoryId($this->category));
+		$properties->setString("creative_group", $this->group ?? "");
+		if(!$properties->getTag("hand_equipped") instanceof ByteTag){
+			$properties->setByte("hand_equipped", $this->getKind() === self::KIND_TOOL ? 1 : 0);
+		}
+		if(!$properties->getTag("can_destroy_in_creative") instanceof ByteTag){
+			$properties->setByte("can_destroy_in_creative", 1);
+		}
+		$food = $this->getFood();
+		if($food !== null){
+			if(!$properties->getTag("use_animation") instanceof IntTag){
+				$properties->setInt("use_animation", ItemComponentCodec::animation("eat"));
 			}
-			$components->setTag($name, AddonJson::toTag($value));
+			if(!$properties->getTag("use_duration") instanceof IntTag){
+				$properties->setInt("use_duration", 32);
+			}
 		}
 		if(!$components->getTag("minecraft:display_name") instanceof CompoundTag){
 			$components->setTag("minecraft:display_name", CompoundTag::create()->setString("value", $this->displayName));
 		}
+		$components->setTag("item_properties", $properties);
 
 		return CompoundTag::create()
 			->setTag("components", $components)
 			->setInt("id", $runtimeId)
 			->setString("name", $this->identifier);
+	}
+
+	/** @var list<string>|null */
+	private ?array $unsentComponents = null;
+
+	/**
+	 * JSON components the client is not sent: server-only ones (tags, repairable, script components...) and
+	 * ones the codec does not know. Filled when the network NBT is built.
+	 *
+	 * @return list<string>
+	 */
+	public function getUnsentComponents() : array{
+		if($this->unsentComponents === null){
+			$this->buildNetworkNbt(0);
+		}
+		return $this->unsentComponents ?? [];
+	}
+
+	/** Of the unsent components, those that are not simply server-only: they may change how the item looks or works. */
+	public function getUnknownComponents() : array{
+		return array_values(array_filter($this->getUnsentComponents(), static fn(string $name) : bool => !in_array($name, ItemComponentCodec::SERVER_ONLY, true)));
 	}
 }

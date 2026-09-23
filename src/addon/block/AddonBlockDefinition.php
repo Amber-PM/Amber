@@ -51,6 +51,13 @@ use function range;
 use function round;
 use function str_replace;
 use function ucwords;
+use pocketmine\nbt\NBT;
+use function array_filter;
+use function array_reverse;
+use function array_unique;
+use function array_values;
+use function min;
+use function strtolower;
 
 /**
  * A custom block read from a behavior pack's blocks/*.json ("minecraft:block").
@@ -296,59 +303,121 @@ final class AddonBlockDefinition{
 		return true;
 	}
 
+	/** First protocol with the 1.21.130 block component format (collision "boxes", int light values). */
+	public const PROTOCOL_BOXES = 898;
+
+	/** Block components read by the server only. */
+	public const SERVER_ONLY = [
+		"minecraft:loot", "minecraft:tick", "minecraft:queued_ticking", "minecraft:random_ticking", "minecraft:custom_components",
+		"minecraft:destruction_particles", "minecraft:entity_fall_on", "minecraft:redstone_conductivity",
+	];
+
+	/** @var list<string>|null */
+	private ?array $unsentComponents = null;
+
 	/**
-	 * This block's entry in the StartGamePacket block palette. The client builds the block's model,
-	 * collision, lighting and permutations from it.
+	 * This block's entry in the StartGamePacket block palette, for one client protocol. The client builds the
+	 * block's model, collision, lighting and permutations from it.
+	 *
+	 * Shapes follow CustomiesDevs/Customies (MIT, 1.21.x clients) and df-mc/dragonfly (1.21.130+ clients).
+	 * 1.21.130 changed the collision box to a list of min/max boxes and light values to ints.
+	 *
+	 * @param int $blockId the client-order id (see AddonManager: FNV-1 64 order of block names)
 	 */
-	public function buildPaletteNbt(int $numericId) : CompoundTag{
+	public function buildPaletteNbt(int $blockId, int $protocolId) : CompoundTag{
+		$unsent = [];
+		$components = self::convertComponents($this->components, true, $protocolId, $unsent, $this->identifier);
+
+		$permutations = [];
+		foreach($this->permutations as $permutation){
+			$json = is_array($permutation["components"] ?? null) ? $permutation["components"] : [];
+			$permutations[] = CompoundTag::create()
+				->setString("condition", (string) $permutation["condition"])
+				->setTag("components", self::convertComponents($json, false, $protocolId, $unsent, $this->identifier));
+		}
+		$this->unsentComponents = array_values(array_unique($unsent));
+
+		if($permutations !== [] || $this->customStates !== []){
+			//lets the client predict placement of a block whose look depends on its state
+			$components->setTag("minecraft:on_player_placing", CompoundTag::create()->setString("triggerType", "placement_trigger"));
+		}
+		if(!$components->getTag("minecraft:display_name") instanceof CompoundTag){
+			$components->setTag("minecraft:display_name", CompoundTag::create()->setString("value", $this->displayName));
+		}
+		$category = strtolower($this->category->name);
+		$components->setTag("minecraft:creative_category", CompoundTag::create()->setString("category", $category)->setString("group", $this->group ?? ""));
+
+		$root = CompoundTag::create()
+			->setTag("components", $components)
+			->setTag("menu_category", CompoundTag::create()
+				->setString("category", $category)
+				->setString("group", $this->group ?? "")
+				->setByte("is_hidden_in_commands", $this->hiddenInCommands ? 1 : 0))
+			->setInt("molangVersion", 10)
+			->setTag("vanilla_block_data", CompoundTag::create()->setInt("block_id", $blockId));
+
+		//custom states, in the reverse of the order their permutations are generated in (the client expands
+		//the list the other way round; see getPermutationValues())
 		$properties = [];
-		foreach($this->customStates as $name => $values){
+		foreach(array_reverse($this->customStateNamesInOrder()) as $name){
 			$enum = [];
-			foreach($values as $value){
+			foreach($this->customStates[$name] as $value){
 				$enum[] = self::stateValueTag($value);
 			}
 			$properties[] = CompoundTag::create()->setString("name", $name)->setTag("enum", new ListTag($enum));
 		}
-
-		$permutations = [];
-		foreach($this->permutations as $permutation){
-			$components = is_array($permutation["components"] ?? null) ? $permutation["components"] : [];
-			$permutations[] = CompoundTag::create()
-				->setString("condition", (string) $permutation["condition"])
-				->setTag("components", self::convertComponents($components, false));
+		if($properties !== []){
+			$root->setTag("properties", new ListTag($properties));
+		}
+		if($permutations !== []){
+			$root->setTag("permutations", new ListTag($permutations));
 		}
 
 		$traits = [];
 		foreach($this->traits as $name => $trait){
 			$enabled = CompoundTag::create();
-			foreach(is_array($trait["enabled_states"] ?? null) ? $trait["enabled_states"] : [] as $stateName){
-				if(is_string($stateName)){
-					$enabled->setByte(explode(":", $stateName, 2)[1] ?? $stateName, 1);
-				}
+			$wanted = is_array($trait["enabled_states"] ?? null) ? $trait["enabled_states"] : [];
+			foreach(self::TRAIT_FLAGS[$name] ?? [] as $stateName){
+				$enabled->setByte(explode(":", $stateName, 2)[1], in_array($stateName, $wanted, true) ? 1 : 0);
 			}
 			$tag = CompoundTag::create()->setString("name", $name)->setTag("enabled_states", $enabled);
-			if(is_numeric($trait["y_rotation_offset"] ?? null)){
-				$tag->setFloat("y_rotation_offset", (float) $trait["y_rotation_offset"]);
+			if($name === "minecraft:placement_direction"){
+				$tag->setFloat("y_rotation_offset", is_numeric($trait["y_rotation_offset"] ?? null) ? (float) $trait["y_rotation_offset"] : 0.0);
 			}
 			$traits[] = $tag;
 		}
-
-		$components = self::convertComponents($this->components, true);
-		if(!$components->getTag("minecraft:display_name") instanceof CompoundTag){
-			$components->setTag("minecraft:display_name", CompoundTag::create()->setString("value", $this->displayName));
+		if($traits !== []){
+			$root->setTag("traits", new ListTag($traits));
 		}
+		return $root;
+	}
 
-		return CompoundTag::create()
-			->setTag("components", $components)
-			->setTag("menu_category", CompoundTag::create()
-				->setString("category", strtolower($this->category->name))
-				->setString("group", $this->group ?? "")
-				->setByte("is_hidden_in_commands", $this->hiddenInCommands ? 1 : 0))
-			->setInt("molangVersion", 12)
-			->setTag("properties", new ListTag($properties))
-			->setTag("permutations", new ListTag($permutations))
-			->setTag("traits", new ListTag($traits))
-			->setTag("vanilla_block_data", CompoundTag::create()->setInt("block_id", $numericId));
+	/** Trait => every state flag the client expects in enabled_states. */
+	private const TRAIT_FLAGS = [
+		"minecraft:placement_direction" => ["minecraft:cardinal_direction", "minecraft:facing_direction"],
+		"minecraft:placement_position" => ["minecraft:block_face", "minecraft:vertical_half"],
+	];
+
+	/**
+	 * JSON components the client is not sent (server-only ones and unknown ones). Filled by buildPaletteNbt().
+	 *
+	 * @return list<string>
+	 */
+	public function getUnsentComponents() : array{
+		if($this->unsentComponents === null){
+			$this->buildPaletteNbt(0, self::PROTOCOL_BOXES);
+		}
+		return $this->unsentComponents ?? [];
+	}
+
+	/** @return list<string> unsent components that are not simply server-only */
+	public function getUnknownComponents() : array{
+		return array_values(array_filter($this->getUnsentComponents(), static fn(string $name) : bool => !in_array($name, self::SERVER_ONLY, true)));
+	}
+
+	/** @return list<string> custom state names, in the order getPermutationValues() nests them */
+	private function customStateNamesInOrder() : array{
+		return array_values(array_filter(array_keys($this->states), fn(string $name) : bool => isset($this->customStates[$name])));
 	}
 
 	private static function stateValueTag(int|string|bool $value) : Tag{
@@ -360,83 +429,156 @@ final class AddonBlockDefinition{
 	}
 
 	/**
-	 * Block components in the shape the client reads them from the palette. A few components are written
-	 * differently in JSON than on the network; everything else is converted as-is.
+	 * Block components in the network form, for one protocol.
 	 *
-	 * @param mixed[] $components
+	 * @param mixed[]      $components
+	 * @param list<string> $unsent     receives the names not sent
 	 */
-	private static function convertComponents(array $components, bool $base) : CompoundTag{
+	private static function convertComponents(array $components, bool $base, int $protocolId, array &$unsent, string $identifier) : CompoundTag{
+		$boxes = $protocolId >= self::PROTOCOL_BOXES;
 		$out = CompoundTag::create();
 		foreach($components as $name => $value){
 			$name = (string) $name;
 			switch($name){
+				case "minecraft:unit_cube":
+					$out->setTag("minecraft:geometry", self::geometry("minecraft:geometry.full_block"));
+					break;
 				case "minecraft:geometry":
-					$geometry = is_string($value) ? ["identifier" => $value] : (is_array($value) ? $value : []);
-					$tag = CompoundTag::create()
-						->setString("identifier", (string) ($geometry["identifier"] ?? "minecraft:geometry.full_block"))
-						->setString("culling", (string) ($geometry["culling"] ?? ""))
-						->setTag("bone_visibility", self::boneVisibility($geometry["bone_visibility"] ?? []));
-					$out->setTag($name, $tag);
+					$out->setTag($name, self::geometry($value));
 					break;
 				case "minecraft:material_instances":
 					$out->setTag($name, self::materialInstances(is_array($value) ? $value : []));
 					break;
 				case "minecraft:collision_box":
+					$list = self::boxes($value);
+					if($boxes){
+						$tags = [];
+						foreach($list["boxes"] as [$origin, $size]){
+							$tags[] = CompoundTag::create()
+								->setFloat("minX", $origin[0] + 8)->setFloat("minY", $origin[1])->setFloat("minZ", $origin[2] + 8)
+								->setFloat("maxX", $origin[0] + 8 + $size[0])->setFloat("maxY", $origin[1] + $size[1])->setFloat("maxZ", $origin[2] + 8 + $size[2]);
+						}
+						$out->setTag($name, CompoundTag::create()->setByte("enabled", $list["enabled"] ? 1 : 0)->setTag("boxes", new ListTag($tags, NBT::TAG_Compound)));
+					}else{
+						//before 1.21.130 there is one box: the first (packs for older clients only have one)
+						[$origin, $size] = $list["boxes"][0] ?? [[-8.0, 0.0, -8.0], [16.0, 16.0, 16.0]];
+						$out->setTag($name, self::originSize($list["enabled"], $origin, $size));
+					}
+					break;
 				case "minecraft:selection_box":
-					$box = self::box($value);
-					$out->setTag($name, CompoundTag::create()
-						->setByte("enabled", $box["enabled"] ? 1 : 0)
-						->setTag("origin", new ListTag([new FloatTag($box["origin"][0]), new FloatTag($box["origin"][1]), new FloatTag($box["origin"][2])]))
-						->setTag("size", new ListTag([new FloatTag($box["size"][0]), new FloatTag($box["size"][1]), new FloatTag($box["size"][2])])));
+					$list = self::boxes($value);
+					[$origin, $size] = $list["boxes"][0] ?? [[-8.0, 0.0, -8.0], [16.0, 16.0, 16.0]];
+					$out->setTag($name, self::originSize($list["enabled"], $origin, $size));
 					break;
 				case "minecraft:light_emission":
-					$out->setTag($name, CompoundTag::create()->setByte("emission", (int) AddonJson::scalar($value, "emission")));
+					$level = max(0, min(15, (int) AddonJson::scalar($value, "emission")));
+					$out->setTag($name, $boxes ? CompoundTag::create()->setInt("emission", $level) : CompoundTag::create()->setByte("emission", $level));
 					break;
 				case "minecraft:light_dampening":
-					$out->setTag($name, CompoundTag::create()->setByte("lightLevel", (int) AddonJson::scalar($value, "lightLevel")));
+					$level = max(0, min(15, (int) AddonJson::scalar($value, "lightLevel")));
+					$out->setTag($name, $boxes ? CompoundTag::create()->setInt("lightLevel", $level) : CompoundTag::create()->setByte("lightLevel", $level));
 					break;
 				case "minecraft:destructible_by_mining":
-					$seconds = $value === false ? -1.0 : (is_array($value) && is_numeric($value["seconds_to_destroy"] ?? null) ? (float) $value["seconds_to_destroy"] : 0.0);
+					$seconds = $value === false ? -1.0 : (is_array($value) && is_numeric($value["seconds_to_destroy"] ?? null) ? (float) $value["seconds_to_destroy"] : (is_numeric($value) ? (float) $value : 0.0));
 					$out->setTag($name, CompoundTag::create()->setFloat("value", $seconds));
 					break;
 				case "minecraft:destructible_by_explosion":
-					$resistance = $value === false ? -1.0 : (is_array($value) && is_numeric($value["explosion_resistance"] ?? null) ? (float) $value["explosion_resistance"] : 0.0);
-					$out->setTag($name, CompoundTag::create()->setFloat("explosion_resistance", $resistance));
+					$resistance = $value === false ? -1.0 : (is_array($value) && is_numeric($value["explosion_resistance"] ?? null) ? (float) $value["explosion_resistance"] : (is_numeric($value) ? (float) $value : 0.0));
+					//older clients read "value" (Customies), the current format names it; both are sent
+					$out->setTag($name, CompoundTag::create()->setFloat("value", $resistance)->setFloat("explosion_resistance", $resistance));
 					break;
 				case "minecraft:friction":
 					$out->setTag($name, CompoundTag::create()->setFloat("value", (float) AddonJson::scalar($value)));
 					break;
+				case "minecraft:flammable":
+					$catch = is_array($value) ? (int) ($value["catch_chance_modifier"] ?? 5) : ($value === false ? 0 : 5);
+					$destroy = is_array($value) ? (int) ($value["destroy_chance_modifier"] ?? 20) : ($value === false ? 0 : 20);
+					//key names differ between client generations (Customies / dragonfly); both are sent
+					$out->setTag($name, CompoundTag::create()
+						->setInt("catch_chance_modifier", $catch)->setInt("destroy_chance_modifier", $destroy)
+						->setInt("flame_odds", $catch)->setInt("burn_odds", $destroy));
+					break;
 				case "minecraft:display_name":
+					$out->setTag($name, CompoundTag::create()->setString("value", (string) AddonJson::scalar($value)));
+					break;
+				case "minecraft:map_color":
+					$color = is_array($value) ? ($value["color"] ?? $value["value"] ?? "") : $value;
+					$out->setTag($name, CompoundTag::create()->setString("value", is_string($color) ? $color : ""));
+					break;
+				case "minecraft:breathability":
 					$out->setTag($name, CompoundTag::create()->setString("value", (string) AddonJson::scalar($value)));
 					break;
 				case "minecraft:transformation":
 					$out->setTag($name, self::transformation(is_array($value) ? $value : []));
 					break;
 				default:
-					if(!is_array($value) || array_is_list($value)){
-						$value = ["value" => $value];
-					}
-					$out->setTag($name, AddonJson::toTag($value));
+					$unsent[] = $name;
 			}
 		}
-		if($base && !$out->getTag("minecraft:material_instances") instanceof CompoundTag && !$out->getTag("minecraft:geometry") instanceof CompoundTag){
-			//no model given: a unit cube textured from terrain_texture.json under the block's short name
-			$out->setTag("minecraft:unit_cube", CompoundTag::create());
+		if($base && !$out->getTag("minecraft:geometry") instanceof CompoundTag){
+			//no model given: a full block, textured from terrain_texture.json under the block's short name
+			$out->setTag("minecraft:geometry", self::geometry("minecraft:geometry.full_block"));
+			if(!$out->getTag("minecraft:material_instances") instanceof CompoundTag){
+				$out->setTag("minecraft:material_instances", self::materialInstances(["*" => ["texture" => explode(":", $identifier, 2)[1], "render_method" => "opaque"]]));
+			}
 		}
 		return $out;
 	}
 
-	private static function boneVisibility(mixed $bones) : CompoundTag{
-		$tag = CompoundTag::create();
-		foreach(is_array($bones) ? $bones : [] as $bone => $visible){
+	private static function geometry(mixed $value) : CompoundTag{
+		$geometry = is_string($value) ? ["identifier" => $value] : (is_array($value) ? $value : []);
+		$bones = CompoundTag::create();
+		foreach(is_array($geometry["bone_visibility"] ?? null) ? $geometry["bone_visibility"] : [] as $bone => $visible){
 			if(is_bool($visible)){
-				$tag->setByte((string) $bone, $visible ? 1 : 0);
+				$bones->setFloat((string) $bone, $visible ? 1.0 : 0.0);
 			}elseif(is_string($visible)){
-				//molang condition: the client evaluates it
-				$tag->setString((string) $bone, $visible);
+				//molang: the client evaluates it
+				$bones->setTag((string) $bone, CompoundTag::create()->setString("expression", $visible)->setShort("version", 12));
 			}
 		}
-		return $tag;
+		return CompoundTag::create()
+			->setTag("bone_visibility", $bones)
+			->setString("culling", is_string($geometry["culling"] ?? null) ? $geometry["culling"] : "")
+			->setString("identifier", is_string($geometry["identifier"] ?? null) ? $geometry["identifier"] : "minecraft:geometry.full_block");
+	}
+
+	/**
+	 * A collision or selection box in JSON: true/false, one {"origin", "size"}, or (1.21.130+) a list of them.
+	 *
+	 * @return array{enabled: bool, boxes: list<array{0: array{float, float, float}, 1: array{float, float, float}}>}
+	 */
+	private static function boxes(mixed $value) : array{
+		if($value === false){
+			return ["enabled" => false, "boxes" => []];
+		}
+		if(!is_array($value)){
+			return ["enabled" => true, "boxes" => [[[-8.0, 0.0, -8.0], [16.0, 16.0, 16.0]]]];
+		}
+		$list = array_is_list($value) ? $value : [$value];
+		$out = [];
+		foreach($list as $box){
+			if(!is_array($box)){
+				continue;
+			}
+			$origin = is_array($box["origin"] ?? null) ? $box["origin"] : [-8, 0, -8];
+			$size = is_array($box["size"] ?? null) ? $box["size"] : [16, 16, 16];
+			$out[] = [
+				[(float) ($origin[0] ?? -8), (float) ($origin[1] ?? 0), (float) ($origin[2] ?? -8)],
+				[(float) ($size[0] ?? 16), (float) ($size[1] ?? 16), (float) ($size[2] ?? 16)],
+			];
+		}
+		return ["enabled" => $out !== [], "boxes" => $out];
+	}
+
+	/**
+	 * @param array{float, float, float} $origin
+	 * @param array{float, float, float} $size
+	 */
+	private static function originSize(bool $enabled, array $origin, array $size) : CompoundTag{
+		return CompoundTag::create()
+			->setByte("enabled", $enabled ? 1 : 0)
+			->setTag("origin", new ListTag([new FloatTag($origin[0]), new FloatTag($origin[1]), new FloatTag($origin[2])]))
+			->setTag("size", new ListTag([new FloatTag($size[0]), new FloatTag($size[1]), new FloatTag($size[2])]));
 	}
 
 	/** @param mixed[] $instances */
@@ -453,20 +595,17 @@ final class AddonBlockDefinition{
 			if(!is_array($material)){
 				continue;
 			}
+			$ao = $material["ambient_occlusion"] ?? true;
 			$tag = CompoundTag::create()
-				->setString("texture", (string) ($material["texture"] ?? ""))
-				->setString("render_method", (string) ($material["render_method"] ?? "opaque"));
-			if(isset($material["face_dimming"])){
-				$tag->setByte("face_dimming", (bool) $material["face_dimming"] ? 1 : 0);
-			}
-			if(isset($material["ambient_occlusion"])){
-				$ao = $material["ambient_occlusion"];
-				is_bool($ao) ? $tag->setByte("ambient_occlusion", $ao ? 1 : 0) : $tag->setFloat("ambient_occlusion", (float) $ao);
-			}
+				->setString("texture", is_string($material["texture"] ?? null) ? $material["texture"] : "")
+				->setString("render_method", is_string($material["render_method"] ?? null) ? $material["render_method"] : "opaque")
+				->setByte("face_dimming", (bool) ($material["face_dimming"] ?? true) ? 1 : 0)
+				//1.21.80 JSON allows an occlusion strength; clients read a flag
+				->setByte("ambient_occlusion", (is_numeric($ao) ? (float) $ao > 0 : (bool) $ao) ? 1 : 0);
 			if(isset($material["isotropic"])){
 				$tag->setByte("isotropic", (bool) $material["isotropic"] ? 1 : 0);
 			}
-			if(isset($material["tint_method"]) && is_string($material["tint_method"])){
+			if(is_string($material["tint_method"] ?? null)){
 				$tag->setString("tint_method", $material["tint_method"]);
 			}
 			$materials->setTag($face, $tag);
@@ -480,9 +619,9 @@ final class AddonBlockDefinition{
 		$scale = is_array($value["scale"] ?? null) ? $value["scale"] : [1, 1, 1];
 		$translation = is_array($value["translation"] ?? null) ? $value["translation"] : [0, 0, 0];
 		return CompoundTag::create()
-			->setInt("RX", (int) round(((float) ($rotation[0] ?? 0)) / 90) % 4)
-			->setInt("RY", (int) round(((float) ($rotation[1] ?? 0)) / 90) % 4)
-			->setInt("RZ", (int) round(((float) ($rotation[2] ?? 0)) / 90) % 4)
+			->setInt("RX", ((int) round(((float) ($rotation[0] ?? 0)) / 90) % 4 + 4) % 4)
+			->setInt("RY", ((int) round(((float) ($rotation[1] ?? 0)) / 90) % 4 + 4) % 4)
+			->setInt("RZ", ((int) round(((float) ($rotation[2] ?? 0)) / 90) % 4 + 4) % 4)
 			->setFloat("SX", (float) ($scale[0] ?? 1))
 			->setFloat("SY", (float) ($scale[1] ?? 1))
 			->setFloat("SZ", (float) ($scale[2] ?? 1))
