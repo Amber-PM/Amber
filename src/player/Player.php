@@ -29,6 +29,7 @@ use pocketmine\block\BlockTypeTags;
 use pocketmine\block\RespawnAnchor;
 use pocketmine\block\UnknownBlock;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\camera\PlayerCamera;
 use pocketmine\command\CommandSender;
 use pocketmine\crafting\CraftingGrid;
 use pocketmine\data\java\GameModeIdMap;
@@ -333,6 +334,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	// self-attached shapes: [ShapeHandle, Shape, Vector3 offset][] — position-tracked because Bedrock doesn't render attachedToEntityId for the local player
 	private array $selfAttachedShapes = [];
 
+	private PlayerCamera $camera;
+
 	public function __construct(Server $server, NetworkSession $session, PlayerInfo $playerInfo, bool $authenticated, Location $spawnLocation, ?CompoundTag $namedtag){
 		$username = TextFormat::clean($playerInfo->getUsername());
 		$this->logger = new \PrefixedLogger($server->getLogger(), "Player: $username");
@@ -426,6 +429,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if(($world = $this->server->getWorldManager()->getWorldByName($nbt->getString(self::TAG_DEATH_WORLD, ""))) instanceof World){
 			$this->deathPosition = new Position($nbt->getInt(self::TAG_DEATH_X), $nbt->getInt(self::TAG_DEATH_Y), $nbt->getInt(self::TAG_DEATH_Z), $world);
 		}
+
+		$this->camera = new PlayerCamera($this);
 	}
 
 	public function getLeaveMessage() : Translatable|string{
@@ -438,6 +443,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 	public function isAuthenticated() : bool{
 		return $this->authenticated;
+	}
+
+	public function getCamera() : PlayerCamera{
+		return $this->camera;
 	}
 
 	/**
