@@ -876,7 +876,7 @@
             "dist": {
                 "type": "path",
                 "url": "../BedrockData",
-                "reference": "e4d2f1c079e959e80df13a07a835f99542a7c364"
+                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b"
             },
             "type": "library",
             "license": [
