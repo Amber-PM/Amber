@@ -2071,6 +2071,98 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WHITELIST_DESCRIPTION, []);
 	}
 
+	public static function pocketmine_command_world_description() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_DESCRIPTION, []);
+	}
+
+	public static function pocketmine_command_world_list_loaded(Translatable|string $param0, Translatable|string $param1) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LIST_LOADED, [
+			0 => $param0,
+			1 => $param1,
+		]);
+	}
+
+	public static function pocketmine_command_world_list_unloaded(Translatable|string $param0, Translatable|string $param1) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LIST_UNLOADED, [
+			0 => $param0,
+			1 => $param1,
+		]);
+	}
+
+	public static function pocketmine_command_world_load_alreadyLoaded(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LOAD_ALREADYLOADED, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_load_error(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LOAD_ERROR, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_load_notFound(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LOAD_NOTFOUND, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_load_success(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_LOAD_SUCCESS, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_tp_cancelled(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_TP_CANCELLED, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_tp_error(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_TP_ERROR, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_tp_notLoaded(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_TP_NOTLOADED, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_tp_success(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_TP_SUCCESS, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_unload_default() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_UNLOAD_DEFAULT, []);
+	}
+
+	public static function pocketmine_command_world_unload_error(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_UNLOAD_ERROR, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_unload_notLoaded(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_UNLOAD_NOTLOADED, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_unload_success(Translatable|string $param0) : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_UNLOAD_SUCCESS, [
+			0 => $param0,
+		]);
+	}
+
+	public static function pocketmine_command_world_usage() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WORLD_USAGE, []);
+	}
+
 	public static function pocketmine_command_xp_description() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_XP_DESCRIPTION, []);
 	}
@@ -2587,6 +2679,10 @@ final class KnownTranslationFactory{
 
 	public static function pocketmine_permission_command_whitelist_remove() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_WHITELIST_REMOVE, []);
+	}
+
+	public static function pocketmine_permission_command_world() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_WORLD, []);
 	}
 
 	public static function pocketmine_permission_command_xp_other() : Translatable{
