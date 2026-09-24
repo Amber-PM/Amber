@@ -35,6 +35,7 @@ use pocketmine\addon\entity\ai\goal\MoveTowardsTargetGoal;
 use pocketmine\addon\entity\ai\goal\NearestAttackableTargetGoal;
 use pocketmine\addon\entity\ai\goal\OwnerDefendGoal;
 use pocketmine\addon\entity\ai\goal\PanicGoal;
+use pocketmine\addon\entity\ai\goal\PickupItemsGoal;
 use pocketmine\addon\entity\ai\goal\RandomLookAroundGoal;
 use pocketmine\addon\entity\ai\goal\RandomStrollGoal;
 use pocketmine\addon\entity\ai\goal\RangedAttackGoal;
@@ -141,6 +142,7 @@ final class MobBrain{
 			"move_towards_target" => $simple(MoveTowardsTargetGoal::class),
 			"breed" => $simple(BreedGoal::class),
 			"stay_while_sitting" => $simple(StayWhileSittingGoal::class),
+			"pickup_items" => $simple(PickupItemsGoal::class),
 		];
 		self::$factories = [];
 		foreach($f as $name => $factory){

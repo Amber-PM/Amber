@@ -44,7 +44,8 @@ That's all. Add-ons are read at startup, so restart after adding, updating or re
 | Spawn rules | ✅ | Natural spawning around players: surface, underground, underwater, herds, biomes, light, height, density caps. |
 | Recipes | ✅ | Shaped, shapeless, stonecutter, furnace family, brewing (mix and container). |
 | Functions (`.mcfunction`) | ✅ | Through `/function`, `queue_command` and scripts. |
-| Trading, riding, leashing | ❌ | See [Not supported](#not-supported). |
+| Riding, leashing, trading, inventories | ✅ | Seats and steering, leads, villager-style trade screens, mob inventories and equipment, boss bars ([details](#riding-trading-and-inventories)). |
+| World | ✅ | Game rules, weather, scoreboards, ticking areas, structures from the pack, camera and fog ([details](#world-game-rules-weather-scoreboard-structures)). |
 
 Nothing is guessed at: whatever the server skips is named once in the console at startup (an unknown component,
 a behavior with no implementation, a recipe for an item PocketMine lacks), so you always know where you stand.
@@ -66,15 +67,21 @@ directly, so scripts always see the live world, and plugins see script changes i
   impulses and knockback, teleport, damage, dynamic properties, inventory, equipment, messages, titles,
   action bar, sounds, game mode, XP, spawn point, input permissions
 - `Block`, `BlockPermutation` (with states), `ItemStack` (name, lore, durability, enchantments), `Container`
-- `world.scoreboard` (saved, and shown on the sidebar, list or below names)
+- `world.scoreboard` (saved, shown on the sidebar, list or below names, and the same scoreboard `/scoreboard` uses)
+- `world.gameRules`, `dimension.getWeather()`/`setWeather()`, `world.structureManager` (`get`, `place`)
+- `player.camera` (`setCamera` with presets and easing, `fade`, `clear`, `setFov`, `clearFov`) and
+  `player.onScreenDisplay` HUD visibility
+- Entity components `rideable`, `riding`, `leashable`, `inventory` and `equippable` on add-on mobs
 - Dynamic properties for the world, entities and players (saved across restarts)
 - After events: spawn, death, hurt, hit, remove, player join/leave/spawn, block break/place, item use (and on
   a block), interactions with blocks and entities, chat, projectile hits, effects, game mode and dimension
-  changes, hotbar slot, explosions, data-driven entity events, `scriptEventReceive`, `worldLoad`
+  changes, hotbar slot, explosions, data-driven entity events, `itemStartUse`/`itemStopUse`/`itemReleaseUse`,
+  `weatherChange`, `scriptEventReceive`, `worldLoad`
 - Before events (cancellable): chat, block break, item use, interactions, effect add, game mode change,
   explosion, player leave, entity remove
 - Custom components: items (`onUse`, `onUseOn`, `onConsume`, `onHitEntity`, `onMineBlock`) and blocks
-  (`onPlayerInteract`, `onPlace`, `onPlayerBreak`/`onPlayerDestroy`), registered in `startup`/`worldInitialize`
+  (`onPlayerInteract`, `onPlace`, `onPlayerBreak`/`onPlayerDestroy`, `onTick` with `minecraft:tick`,
+  `onRandomTick`, `onStepOn`/`onStepOff`, `onEntityFallOn`), registered in `startup`/`worldInitialize`
 - Custom commands (`customCommandRegistry`), which become real server commands
 - `@minecraft/server-ui`: `ActionFormData`, `ModalFormData`, `MessageFormData`
 - `@minecraft/math`, `@minecraft/vanilla-data`, `@minecraft/common`
@@ -113,6 +120,26 @@ Add-on entities run their behavior pack definition as in the game:
 - **Looks**: `variant`, `mark_variant`, `skin_id`, `color`, `scale`, baby/tamed/sitting/saddled/chested/
   sheared/charged flags.
 
+### Riding, trading and inventories
+
+- **Riding** (`rideable`): seats with positions and rotation limits, `family_types`, `interact_text`, riders
+  pulled along. `input_ground_controlled` and `input_air_controlled` let the player in the controlling seat steer
+  with movement keys and jump; sneaking or leaving dismounts.
+- **Leashing** (`leashable`): a lead ties the mob to a player or another mob; it follows past `soft_distance`,
+  is pulled at `hard_distance`, and the lead breaks past `max_distance`.
+- **Inventories** (`inventory`): `inventory_size`, extra slots when chested, `private` and `restrict_to_owner`.
+  Players open them by sneak-interacting (or interacting with mobs that cannot be ridden). The contents are
+  saved with the mob and dropped when it dies.
+- **Equipment** (`equipment`): gear rolled from a loot table when the mob first spawns, with `slot_drop_chance`.
+  Held items and armour are shown to every client and saved.
+- **Trading** (`trade_table`, `economy_trade_table`): tiers unlocked by trader experience, groups with
+  `num_to_select`, `choice` items and quantity ranges. Players get the real trade screen (old or new style);
+  trades are checked on the server, count their uses and reward experience. The trader stops and looks at its
+  customer.
+- **Boss bars** (`boss`): shown to players within `hud_range`, following the mob's health.
+- **Picking up items** (`behavior.pickup_items` with `shareables` or `can_pickup_any_item`): into the inventory,
+  empty armour slots or hands.
+
 Filters cover the tests packs actually use: families, components, properties, variants, equipment, effects,
 health, distance to players, water/lava/fire, daylight and time, biomes and biome tags, brightness, altitude,
 difficulty, targets and owners, random chance, and more. A test the server cannot evaluate is reported once
@@ -125,11 +152,31 @@ and counts as false.
 `follow_owner`, `follow_mob`, `nearest_attackable_target`, `nearest_prioritized_attackable_target`,
 `hurt_by_target`, `owner_hurt_by_target`, `owner_hurt_target`, `melee_attack`, `melee_box_attack`,
 `delayed_attack`, `ranged_attack`, `avoid_mob_type`, `avoid_entity`, `leap_at_target`, `move_towards_target`,
-`breed`, `stay_while_sitting`.
+`breed`, `stay_while_sitting`, `pickup_items`.
 
 Walking mobs use A* pathfinding (step up, drop down, avoid lava, fire and cactus, walk through open doors, no corner
 cutting); flying and swimming mobs steer directly. Knockback and collisions still come from the normal entity
 physics. A behavior not in the list is named at startup, and a plugin can supply it (see below).
+
+## World: game rules, weather, scoreboard, structures
+
+Add-ons get the world features vanilla packs expect, shared between scripts, commands and plugins, and saved
+in `addons/.runtime/`:
+
+- **Game rules**: all vanilla rules can be read and set (`/gamerule`, `world.gameRules`). The server acts on
+  `pvp`, `keepinventory`, `showdeathmessages`, `falldamage`, `firedamage`, `drowningdamage`,
+  `naturalregeneration`, `domobloot`, `dotiledrops`, `domobspawning`, `mobgriefing`,
+  `tntexplodes`, `dofiretick`, `dodaylightcycle` and `doweathercycle`; rules the client displays
+  (coordinates, days played, immediate respawn...) are sent to it.
+- **Weather** per world: clear, rain and thunder with a duration, a natural cycle while `doweathercycle` is on,
+  and the `weatherChange` script event.
+- **Scoreboard**: objectives, scores for players, entities and fake names, display slots; one scoreboard for
+  scripts and `/scoreboard`.
+- **Ticking areas**: `/tickingarea add|remove|list` keep chunks loaded and ticking (up to 10 areas of 100 chunks).
+- **Structures**: `.mcstructure` files in the behavior pack are placed with `/structure load` or
+  `world.structureManager.place()`, block states upgraded to the running version.
+- **Camera and fog**: `/camera` and `player.camera` with the pack's camera presets (`cameras/presets`), fades and
+  field of view; `/fog push|pop|remove`.
 
 ## Loot, spawning, recipes, functions and commands
 
@@ -145,7 +192,8 @@ physics. A behavior not in the list is named at startup, and a plugin can supply
   and local coordinates, and `execute` (`as`, `at`, `positioned`, `rotated`, `in`, `if`/`unless entity|block`,
   `run`, and the old syntax). The server adds the commands packs rely on: `tag`, `summon`, `setblock`, `fill`,
   `particle`, `playsound`, `stopsound`, `camerashake`, `inputpermission`, `playanimation`, `tellraw`, `damage`,
-  `event entity`, `replaceitem`, `testfor`, `function`, and entity-aware `kill`, `tp` and `effect`. Every other
+  `event entity`, `replaceitem`, `testfor`, `function`, `camera`, `fog`, `hud`, `weather`, `gamerule`,
+  `scoreboard`, `tickingarea`, `structure load`, and entity-aware `kill`, `tp` and `effect`. Every other
   command goes to the server's command map, **so plugin commands work from add-ons**.
 
 ## Plugins and add-ons together
@@ -301,6 +349,10 @@ and custom block IDs in the client's own (FNV-1 64) order on every version.
 
 Permission: `pocketmine.command.addons` (operators by default).
 
+The vanilla commands add-ons use (`camera`, `fog`, `gamerule`, `weather`, `scoreboard`, `tickingarea`,
+`structure`, `hud`, `summon`, `setblock`, `fill`, `execute`...) are also registered as server commands for
+operators, unless a plugin already has that name: the plugin's command always wins.
+
 ## Troubleshooting
 
 - **"Add-on scripts are not run: Node.js was not found"**: install Node.js 22.15+, or set `scripting.node` to
@@ -322,10 +374,11 @@ Permission: `pocketmine.command.addons` (operators by default).
 
 - **Vanilla overrides** (`minecraft:player`, `minecraft:zombie`...): skipped with one warning; the server keeps
   its own versions (PocketMine has no vanilla mob AI to override).
-- **Trading, riding, leashing, inventories on entities, boss bars** (`trade_table`, `rideable`, `leashable`,
-  `inventory`, `boss`): the components are listed at startup; plugins can implement them.
-- **Scripts**: the camera API, structures, weather, `itemStartUse`/`itemStopUse`/`itemReleaseUse` events and
-  block `onTick`/`onStepOn` custom components are not available; `@minecraft/server-net`,
-  `server-gametest` and `server-editor` import but throw if used.
-- **Commands**: `camera`, `fog`, `gamerule`, `tickingarea`, `weather`, `structure` and `scoreboard` are accepted
-  and do nothing (scripts' `world.scoreboard` works).
+- **Entity components** `npc` (dialogue), `dash`, `trusting` and `peek`: listed at startup; plugins can
+  implement them.
+- **Scripts**: `@minecraft/server-net`, `server-gametest` and `server-editor` import but throw if used.
+  Structures can be loaded and placed, not saved from the world.
+- **Commands**: `music`, `mobevent`, `dialogue`, `ride`, `aimassist` and `controlscheme` are accepted and do
+  nothing; `structure save` is not available.
+- **Game rules** with no PocketMine mechanic behind them (`doinsomnia`, `freezedamage`, `doentitydrops`, `randomtickspeed`,
+  `playerssleepingpercentage`...) are stored and reported but change nothing.

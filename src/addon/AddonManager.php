@@ -1058,7 +1058,7 @@ final class AddonManager{
 
 	/** Warns once per entity about behaviors and gameplay components that are not implemented. */
 	private function reportEntityFeatures() : void{
-		$skipped = ["minecraft:rideable", "minecraft:leashable", "minecraft:trade_table", "minecraft:economy_trade_table", "minecraft:shareables", "minecraft:inventory", "minecraft:boss", "minecraft:npc", "minecraft:dash", "minecraft:horse.jump", "minecraft:equip_item", "minecraft:trusting", "minecraft:peek", "minecraft:shooter_old"];
+		$skipped = ["minecraft:npc", "minecraft:dash", "minecraft:trusting", "minecraft:peek", "minecraft:shooter_old"];
 		foreach($this->entityDefinitions as $id => $definition){
 			$all = $definition->getComponents();
 			foreach($definition->getComponentGroups() as $group){

@@ -67,10 +67,13 @@ use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\PlaySoundPacket;
 use pocketmine\network\mcpe\protocol\RemoveObjectivePacket;
 use pocketmine\network\mcpe\protocol\SetDisplayObjectivePacket;
+use pocketmine\network\mcpe\protocol\SetHudPacket;
 use pocketmine\network\mcpe\protocol\SetScorePacket;
 use pocketmine\network\mcpe\protocol\SpawnParticleEffectPacket;
 use pocketmine\network\mcpe\protocol\StopSoundPacket;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
+use pocketmine\network\mcpe\protocol\types\hud\HudElement;
+use pocketmine\network\mcpe\protocol\types\hud\HudVisibility;
 use pocketmine\network\mcpe\protocol\types\ScorePacketEntry;
 use pocketmine\player\GameMode;
 use pocketmine\player\Player;
@@ -121,6 +124,7 @@ use function proc_close;
 use function proc_get_status;
 use function proc_open;
 use function proc_terminate;
+use function range;
 use function round;
 use function spl_object_id;
 use function sqrt;
@@ -1075,6 +1079,12 @@ final class ScriptHost{
 					switch($a["action"] ?? ""){
 						case "clear":
 							return $camera->clear();
+						case "fov":
+							$o = is_array($a["o"] ?? null) ? $a["o"] : [];
+							$ease = is_array($o["easeOptions"] ?? null) ? $o["easeOptions"] : [];
+							return $camera->setFov((float) ($o["fov"] ?? 70), (float) ($ease["easeTime"] ?? 0), CameraEaseType::tryFrom(self::snake((string) ($ease["easeType"] ?? "Linear"))) ?? CameraEaseType::LINEAR);
+						case "clearfov":
+							return $camera->clearFov();
 						case "fade":
 							$time = is_array($a["o"]["fadeTime"] ?? null) ? $a["o"]["fadeTime"] : [];
 							$color = is_array($a["o"]["fadeColor"] ?? null) ? $a["o"]["fadeColor"] : [];
@@ -1105,6 +1115,19 @@ final class ScriptHost{
 					throw new \InvalidArgumentException($e->getMessage());
 				}
 				return false;
+			case "hud":
+				$player = $this->entity($a["id"] ?? null);
+				if($player instanceof Player){
+					$elements = [];
+					foreach(is_array($a["elements"] ?? null) ? $a["elements"] : range(0, 12) as $element){
+						$case = HudElement::tryFrom((int) $element);
+						if($case !== null){
+							$elements[] = $case;
+						}
+					}
+					$player->getNetworkSession()->sendDataPacket(SetHudPacket::create($elements, (bool) ($a["hide"] ?? false) ? HudVisibility::HIDE : HudVisibility::RESET));
+				}
+				return null;
 			case "anim":
 				$e = $this->entity($a["id"] ?? null);
 				if($e !== null){

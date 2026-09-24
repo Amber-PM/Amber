@@ -552,7 +552,10 @@ class ScreenDisplay{
 	}
 	updateSubtitle(subtitle){ post("title", { id: this._p.id, kind: "subtitle", text: flattenText(subtitle) }); }
 	setActionBar(text){ post("title", { id: this._p.id, kind: "actionbar", text: flattenText(text) }); }
-	setHudVisibility(){} hideAllExcept(){} resetHudElements(){} isForcedHidden(){ return false; }
+	setHudVisibility(visible, elements){ call("hud", { id: this._p.id, hide: visible === 0 || visible === false || visible === "Hide", elements }); }
+	hideAllExcept(elements){ const keep = new Set(elements ?? []); call("hud", { id: this._p.id, hide: true, elements: [...Array(13).keys()].filter(e => !keep.has(e)) }); }
+	resetHudElements(){ call("hud", { id: this._p.id, hide: false }); }
+	isForcedHidden(){ return false; }
 	get isValid(){ return host.valid(this._p._valid()); }
 }
 
@@ -574,6 +577,8 @@ class Camera{
 		call("camera", { id: this._p.id, action: "set", preset, o });
 	}
 	setDefaultCamera(preset, easeOptions){ this.setCamera(preset, { easeOptions }); }
+	setFov(options){ call("camera", { id: this._p.id, action: "fov", o: options ?? {} }); }
+	clearFov(){ call("camera", { id: this._p.id, action: "clearfov" }); }
 	get isValid(){ return host.valid(true); }
 }
 

@@ -44,7 +44,10 @@ use pocketmine\network\mcpe\protocol\AnimateEntityPacket;
 use pocketmine\network\mcpe\protocol\CameraShakePacket;
 use pocketmine\network\mcpe\protocol\PlayerFogPacket;
 use pocketmine\network\mcpe\protocol\PlaySoundPacket;
+use pocketmine\network\mcpe\protocol\SetHudPacket;
 use pocketmine\network\mcpe\protocol\StopSoundPacket;
+use pocketmine\network\mcpe\protocol\types\hud\HudElement;
+use pocketmine\network\mcpe\protocol\types\hud\HudVisibility;
 use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\player\Player;
 use pocketmine\Server;
@@ -76,6 +79,7 @@ use function min;
 use function mt_rand;
 use function preg_match;
 use function preg_match_all;
+use function range;
 use function shuffle;
 use function sin;
 use function str_contains;
@@ -99,13 +103,13 @@ use const PREG_SET_ORDER;
 final class CommandBridge{
 	private const INPUT_LOCKS = ["camera" => 2, "movement" => 4, "lateral_movement" => 16, "sneak" => 32, "jump" => 64, "mount" => 128, "dismount" => 256, "move_forward" => 512, "move_backward" => 1024, "move_left" => 2048, "move_right" => 4096];
 	/** Commands accepted and ignored, because there is nothing for them to do on this server. */
-	private const NOOP = ["music", "mobevent", "reload", "hud", "dialogue", "ride", "aimassist", "controlscheme"];
+	private const NOOP = ["music", "mobevent", "reload", "dialogue", "ride", "aimassist", "controlscheme"];
 
 	/** Vanilla commands this bridge provides to players and operators (where no plugin has the name). */
 	public const PROVIDED = [
 		"camera" => "Controls a player's camera", "camerashake" => "Shakes a player's camera", "damage" => "Damages entities",
 		"event" => "Runs an add-on entity event", "execute" => "Runs a command as or at entities", "fill" => "Fills a region with a block",
-		"fog" => "Adds or removes fog settings", "function" => "Runs a function file", "gamerule" => "Shows or changes game rules",
+		"fog" => "Adds or removes fog settings", "hud" => "Hides or shows HUD elements", "function" => "Runs a function file", "gamerule" => "Shows or changes game rules",
 		"inputpermission" => "Locks player input", "particle" => "Spawns a particle", "playanimation" => "Plays an entity animation",
 		"playsound" => "Plays a sound", "replaceitem" => "Replaces items in entity slots", "scoreboard" => "Manages scoreboards",
 		"setblock" => "Changes a block", "stopsound" => "Stops sounds", "structure" => "Loads structures from add-ons", "summon" => "Summons an entity",
@@ -200,6 +204,7 @@ final class CommandBridge{
 			case "tickingarea": return $this->tickingarea($args, $ctx);
 			case "scoreboard": return $this->scoreboard($args, $ctx);
 			case "structure": return $this->structure($args, $ctx);
+			case "hud": return $this->hud($args, $ctx);
 		}
 		if(in_array($name, self::NOOP, true)){
 			$this->reportOnce($name, "/$name is not supported by this server and does nothing");
@@ -885,6 +890,28 @@ final class CommandBridge{
 				}
 				return 1;
 		}
+	}
+
+	/** @param list<string> $args hud <players> hide|reset [element] */
+	private function hud(array $args, CommandContext $ctx) : int{
+		$hide = strtolower($args[1] ?? "reset") === "hide";
+		$names = ["paperdoll" => 0, "armor" => 1, "tooltips" => 2, "touch_controls" => 3, "crosshair" => 4, "hotbar" => 5, "health" => 6, "progress_bar" => 7, "hunger" => 8, "air_bubbles" => 9, "horse_health" => 10, "status_effects" => 11, "item_text" => 12];
+		$element = strtolower($args[2] ?? "all");
+		$elements = $element === "all" ? range(0, 12) : (isset($names[$element]) ? [$names[$element]] : []);
+		return $this->each($args[0] ?? "@s", $ctx, static function(Entity $e) use ($hide, $elements) : bool{
+			if(!$e instanceof Player){
+				return false;
+			}
+			$cases = [];
+			foreach($elements as $id){
+				$case = HudElement::tryFrom($id);
+				if($case !== null){
+					$cases[] = $case;
+				}
+			}
+			$e->getNetworkSession()->sendDataPacket(SetHudPacket::create($cases, $hide ? HudVisibility::HIDE : HudVisibility::RESET));
+			return true;
+		});
 	}
 
 	/** @param list<string> $args structure load <name> <x y z> */
