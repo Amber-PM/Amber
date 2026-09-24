@@ -51,14 +51,19 @@ use pocketmine\event\player\PlayerItemConsumeEvent;
 use pocketmine\event\player\PlayerItemHeldEvent;
 use pocketmine\event\player\PlayerItemUseEvent;
 use pocketmine\event\player\PlayerJoinEvent;
+use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\player\PlayerRespawnEvent;
+use pocketmine\event\world\ChunkLoadEvent;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
+use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
 use function array_filter;
+use function array_flip;
+use function array_intersect_key;
 use function array_keys;
 use function array_map;
 use function array_values;
@@ -144,6 +149,42 @@ final class AddonRuntime extends PluginBase{
 			$host->before("entityRemove", ["entity" => $entity->getId()]);
 			$host->queueEvent("entityRemove", ["entity" => $entity->getId(), "type" => ScriptHost::typeId($entity)]);
 			$host->queueEvent("__gone", ["entity" => $entity->getId()]);
+		}, $monitor, $this);
+
+		//onStepOn / onStepOff for players
+		$pm->registerEvent(PlayerMoveEvent::class, function(PlayerMoveEvent $event) : void{
+			$this->manager?->checkStep($event->getPlayer(), $event->getFrom(), $event->getTo());
+		}, $monitor, $this);
+
+		//scheduled block updates are not saved: re-arm minecraft:tick blocks when their chunk loads
+		$pm->registerEvent(ChunkLoadEvent::class, function(ChunkLoadEvent $event) : void{
+			$states = $this->manager?->getTickingBlockStates() ?? [];
+			if($states === []){
+				return;
+			}
+			$world = $event->getWorld();
+			$chunk = $event->getChunk();
+			$baseX = $event->getChunkX() << Chunk::COORD_BIT_SIZE;
+			$baseZ = $event->getChunkZ() << Chunk::COORD_BIT_SIZE;
+			foreach($chunk->getSubChunks() as $subY => $subChunk){
+				$layers = $subChunk->getBlockLayers();
+				if($layers === [] || array_intersect_key(array_flip($layers[0]->getPalette()), $states) === []){
+					continue; //no ticking add-on block in this section: skip it without scanning
+				}
+				$palette = $layers[0];
+				for($x = 0; $x < 16; ++$x){
+					for($z = 0; $z < 16; ++$z){
+						for($y = 0; $y < 16; ++$y){
+							if(isset($states[$palette->get($x, $y, $z)])){
+								$block = $world->getBlockAt($baseX + $x, ($subY << Chunk::COORD_BIT_SIZE) + $y, $baseZ + $z);
+								if($block instanceof AddonBlock){
+									$block->scheduleTick();
+								}
+							}
+						}
+					}
+				}
+			}
 		}, $monitor, $this);
 
 		$pm->registerEvent(PlayerJoinEvent::class, function(PlayerJoinEvent $event) : void{

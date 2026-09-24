@@ -53,6 +53,7 @@ use pocketmine\data\bedrock\block\convert\BlockStateReader;
 use pocketmine\data\bedrock\block\convert\BlockStateWriter;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
+use pocketmine\entity\Entity;
 use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\Location;
@@ -63,6 +64,7 @@ use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
@@ -197,6 +199,8 @@ final class AddonManager{
 	private ?AddonSpawner $spawner = null;
 	private ?AddonRuntime $runtime = null;
 	private ?Config $config = null;
+	/** @var array<int, true>|null */
+	private ?array $tickingStates = null;
 
 	/** @var list<ItemTypeEntry>|null */
 	private ?array $itemTypeEntries = null;
@@ -1206,6 +1210,82 @@ final class AddonManager{
 			]) || $handled;
 		}
 		return $handled;
+	}
+
+	/** Whether scripts registered the hook (onTick, onStepOn...) on one of the block's custom components. */
+	public function blockHasHook(AddonBlock $block, string $hook) : bool{
+		$host = $this->scriptHost;
+		if($host === null || !$host->isRunning()){
+			return false;
+		}
+		$components = $this->getBlockCustomComponents($block);
+		return $components !== [] && $host->hasHook("block", array_keys($components), $hook);
+	}
+
+	/**
+	 * Runs a block custom component hook in scripts. Returns true when a script cancelled the action.
+	 *
+	 * @param array<string, mixed> $data
+	 */
+	public function dispatchBlockHook(AddonBlock $block, string $hook, array $data) : bool{
+		$host = $this->scriptHost;
+		$components = $this->getBlockCustomComponents($block);
+		if($host === null || $components === [] || !$host->isRunning()){
+			return false;
+		}
+		$position = $block->getPosition();
+		if(!$position->isValid()){
+			return false;
+		}
+		$wire = ScriptHost::blockWire($block);
+		return $host->hook("block", array_keys($components), $hook, $data + [
+			"block" => ["dim" => $host->dimensionId($position->getWorld()), "x" => $position->getFloorX(), "y" => $position->getFloorY(), "z" => $position->getFloorZ()] + $wire,
+			"params" => $components,
+		]);
+	}
+
+	/**
+	 * Fires onStepOn / onStepOff when the block under an entity's feet changes.
+	 *
+	 * @internal
+	 */
+	public function checkStep(Entity $entity, Vector3 $from, Vector3 $to) : void{
+		$old = $from->subtract(0, 0.01, 0)->floor();
+		$new = $to->subtract(0, 0.01, 0)->floor();
+		if($old->equals($new) || $this->scriptHost === null || !$this->scriptHost->isRunning()){
+			return;
+		}
+		$world = $entity->getWorld();
+		$old = $world->getBlock($old);
+		$new = $world->getBlock($new);
+		if($old instanceof AddonBlock && $this->blockHasHook($old, "onStepOff")){
+			$this->dispatchBlockHook($old, "onStepOff", ["entity" => $entity->getId()]);
+		}
+		if($new instanceof AddonBlock && $entity->isOnGround() && $this->blockHasHook($new, "onStepOn")){
+			$this->dispatchBlockHook($new, "onStepOn", ["entity" => $entity->getId()]);
+		}
+	}
+
+	/**
+	 * State IDs of add-on blocks with minecraft:tick, to re-arm their ticks when their chunk loads
+	 * (scheduled block updates are not saved with the world).
+	 *
+	 * @return array<int, true>
+	 */
+	public function getTickingBlockStates() : array{
+		if($this->tickingStates !== null){
+			return $this->tickingStates;
+		}
+		$this->tickingStates = [];
+		foreach($this->blocks as $block){
+			if($block->getTickSettings() === null){
+				continue;
+			}
+			foreach($block->generateStatePermutations() as $state){
+				$this->tickingStates[$state->getStateId()] = true;
+			}
+		}
+		return $this->tickingStates;
 	}
 
 	/** @internal */

@@ -840,7 +840,14 @@ export const system = new System();
 export const customComponents = { item: new Map(), block: new Map() };
 class ComponentRegistry{
 	constructor(kind){ this._kind = kind; }
-	registerCustomComponent(name, component){ customComponents[this._kind].set(name, { component, pack: host.currentPack }); post("customcomp", { kind: this._kind, name }); }
+	registerCustomComponent(name, component){
+		customComponents[this._kind].set(name, { component, pack: host.currentPack });
+		const hooks = Object.keys(component).filter(k => typeof component[k] === "function");
+		for(let proto = Object.getPrototypeOf(component); proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)){
+			for(const k of Object.getOwnPropertyNames(proto)) if(k !== "constructor" && typeof component[k] === "function") hooks.push(k);
+		}
+		post("customcomp", { kind: this._kind, name, hooks });
+	}
 }
 export const itemComponentRegistry = new ComponentRegistry("item");
 export const blockComponentRegistry = new ComponentRegistry("block");
