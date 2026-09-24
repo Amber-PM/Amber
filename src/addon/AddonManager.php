@@ -1044,6 +1044,7 @@ final class AddonManager{
 			$this->scriptHost->tick($currentTick);
 			AddonTimings::$scripts->stopTiming();
 		}
+		$this->commandBridge?->tick($currentTick);
 		$this->runtime?->getScheduler()->mainThreadHeartbeat($currentTick);
 	}
 

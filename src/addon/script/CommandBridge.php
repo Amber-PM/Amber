@@ -26,7 +26,13 @@ namespace pocketmine\addon\script;
 use pocketmine\addon\AddonManager;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\EntityFilter;
+use pocketmine\addon\loot\LootContext;
 use pocketmine\addon\world\AddonWorldRules;
+use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
+use pocketmine\block\Liquid;
+use pocketmine\block\tile\Container;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\camera\options\CameraEaseType;
 use pocketmine\camera\options\CameraFadeOptions;
 use pocketmine\camera\options\CameraSetOptions;
@@ -76,6 +82,7 @@ use function json_decode;
 use function ltrim;
 use function max;
 use function min;
+use function mt_getrandmax;
 use function mt_rand;
 use function preg_match;
 use function preg_match_all;
@@ -83,6 +90,7 @@ use function range;
 use function shuffle;
 use function sin;
 use function str_contains;
+use function str_ends_with;
 use function str_replace;
 use function str_starts_with;
 use function strlen;
@@ -115,7 +123,19 @@ final class CommandBridge{
 		"setblock" => "Changes a block", "stopsound" => "Stops sounds", "structure" => "Loads structures from add-ons", "summon" => "Summons an entity",
 		"tag" => "Manages entity tags", "tellraw" => "Sends a JSON message", "testfor" => "Counts entities matching a selector",
 		"tickingarea" => "Keeps areas of the world loaded", "weather" => "Sets the weather",
+		"clone" => "Copies blocks from one place to another", "testforblock" => "Tests whether a block is in a location",
+		"testforblocks" => "Tests whether two regions have the same blocks", "titleraw" => "Shows a JSON title",
+		"toggledownfall" => "Toggles rain", "daylock" => "Locks the time of day", "alwaysday" => "Locks the time of day",
+		"spreadplayers" => "Spreads entities over an area", "loot" => "Drops or gives loot from a loot table",
+		"schedule" => "Runs a function later", "scriptevent" => "Sends an event to add-on scripts",
+		"clearspawnpoint" => "Removes players' spawn points",
 	];
+
+	/** The most blocks /clone and /testforblocks work on, as in the game. */
+	private const MAX_REGION = 655360;
+
+	/** @var array<int, array{at: int, function: string, world: string, area: array{int, int, int, int}|null}> /schedule queue */
+	private array $scheduled = [];
 
 	/** @var \WeakMap<Player, list<array{string, string}>> active fog layers: [user id, fog id] */
 	private \WeakMap $fogs;
@@ -205,6 +225,23 @@ final class CommandBridge{
 			case "scoreboard": return $this->scoreboard($args, $ctx);
 			case "structure": return $this->structure($args, $ctx);
 			case "hud": return $this->hud($args, $ctx);
+			case "clone": return $this->cloneBlocks($args, $ctx);
+			case "testforblock": return $this->testforblock($args, $ctx);
+			case "testforblocks": return $this->testforblocks($args, $ctx);
+			case "titleraw": return $this->titleraw($args, $ctx);
+			case "toggledownfall": return $this->toggledownfall($ctx);
+			case "daylock":
+			case "alwaysday": return $this->daylock($args, $ctx);
+			case "spreadplayers": return $this->spreadplayers($args, $ctx);
+			case "loot": return $this->loot($args, $ctx);
+			case "schedule": return $this->schedule($args, $ctx);
+			case "scriptevent": return $this->scriptevent($args, $ctx);
+			case "clearspawnpoint": return $this->each($args[0] ?? "@s", $ctx, static function(Entity $e) : bool{
+				if($e instanceof Player){
+					$e->setSpawn(null);
+				}
+				return $e instanceof Player;
+			});
 		}
 		if(in_array($name, self::NOOP, true)){
 			$this->reportOnce($name, "/$name is not supported by this server and does nothing");
@@ -381,6 +418,370 @@ final class CommandBridge{
 			}
 		}
 		return $success;
+	}
+
+	// ---------------------------------------------------------------- scheduled functions, blocks, titles, loot
+
+	/** Runs the functions /schedule queued once their time comes (or their area is loaded). Called every tick. */
+	public function tick(int $currentTick) : void{
+		if($this->scheduled === []){
+			return;
+		}
+		$due = [];
+		foreach($this->scheduled as $key => $entry){
+			$world = $this->server->getWorldManager()->getWorldByName($entry["world"]);
+			if($world === null){
+				unset($this->scheduled[$key]);
+				continue;
+			}
+			if($entry["at"] > $currentTick){
+				continue;
+			}
+			if($entry["area"] !== null){
+				if($currentTick % 20 !== 0){
+					continue;
+				}
+				[$minX, $minZ, $maxX, $maxZ] = $entry["area"];
+				for($cx = $minX >> 4; $cx <= $maxX >> 4; $cx++){
+					for($cz = $minZ >> 4; $cz <= $maxZ >> 4; $cz++){
+						if(!$world->isChunkLoaded($cx, $cz)){
+							continue 3;
+						}
+					}
+				}
+			}
+			$due[] = [$entry["function"], $world];
+			unset($this->scheduled[$key]);
+		}
+		foreach($due as [$function, $world]){
+			$this->run("function $function", null, $world);
+		}
+	}
+
+	/**
+	 * @param list<string> $args schedule delay add <function> <time>[t|s|d] [append|replace] | schedule delay clear <function>
+	 *                           | schedule on_area_loaded add <from> <to> <function> | add circle <center> <radius> <function>
+	 *                           | add tickingarea <name> <function> | on_area_loaded clear function <function>
+	 */
+	private function schedule(array $args, CommandContext $ctx) : int{
+		$kind = strtolower($args[0] ?? "");
+		$action = strtolower($args[1] ?? "");
+		$world = $ctx->world->getFolderName();
+		if($action === "clear"){
+			$function = $kind === "on_area_loaded" ? ($args[3] ?? $args[2] ?? "") : ($args[2] ?? "");
+			$before = count($this->scheduled);
+			$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function);
+			return $before - count($this->scheduled);
+		}
+		if($action !== "add"){
+			return 0;
+		}
+		if($kind === "delay"){
+			$function = $args[2] ?? "";
+			if(preg_match('/^(\d+(?:\.\d+)?)([tsd]?)$/', strtolower($args[3] ?? ""), $m) !== 1 || $this->manager->findFunction($function) === null){
+				return 0;
+			}
+			$ticks = (int) ((float) $m[1] * match($m[2]){ "s" => 20, "d" => 24000, default => 1 });
+			if(strtolower($args[4] ?? "replace") === "replace"){
+				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function || $e["area"] !== null);
+			}
+			$this->scheduled[] = ["at" => $this->server->getTick() + max(1, $ticks), "function" => $function, "world" => $world, "area" => null];
+			return 1;
+		}
+		if($kind !== "on_area_loaded"){
+			return 0;
+		}
+		$mode = strtolower($args[2] ?? "");
+		if($mode === "tickingarea"){
+			$function = $args[4] ?? "";
+			$area = null;
+		}elseif($mode === "circle"){
+			$center = $this->position(array_slice($args, 3, 3), $ctx);
+			$radius = (int) ($args[6] ?? 0);
+			$function = $args[7] ?? "";
+			$area = [(int) floor($center->x) - $radius, (int) floor($center->z) - $radius, (int) floor($center->x) + $radius, (int) floor($center->z) + $radius];
+		}else{
+			$a = $this->position(array_slice($args, 2, 3), $ctx);
+			$b = $this->position(array_slice($args, 5, 3), $ctx);
+			$function = $args[8] ?? "";
+			$area = [(int) floor(min($a->x, $b->x)), (int) floor(min($a->z, $b->z)), (int) floor(max($a->x, $b->x)), (int) floor(max($a->z, $b->z))];
+		}
+		if($this->manager->findFunction($function) === null){
+			return 0;
+		}
+		$this->scheduled[] = ["at" => 0, "function" => $function, "world" => $world, "area" => $area];
+		return 1;
+	}
+
+	/** @param list<string> $args scriptevent <namespace:id> [message] */
+	private function scriptevent(array $args, CommandContext $ctx) : int{
+		$id = $args[0] ?? "";
+		if(!str_contains($id, ":") || str_starts_with($id, "minecraft:")){
+			$ctx->say("Script event ids need a namespace other than minecraft:");
+			return 0;
+		}
+		$host = $this->manager->getScriptHost();
+		if($host === null){
+			return 0;
+		}
+		$host->sendScriptEvent($id, implode(" ", array_slice($args, 1)), $ctx->executor);
+		return 1;
+	}
+
+	/**
+	 * @param list<string> $args three corners (six numbers for the region, three for the destination) and a mode
+	 * @return array{int, int, int, int, int, int, int, int, int}|null minX minY minZ maxX maxY maxZ dx dy dz
+	 */
+	private function regions(array $args, CommandContext $ctx) : ?array{
+		if(count($args) < 9){
+			return null;
+		}
+		$a = $this->position(array_slice($args, 0, 3), $ctx);
+		$b = $this->position(array_slice($args, 3, 3), $ctx);
+		$d = $this->position(array_slice($args, 6, 3), $ctx);
+		$box = [
+			(int) floor(min($a->x, $b->x)), (int) floor(min($a->y, $b->y)), (int) floor(min($a->z, $b->z)),
+			(int) floor(max($a->x, $b->x)), (int) floor(max($a->y, $b->y)), (int) floor(max($a->z, $b->z)),
+			(int) floor($d->x), (int) floor($d->y), (int) floor($d->z),
+		];
+		if(($box[3] - $box[0] + 1) * ($box[4] - $box[1] + 1) * ($box[5] - $box[2] + 1) > self::MAX_REGION){
+			$ctx->say("Too many blocks in the specified area (maximum " . self::MAX_REGION . ")");
+			return null;
+		}
+		return $box;
+	}
+
+	/** @param list<string> $args clone <begin> <end> <destination> [replace|masked] [normal|force|move] */
+	private function cloneBlocks(array $args, CommandContext $ctx) : int{
+		$box = $this->regions($args, $ctx);
+		if($box === null){
+			return 0;
+		}
+		[$minX, $minY, $minZ, $maxX, $maxY, $maxZ, $dx, $dy, $dz] = $box;
+		$masked = strtolower($args[9] ?? "replace") === "masked";
+		$mode = strtolower($args[10] ?? "normal");
+		$overlap = $dx <= $maxX && $dx + ($maxX - $minX) >= $minX && $dy <= $maxY && $dy + ($maxY - $minY) >= $minY && $dz <= $maxZ && $dz + ($maxZ - $minZ) >= $minZ;
+		if($overlap && $mode !== "force"){
+			$ctx->say("The source and destination can not overlap");
+			return 0;
+		}
+		$world = $ctx->world;
+		$copy = [];
+		for($x = $minX; $x <= $maxX; $x++){
+			for($y = $minY; $y <= $maxY; $y++){
+				for($z = $minZ; $z <= $maxZ; $z++){
+					$block = $world->getBlockAt($x, $y, $z);
+					if(!$masked || $block->getTypeId() !== BlockTypeIds::AIR){
+						$copy[] = [$x - $minX, $y - $minY, $z - $minZ, $block];
+					}
+				}
+			}
+		}
+		if($mode === "move"){
+			$air = VanillaBlocks::AIR();
+			foreach($copy as [$ox, $oy, $oz]){
+				$this->placeBlock($world, $minX + $ox, $minY + $oy, $minZ + $oz, $air);
+			}
+		}
+		$placed = 0;
+		foreach($copy as [$ox, $oy, $oz, $block]){
+			$placed += $this->placeBlock($world, $dx + $ox, $dy + $oy, $dz + $oz, $block) ? 1 : 0;
+		}
+		$ctx->say("$placed blocks cloned");
+		return $placed > 0 ? 1 : 0;
+	}
+
+	private function placeBlock(World $world, int $x, int $y, int $z, Block $block) : bool{
+		if(!$world->isInWorld($x, $y, $z)){
+			return false;
+		}
+		try{
+			$world->setBlockAt($x, $y, $z, $block);
+			return true;
+		}catch(\Throwable){
+			return false; //ungenerated terrain
+		}
+	}
+
+	/** @param list<string> $args testforblock <position> <block> [states] */
+	private function testforblock(array $args, CommandContext $ctx) : int{
+		if(!$this->blockIs($args, $ctx)){
+			return 0;
+		}
+		[, $states] = self::blockSpec(array_slice($args, 3));
+		if($states !== []){
+			$pos = $this->position(array_slice($args, 0, 3), $ctx);
+			$actual = ScriptHost::blockStates($ctx->world->getBlockAt((int) floor($pos->x), (int) floor($pos->y), (int) floor($pos->z)));
+			foreach($states as $name => $value){
+				if(($actual[$name] ?? null) !== $value){
+					return 0;
+				}
+			}
+		}
+		return 1;
+	}
+
+	/** @param list<string> $args testforblocks <begin> <end> <destination> [all|masked] */
+	private function testforblocks(array $args, CommandContext $ctx) : int{
+		$box = $this->regions($args, $ctx);
+		if($box === null){
+			return 0;
+		}
+		[$minX, $minY, $minZ, $maxX, $maxY, $maxZ, $dx, $dy, $dz] = $box;
+		$masked = strtolower($args[9] ?? "all") === "masked";
+		$world = $ctx->world;
+		$count = 0;
+		for($x = $minX; $x <= $maxX; $x++){
+			for($y = $minY; $y <= $maxY; $y++){
+				for($z = $minZ; $z <= $maxZ; $z++){
+					$source = $world->getBlockAt($x, $y, $z);
+					if($masked && $source->getTypeId() === BlockTypeIds::AIR){
+						continue;
+					}
+					if($source->getStateId() !== $world->getBlockAt($dx + $x - $minX, $dy + $y - $minY, $dz + $z - $minZ)->getStateId()){
+						return 0;
+					}
+					$count++;
+				}
+			}
+		}
+		return max(1, $count);
+	}
+
+	/** @param list<string> $args titleraw <players> title|subtitle|actionbar <raw json> | clear | reset | times <in> <stay> <out> */
+	private function titleraw(array $args, CommandContext $ctx) : int{
+		$action = strtolower($args[1] ?? "");
+		$text = ScriptHost::rawText(json_decode(implode(" ", array_slice($args, 2)), true));
+		return $this->each($args[0] ?? "@s", $ctx, static function(Entity $e) use ($action, $text, $args) : bool{
+			if(!$e instanceof Player){
+				return false;
+			}
+			match($action){
+				"title" => $e->sendTitle($text),
+				"subtitle" => $e->sendSubTitle($text),
+				"actionbar" => $e->sendActionBarMessage($text),
+				"clear" => $e->removeTitles(),
+				"reset" => $e->resetTitles(),
+				"times" => $e->setTitleDuration((int) ($args[2] ?? 10), (int) ($args[3] ?? 70), (int) ($args[4] ?? 20)),
+				default => null,
+			};
+			return $action !== "";
+		});
+	}
+
+	private function toggledownfall(CommandContext $ctx) : int{
+		$rules = $this->manager->getWorldRules();
+		$rules->setWeather($ctx->world, $rules->getWeather($ctx->world) === AddonWorldRules::CLEAR ? AddonWorldRules::RAIN : AddonWorldRules::CLEAR);
+		return 1;
+	}
+
+	/** @param list<string> $args daylock [true|false] */
+	private function daylock(array $args, CommandContext $ctx) : int{
+		$lock = strtolower($args[0] ?? "true") !== "false";
+		if($lock){
+			$ctx->world->setTime(5000);
+		}
+		$this->manager->getWorldRules()->setRule("dodaylightcycle", !$lock);
+		$ctx->say($lock ? "Day-Night cycle locked" : "Day-Night cycle unlocked");
+		return 1;
+	}
+
+	/** @param list<string> $args spreadplayers <x> <z> <spreadDistance> <maxRange> <targets> [maxHeight] */
+	private function spreadplayers(array $args, CommandContext $ctx) : int{
+		if(count($args) < 5){
+			return 0;
+		}
+		$center = $this->position([$args[0], "0", $args[1]], $ctx);
+		$spread = max(0.0, (float) $args[2]);
+		$range = max(1.0, (float) $args[3]);
+		$maxHeight = isset($args[5]) ? (int) $args[5] : null;
+		$world = $ctx->world;
+		$placed = [];
+		return $this->each($args[4], $ctx, function(Entity $e) use ($world, $center, $spread, $range, $maxHeight, &$placed) : bool{
+			for($attempt = 0; $attempt < 64; $attempt++){
+				$x = (int) floor($center->x + (mt_rand() / mt_getrandmax() * 2 - 1) * $range);
+				$z = (int) floor($center->z + (mt_rand() / mt_getrandmax() * 2 - 1) * $range);
+				foreach($placed as [$px, $pz]){
+					if(($px - $x) ** 2 + ($pz - $z) ** 2 < $spread * $spread){
+						continue 2;
+					}
+				}
+				if($world->loadChunk($x >> 4, $z >> 4) === null){
+					continue;
+				}
+				$y = $world->getHighestBlockAt($x, $z);
+				if($y === null || ($maxHeight !== null && $y + 1 > $maxHeight) || $world->getBlockAt($x, $y, $z) instanceof Liquid){
+					continue;
+				}
+				$placed[] = [$x, $z];
+				$e->teleport(new Vector3($x + 0.5, $y + 1, $z + 0.5), null, null);
+				return true;
+			}
+			return false;
+		});
+	}
+
+	/**
+	 * @param list<string> $args loot spawn <position> | give <players> | insert <position> , then loot <table> | kill <target>
+	 */
+	private function loot(array $args, CommandContext $ctx) : int{
+		$mode = strtolower($args[0] ?? "");
+		$targetArgs = match($mode){ "spawn", "insert" => 3, "give" => 1, default => -1 };
+		if($targetArgs < 0){
+			return 0;
+		}
+		$source = array_slice($args, 1 + $targetArgs);
+		$tables = $this->manager->getLootTables();
+		if($tables === null){
+			return 0;
+		}
+		$items = [];
+		$sourceType = strtolower($source[0] ?? "");
+		if($sourceType === "loot"){
+			$path = trim($source[1] ?? "", "\"");
+			$path = (str_starts_with($path, "loot_tables/") ? $path : "loot_tables/$path");
+			$path = str_ends_with($path, ".json") ? $path : "$path.json";
+			if(!$tables->exists($path)){
+				$ctx->say("No loot table called $path");
+				return 0;
+			}
+			$items = $tables->roll($path, new LootContext($ctx->executor, $ctx->executor));
+		}elseif($sourceType === "kill"){
+			foreach($this->select($source[1] ?? "@s", $ctx) as $victim){
+				$items = [...$items, ...($victim instanceof Living ? $victim->getDrops() : [])];
+				$victim->kill();
+			}
+		}else{
+			return 0;
+		}
+		if($mode === "give"){
+			return $this->each($args[1] ?? "@s", $ctx, static function(Entity $e) use ($items) : bool{
+				if(!$e instanceof Player){
+					return false;
+				}
+				foreach($items as $item){
+					foreach($e->getInventory()->addItem(clone $item) as $left){
+						$e->dropItem($left);
+					}
+				}
+				return true;
+			});
+		}
+		$pos = $this->position(array_slice($args, 1, 3), $ctx);
+		if($mode === "insert"){
+			$tile = $ctx->world->getTileAt((int) floor($pos->x), (int) floor($pos->y), (int) floor($pos->z));
+			if(!$tile instanceof Container){
+				return 0;
+			}
+			foreach($items as $item){
+				$tile->getInventory()->addItem($item);
+			}
+			return 1;
+		}
+		foreach($items as $item){
+			$ctx->world->dropItem($pos, $item);
+		}
+		return 1;
 	}
 
 	// ---------------------------------------------------------------- emulated commands

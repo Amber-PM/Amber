@@ -1591,6 +1591,11 @@ final class ScriptHost{
 		return self::blockWire($block)["type"];
 	}
 
+	/** @return array<string, mixed> the block's states by their Bedrock names */
+	public static function blockStates(Block $block) : array{
+		return self::blockWire($block)["states"];
+	}
+
 	/** @param array<string, mixed> $states */
 	private function resolveBlock(string $type, array $states) : ?Block{
 		$type = str_contains($type, ":") ? strtolower($type) : "minecraft:" . strtolower($type);
