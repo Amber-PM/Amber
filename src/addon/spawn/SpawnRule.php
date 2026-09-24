@@ -114,8 +114,8 @@ final class SpawnRule{
 	/**
 	 * The first condition entry the spot satisfies, or null.
 	 *
-	 * @param int $kind  the kind of spot (SURFACE...) the spawner found
-	 * @param int $distance distance to the nearest player, in blocks
+	 * @param int   $kind     the kind of spot (SURFACE...) the spawner found
+	 * @param float $distance distance to the nearest player, in blocks
 	 * @return mixed[]|null
 	 */
 	public function match(World $world, int $x, int $y, int $z, int $kind, float $distance) : ?array{
