@@ -26,7 +26,11 @@ namespace pocketmine\addon\entity\ai\goal;
 use pocketmine\addon\entity\ai\Goal;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\event\entity\EntityItemPickupEvent;
+use pocketmine\item\Armor;
+use pocketmine\item\Bow;
 use pocketmine\item\Item;
+use pocketmine\item\Sword;
+use pocketmine\item\TieredTool;
 use pocketmine\item\StringToItemParser;
 use function is_array;
 use function is_string;
@@ -69,6 +73,11 @@ final class PickupItemsGoal extends Goal{
 	}
 
 	private function wants(Item $item) : bool{
+		if((bool) ($this->data["__equip"] ?? false)){
+			//behavior.equip_item: armour for an empty armour slot, or a weapon or tool for empty hands
+			return ($item instanceof Armor && $this->mob->getArmorInventory()->getItem($item->getArmorSlot())->isNull())
+				|| (($item instanceof TieredTool || $item instanceof Sword || $item instanceof Bow) && $this->mob->getMainHandItem() === null);
+		}
 		$wanted = $this->wanted();
 		return $wanted === null || isset($wanted[$item->getTypeId()]);
 	}

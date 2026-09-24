@@ -23,6 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\addon\entity\ai;
 
+use pocketmine\addon\entity\ai\goal\CallbackGoal;
+use pocketmine\addon\entity\ai\goal\IdleActionGoal;
+use pocketmine\addon\entity\ai\goal\MountGoal;
+use pocketmine\addon\entity\ai\goal\SeekGoal;
+use pocketmine\addon\entity\ai\goal\MoveToBlockGoal;
+use pocketmine\addon\entity\ai\goal\KnockbackRoarGoal;
+use pocketmine\addon\entity\ai\goal\SequenceGoal;
+use pocketmine\addon\entity\ai\goal\TeleportToOwnerGoal;
+use pocketmine\addon\entity\ai\goal\TimerFlagGoal;
 use pocketmine\addon\entity\ai\goal\AvoidMobTypeGoal;
 use pocketmine\addon\entity\ai\goal\BreedGoal;
 use pocketmine\addon\entity\ai\goal\FloatGoal;
@@ -108,6 +117,12 @@ final class MobBrain{
 			return self::$factories;
 		}
 		$simple = static fn(string $class) : \Closure => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new $class($mob, $data, $priority);
+		//a goal class shared by several behaviors, told which one it is
+		$mode = static fn(string $class, string $mode) : \Closure => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new $class($mob, $data, $priority, $mode);
+		//a wander that keeps going (float_wander, slime_random_direction have no interval of their own)
+		$often = static fn(string $class) : \Closure => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new $class($mob, $data + ["interval" => 2], $priority);
+		//behaviors the entity itself carries out: accepted, with no goal of their own
+		$none = static fn(AddonEntity $mob, array $data, int $priority) : Goal => new CallbackGoal($mob, $data, $priority, 0, static fn() : bool => false);
 		$f = [
 			"float" => $simple(FloatGoal::class),
 			"random_stroll" => $simple(RandomStrollGoal::class),
@@ -143,6 +158,47 @@ final class MobBrain{
 			"breed" => $simple(BreedGoal::class),
 			"stay_while_sitting" => $simple(StayWhileSittingGoal::class),
 			"pickup_items" => $simple(PickupItemsGoal::class),
+			"equip_item" => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new PickupItemsGoal($mob, ["__equip" => true, "max_dist" => 6] + $data, $priority),
+			//the game's behaviors that work like one of the above
+			"stomp_attack" => $simple(MeleeAttackGoal::class),
+			"ram_attack" => $simple(MeleeAttackGoal::class),
+			"charge_attack" => $simple(MeleeAttackGoal::class),
+			"swoop_attack" => $simple(MeleeAttackGoal::class),
+			"slime_attack" => $simple(MeleeAttackGoal::class),
+			"ocelotattack" => $simple(MeleeAttackGoal::class),
+			"float_tempt" => $simple(TemptGoal::class),
+			"slime_float" => $simple(FloatGoal::class),
+			"float_wander" => $often(RandomStrollGoal::class),
+			"slime_random_direction" => $often(RandomStrollGoal::class),
+			"move_to_random_block" => $simple(RandomStrollGoal::class),
+			//hopping is minecraft:movement.jump; riding a tamed mob and steering are handled by the entity
+			"slime_keep_on_jumping" => $none,
+			"player_ride_tamed" => $none,
+			"controlled_by_player" => $none,
+			"trade_with_player" => $none,
+			"restrict_sun" => $none,
+			"timer_flag_1" => $simple(TimerFlagGoal::class),
+			"timer_flag_2" => $simple(TimerFlagGoal::class),
+			"timer_flag_3" => $simple(TimerFlagGoal::class),
+			"teleport_to_owner" => $simple(TeleportToOwnerGoal::class),
+			"summon_entity" => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new SequenceGoal($mob, $data, $priority, true),
+			"send_event" => static fn(AddonEntity $mob, array $data, int $priority) : Goal => new SequenceGoal($mob, $data, $priority, false),
+			"knockback_roar" => $simple(KnockbackRoarGoal::class),
+			"move_to_block" => $mode(MoveToBlockGoal::class, MoveToBlockGoal::BLOCKS),
+			"move_to_water" => $mode(MoveToBlockGoal::class, MoveToBlockGoal::WATER),
+			"move_to_land" => $mode(MoveToBlockGoal::class, MoveToBlockGoal::LAND),
+			"move_to_lava" => $mode(MoveToBlockGoal::class, MoveToBlockGoal::LAVA),
+			"move_to_liquid" => $mode(MoveToBlockGoal::class, MoveToBlockGoal::LIQUID),
+			"flee_sun" => $mode(SeekGoal::class, SeekGoal::FLEE_SUN),
+			"avoid_block" => $mode(SeekGoal::class, SeekGoal::AVOID_BLOCK),
+			"go_home" => $mode(SeekGoal::class, SeekGoal::GO_HOME),
+			"move_towards_home_restriction" => $mode(SeekGoal::class, SeekGoal::HOME_RESTRICTION),
+			"find_mount" => $mode(MountGoal::class, MountGoal::FIND),
+			"mount_pathing" => $mode(MountGoal::class, MountGoal::PATHING),
+			"run_around_like_crazy" => $mode(MountGoal::class, MountGoal::CRAZY),
+			"eat_block" => $mode(IdleActionGoal::class, IdleActionGoal::EAT_BLOCK),
+			"random_sitting" => $mode(IdleActionGoal::class, IdleActionGoal::RANDOM_SITTING),
+			"swell" => $mode(IdleActionGoal::class, IdleActionGoal::SWELL),
 		];
 		self::$factories = [];
 		foreach($f as $name => $factory){

@@ -46,6 +46,11 @@ final class RandomStrollGoal extends Goal{
 		$xz = (int) $this->float("xz_dist", 10.0);
 		$y = (int) $this->float("y_dist", $this->navigator()->isDirect() ? 7.0 : 3.0);
 		$this->target = $this->randomPoint($this->mob->getPosition(), max(1, $xz), max(0, $y));
+		$radius = $this->mob->getFeatures()->homeRestriction();
+		$home = $this->mob->getFeatures()->getHome();
+		if($radius !== null && $home !== null && $this->target->distance($home) > $radius){
+			$this->target = $this->randomPoint($home, max(1, (int) $radius), max(0, $y));
+		}
 		return true;
 	}
 

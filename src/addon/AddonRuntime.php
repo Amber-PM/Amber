@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\addon;
 
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\addon\block\AddonBlock;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\AddonEntityInventory;
@@ -529,6 +530,27 @@ final class AddonRuntime extends PluginBase{
 			}
 			$host->queueEvent("explosion", $data);
 		}, EventPriority::LOW, $this);
+
+
+		//minecraft:mob_effect_immunity
+		$pm->registerEvent(EntityEffectAddEvent::class, function(EntityEffectAddEvent $event) : void{
+			$entity = $event->getEntity();
+			if($entity instanceof AddonEntity && $entity->getFeatures()->isImmuneTo($event->getEffect()->getType())){
+				$event->cancel();
+			}
+		}, EventPriority::LOWEST, $this);
+
+		//minecraft:block_sensor: add-on mobs near a broken block hear it
+		$pm->registerEvent(BlockBreakEvent::class, function(BlockBreakEvent $event) : void{
+			$block = $event->getBlock();
+			$at = $block->getPosition();
+			$type = ScriptHost::blockTypeId($block);
+			foreach($at->getWorld()->getNearbyEntities(new AxisAlignedBB($at->x - 32, $at->y - 32, $at->z - 32, $at->x + 32, $at->y + 32, $at->z + 32)) as $entity){
+				if($entity instanceof AddonEntity && $entity->getComponent("minecraft:block_sensor") !== null){
+					$entity->getFeatures()->blockBroken($type, $at, $event->getPlayer());
+				}
+			}
+		}, EventPriority::MONITOR, $this);
 
 		$this->registerVanillaEvents();
 	}
