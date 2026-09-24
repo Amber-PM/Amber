@@ -26,7 +26,6 @@ namespace pocketmine\addon\item;
 use pocketmine\nbt\NBT;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
@@ -36,6 +35,8 @@ use function is_array;
 use function is_bool;
 use function is_numeric;
 use function is_string;
+use function max;
+use function min;
 use function round;
 
 /**

@@ -24,10 +24,22 @@ declare(strict_types=1);
 namespace pocketmine\addon;
 
 use Ramsey\Uuid\Uuid;
+
+use function explode;
+use function file;
+use function file_get_contents;
 use function implode;
 use function is_array;
+use function is_file;
 use function is_int;
 use function is_string;
+use function ltrim;
+use function str_contains;
+use function str_starts_with;
+use function strlen;
+use function substr;
+use function trim;
+use const FILE_IGNORE_NEW_LINES;
 
 /**
  * One pack inside an add-on: a resource pack ("resources") or a behavior pack ("data"), read from its
@@ -48,7 +60,9 @@ final class AddonPack{
 		private array $version,
 		private string $type,
 		private string $path,
-		private string $source
+		private string $source,
+		private ?string $scriptEntry = null,
+		private int $scriptApiMajor = 2
 	){
 		if(!Uuid::isValid($this->uuid)){
 			throw new AddonException("$source: pack UUID '$this->uuid' is not a valid UUID");
@@ -73,20 +87,31 @@ final class AddonPack{
 		}
 		$type = null;
 		$hasScript = false;
+		$scriptEntry = null;
 		foreach(is_array($manifest["modules"] ?? null) ? $manifest["modules"] : [] as $module){
 			$moduleType = is_array($module) ? ($module["type"] ?? null) : null;
-			if($moduleType === self::TYPE_RESOURCES || $moduleType === self::TYPE_DATA){
+			if(($moduleType === self::TYPE_RESOURCES || $moduleType === self::TYPE_DATA) && $type === null){
 				$type = $moduleType;
-				break;
 			}
 			if($moduleType === "script" || $moduleType === "javascript"){
 				$hasScript = true;
+				$entry = $module["entry"] ?? null;
+				if(is_string($entry) && $entry !== "" && !str_contains($entry, "..") && is_file($path . "/" . $entry)){
+					$scriptEntry = $entry;
+				}
 			}
 		}
 		//newer behavior packs may declare only a script module: they are still behavior packs
 		$type ??= $hasScript ? self::TYPE_DATA : null;
 		if($type === null){
 			throw new AddonException("$source: manifest.json has no resources or data module");
+		}
+		$apiMajor = 2;
+		foreach(is_array($manifest["dependencies"] ?? null) ? $manifest["dependencies"] : [] as $dependency){
+			if(is_array($dependency) && ($dependency["module_name"] ?? null) === "@minecraft/server"){
+				$declared = $dependency["version"] ?? "2.0.0";
+				$apiMajor = is_array($declared) ? (int) ($declared[0] ?? 2) : (int) explode(".", (string) $declared, 2)[0];
+			}
 		}
 		$version = [];
 		foreach(is_array($header["version"] ?? null) ? $header["version"] : [] as $part){
@@ -99,7 +124,9 @@ final class AddonPack{
 			$version,
 			$type,
 			$path,
-			$source
+			$source,
+			$type === self::TYPE_DATA ? $scriptEntry : null,
+			$apiMajor
 		);
 	}
 
@@ -140,4 +167,10 @@ final class AddonPack{
 
 	/** The file or folder in the addons directory this pack came from. */
 	public function getSource() : string{ return $this->source; }
+
+	/** The script module's entry file, relative to the pack (e.g. "scripts/main.js"), or null. */
+	public function getScriptEntry() : ?string{ return $this->scriptEntry; }
+
+	/** Major version of @minecraft/server the pack's scripts were written for (1 or 2); defaults to 2. */
+	public function getScriptApiMajor() : int{ return $this->scriptApiMajor; }
 }

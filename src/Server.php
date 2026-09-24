@@ -1163,6 +1163,9 @@ class Server{
 				return;
 			}
 
+			//add-on runtime: scripts, natural spawning and the event bridge, once worlds and plugins are up
+			$this->addonManager->start();
+
 			CameraPresetRegistry::getInstance()->freeze();
 
 			if(!$this->startupPrepareNetworkInterfaces()){
@@ -1625,6 +1628,10 @@ class Server{
 
 			$this->shutdown();
 
+			if(isset($this->addonManager)){
+				$this->addonManager->shutdown();
+			}
+
 			if(isset($this->pluginManager)){
 				$this->logger->debug("Disabling all plugins");
 				$this->pluginManager->disablePlugins();
@@ -1970,6 +1977,8 @@ class Server{
 		Timings::$scheduler->startTiming();
 		$this->pluginManager->tickSchedulers($this->tickCounter);
 		Timings::$scheduler->stopTiming();
+
+		$this->addonManager->tick($this->tickCounter);
 
 		Timings::$schedulerAsync->startTiming();
 		$this->asyncPool->collectTasks();
