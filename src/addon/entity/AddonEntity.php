@@ -929,6 +929,12 @@ class AddonEntity extends Living{
 		return parent::hasMovementUpdate() || ($this->brain !== null && $this->brain->isNavigating());
 	}
 
+	protected function move(float $dx, float $dy, float $dz) : void{
+		$from = $this->location->asVector3();
+		parent::move($dx, $dy, $dz);
+		AddonManager::getInstance()?->checkStep($this, $from, $this->location);
+	}
+
 	protected function tryChangeMovement() : void{
 		parent::tryChangeMovement();
 		if($this->brain === null || $this->knockbackTicks > 0 || isset($this->components["minecraft:projectile"])){

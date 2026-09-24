@@ -25,6 +25,7 @@ namespace pocketmine\addon\script;
 
 use pocketmine\addon\AddonManager;
 use pocketmine\addon\AddonPack;
+use pocketmine\addon\block\AddonBlock;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\EntityFilter;
 use pocketmine\addon\event\AddonScriptEvent;
@@ -169,7 +170,7 @@ final class ScriptHost{
 	private array $queue = [];
 	/** @var array<string, true> "after:name" / "before:name" the scripts listen to */
 	private array $subscriptions = [];
-	/** @var array<string, true> item/block custom component names registered by scripts */
+	/** @var array<string, array<string, true>> "item:name" / "block:name" => hooks the script defined */
 	private array $customComponents = [];
 	/** @var array<string, \Closure> */
 	private array $pluginFunctions = [];
@@ -518,6 +519,21 @@ final class ScriptHost{
 		}
 	}
 
+	/**
+	 * Whether any of the custom components defines the hook, so the server can skip a call scripts would ignore
+	 * (random ticks and step checks happen often).
+	 *
+	 * @param list<string> $names
+	 */
+	public function hasHook(string $kind, array $names, string $hook) : bool{
+		foreach($names as $name){
+			if(isset($this->customComponents["$kind:$name"][$hook])){
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public function wants(string $key) : bool{
 		return isset($this->subscriptions[$key]);
 	}
@@ -553,8 +569,10 @@ final class ScriptHost{
 			return false;
 		}
 		$registered = [];
+		$alias = $hook === "onPlayerDestroy" ? "onPlayerBreak" : ($hook === "onPlayerBreak" ? "onPlayerDestroy" : $hook);
 		foreach($names as $name){
-			if(isset($this->customComponents["$kind:$name"])){
+			$hooks = $this->customComponents["$kind:$name"] ?? null;
+			if($hooks !== null && ($hooks === [] || isset($hooks[$hook]) || isset($hooks[$alias]))){
 				$registered[] = $name;
 			}
 		}
@@ -1039,7 +1057,11 @@ final class ScriptHost{
 				}
 				return null;
 			case "customcomp":
-				$this->customComponents[(string) $a["kind"] . ":" . (string) $a["name"]] = true;
+				$hooks = [];
+				foreach(is_array($a["hooks"] ?? null) ? $a["hooks"] : [] as $hook){
+					$hooks[(string) $hook] = true;
+				}
+				$this->customComponents[(string) $a["kind"] . ":" . (string) $a["name"]] = $hooks;
 				return null;
 			case "customcmd":
 				$this->customCommands[(string) $a["name"]] = [(string) ($a["description"] ?? ""), (int) ($a["permission"] ?? 0)];
@@ -1485,6 +1507,10 @@ final class ScriptHost{
 			return false;
 		}
 		$world->setBlockAt($x, $y, $z, $block);
+		$placed = $world->getBlockAt($x, $y, $z);
+		if($placed instanceof AddonBlock){
+			$placed->scheduleTick();
+		}
 		return true;
 	}
 

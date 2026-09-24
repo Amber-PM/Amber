@@ -154,6 +154,7 @@ function hook(msg){
 		event = {
 			block: b, dimension: b?.dimension, player: d.player ? P(d.player) : undefined, entity: d.entity ? E(d.entity) : undefined, face: d.face ?? "Up", faceLocation: d.faceLocation,
 			destroyedBlockPermutation: perm(d.block), brokenBlockPermutation: perm(d.block), previousBlock: perm(d.previous), permutationToPlace: perm(d.block), cancel: false,
+			fallDistance: d.fallDistance ?? 0,
 		};
 	}
 	const hookNames = msg.hook === "onPlayerBreak" ? ["onPlayerBreak", "onPlayerDestroy"] : (msg.hook === "onPlayerDestroy" ? ["onPlayerDestroy", "onPlayerBreak"] : [msg.hook]);
