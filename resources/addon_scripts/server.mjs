@@ -38,6 +38,13 @@ export const EntityInitializationCause = enumOf(["Born", "Event", "Loaded", "Spa
 export const TimeOfDay = Object.freeze({ Day: 1000, Noon: 6000, Sunset: 12000, Night: 13000, Midnight: 18000, Sunrise: 23000 });
 export const MoonPhase = Object.freeze({ FullMoon: 0, WaningGibbous: 1, FirstQuarter: 2, WaningCrescent: 3, NewMoon: 4, WaxingCrescent: 5, LastQuarter: 6, WaxingGibbous: 7 });
 export const WeatherType = enumOf(["Clear", "Rain", "Thunder"]);
+export const GameRule = Object.freeze(Object.fromEntries(["commandBlockOutput", "commandBlocksEnabled", "doDayLightCycle", "doEntityDrops", "doFireTick", "doImmediateRespawn", "doInsomnia", "doLimitedCrafting", "doMobLoot", "doMobSpawning", "doTileDrops", "doWeatherCycle", "drowningDamage", "fallDamage", "fireDamage", "freezeDamage", "functionCommandLimit", "keepInventory", "maxCommandChainLength", "mobGriefing", "naturalRegeneration", "playersSleepingPercentage", "projectilesCanBreakBlocks", "pvp", "randomTickSpeed", "recipesUnlock", "respawnBlocksExplode", "sendCommandFeedback", "showBorderEffect", "showCoordinates", "showDaysPlayed", "showDeathMessages", "showRecipeMessages", "showTags", "spawnRadius", "tntExplodes", "tntExplosionDropDecay"].map(r => [r[0].toUpperCase() + r.slice(1), r])));
+export const EntityHealCause = enumOf(["Heal", "Regeneration", "SelfHeal", "TotemOfUndying"]);
+export const EntitySwingSource = enumOf(["Attack", "Build", "DropItem", "Event", "Interact", "Mine", "None", "ThrowItem", "UseItem"]);
+export const InputMode = enumOf(["Gamepad", "KeyboardAndMouse", "MotionController", "Touch"]);
+export const InputButton = enumOf(["Jump", "Sneak"]);
+export const ButtonState = enumOf(["Pressed", "Released"]);
+export const PlayerInventoryType = enumOf(["Hotbar", "Inventory"]);
 export const InputPermissionCategory = Object.freeze({ Camera: 1, Movement: 2, LateralMovement: 4, Sneak: 5, Jump: 6, Mount: 7, Dismount: 8, MoveForward: 9, MoveBackward: 10, MoveLeft: 11, MoveRight: 12 });
 export const HudElement = Object.freeze({ PaperDoll: 0, Armor: 1, ToolTips: 2, TouchControls: 3, Crosshair: 4, Hotbar: 5, Health: 6, ProgressBar: 7, Hunger: 8, AirBubbles: 9, HorseHealth: 10, StatusEffects: 11, ItemText: 12 });
 export const HudVisibility = Object.freeze({ Hide: 0, Reset: 1 });
@@ -686,8 +693,12 @@ export class Dimension{
 	setBlockType(location, type){ post("setblock", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z), type: ns(typeof type === "string" ? type : type.id), states: {} }); }
 	setBlockPermutation(location, p){ post("setblock", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z), type: p._type, states: p._states }); }
 	fillBlocks(volume, block, options){
-		const from = volume.from ?? volume.getMin?.() ?? volume, to = volume.to ?? volume.getMax?.() ?? volume;
+		//1.x: fillBlocks(begin, end, block, options); 2.x: fillBlocks(volume, block, options)
+		const legacy = block && typeof block === "object" && typeof block.x === "number" && !(block instanceof BlockPermutation);
+		const from = legacy ? volume : (volume.from ?? volume.getMin?.() ?? volume), to = legacy ? block : (volume.to ?? volume.getMax?.() ?? volume);
+		if(legacy){ block = options; }
 		const p = typeof block === "string" ? new BlockPermutation(block, {}) : (block instanceof BlockType ? new BlockPermutation(block.id, {}) : block);
+		if(!(p instanceof BlockPermutation)) throw new TypeError("fillBlocks needs a block type or permutation");
 		return call("fill", { dim: this.id, x1: from.x, y1: from.y, z1: from.z, x2: to.x, y2: to.y, z2: to.z, type: p._type, states: p._states });
 	}
 	getWeather(){ return call("weather", { dim: this.id }); }
@@ -726,8 +737,8 @@ export function flushSubscriptions(){
 	if(subscriptionsDirty){ subscriptionsDirty = false; post("sub", { events: [...subscribed] }); }
 }
 
-const afterNames = ["blockExplode", "buttonPush", "chatSend", "dataDrivenEntityTrigger", "effectAdd", "entityDie", "entityHealthChanged", "entityHitBlock", "entityHitEntity", "entityHurt", "entityLoad", "entityRemove", "entitySpawn", "explosion", "gameRuleChange", "itemCompleteUse", "itemReleaseUse", "itemStartUse", "itemStartUseOn", "itemStopUse", "itemStopUseOn", "itemUse", "itemUseOn", "leverAction", "pistonActivate", "playerBreakBlock", "playerButtonInput", "playerDimensionChange", "playerEmote", "playerGameModeChange", "playerHotbarSelectedSlotChange", "playerInputModeChange", "playerInputPermissionCategoryChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerInventoryItemChange", "playerJoin", "playerLeave", "playerPlaceBlock", "playerSpawn", "pressurePlatePop", "pressurePlatePush", "projectileHitBlock", "projectileHitEntity", "targetBlockHit", "tripWireTrip", "weatherChange", "worldInitialize", "worldLoad"];
-const beforeNames = ["chatSend", "effectAdd", "entityRemove", "explosion", "itemUse", "itemUseOn", "playerBreakBlock", "playerGameModeChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerLeave", "weatherChange", "worldInitialize", "startup"];
+const afterNames = ["blockContainerClosed", "blockContainerOpened", "blockExplode", "buttonPush", "chatSend", "dataDrivenEntityTrigger", "effectAdd", "entityContainerClosed", "entityContainerOpened", "entityDie", "entityHeal", "entityHealthChanged", "entityHitBlock", "entityHitEntity", "entityHurt", "entityItemDrop", "entityItemPickup", "entityLoad", "entityRemove", "entitySpawn", "entityStartSneaking", "entityStopSneaking", "entityTamed", "entityUpgrade", "explosion", "gameRuleChange", "itemCompleteUse", "itemReleaseUse", "itemStartUse", "itemStartUseOn", "itemStopUse", "itemStopUseOn", "itemUse", "itemUseOn", "leverAction", "pistonActivate", "playerBreakBlock", "playerButtonInput", "playerCancelBreakingBlock", "playerDimensionChange", "playerEmote", "playerGameModeChange", "playerHotbarSelectedSlotChange", "playerInputModeChange", "playerInputPermissionCategoryChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerInventoryItemChange", "playerJoin", "playerLeave", "playerPlaceBlock", "playerSpawn", "playerStartBreakingBlock", "playerSwingStart", "pressurePlatePop", "pressurePlatePush", "projectileHitBlock", "projectileHitEntity", "soundCompleted", "targetBlockHit", "tripWireTrip", "weatherChange", "worldInitialize", "worldLoad"];
+const beforeNames = ["chatSend", "effectAdd", "entityHeal", "entityItemPickup", "entityRemove", "entityTamed", "explosion", "itemUse", "itemUseOn", "playerBreakBlock", "playerGameModeChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerLeave", "weatherChange", "worldInitialize", "startup"];
 
 class WorldAfterEvents{ constructor(){ for(const n of afterNames) this[n] = new EventSignal(n, "after"); } }
 class WorldBeforeEvents{ constructor(){ for(const n of beforeNames) this[n] = new EventSignal(n, "before"); } }

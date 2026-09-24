@@ -954,6 +954,13 @@ final class AddonManager{
 			$this->getWorldRules()->applyToWorld($world);
 			$this->getTickingAreas()->applyToWorld($world);
 		}
+		$this->getWorldRules()->beforeWeatherChange(function(World $world, string $old, string $new, int $ticks) : bool{
+			$host = $this->scriptHost;
+			return $host !== null && ($host->before("weatherChange", ["dim" => $host->dimensionId($world), "previous" => ucfirst($old), "new" => ucfirst($new), "duration" => $ticks])["cancel"] ?? false) === true;
+		});
+		$this->getWorldRules()->onRuleChange(function(string $rule, bool|int $value) : void{
+			$this->scriptHost?->queueEvent("gameRuleChange", ["rule" => $rule, "value" => $value]);
+		});
 		$this->getWorldRules()->onWeatherChange(function(World $world, string $old, string $new) : void{
 			$host = $this->scriptHost;
 			if($host !== null && $host->isRunning()){

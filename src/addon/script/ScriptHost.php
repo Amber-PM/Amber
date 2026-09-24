@@ -581,6 +581,11 @@ final class ScriptHost{
 	}
 
 	/** Queues an after-event for the next tick (only when a script listens to it). @param mixed[] $data */
+	/** Whether a script subscribed to the event ($kind "after" or "before"), to skip building costly event data. */
+	public function isSubscribed(string $kind, string $name) : bool{
+		return $this->running && isset($this->subscriptions["$kind:$name"]);
+	}
+
 	public function queueEvent(string $name, array $data) : void{
 		if($this->running && ($name[0] === "_" || $name === "scriptEventReceive" || isset($this->subscriptions["after:$name"]))){
 			$this->queue[] = [$name, $data];
@@ -971,7 +976,9 @@ final class ScriptHost{
 			case "boom":
 				$world = $this->worldFor((string) ($a["dim"] ?? ""));
 				if($world !== null){
-					$explosion = new Explosion(new Position((float) $a["x"], (float) $a["y"], (float) $a["z"], $world), max(0.1, (float) $a["r"]), isset($a["src"]) ? $this->entity($a["src"]) : null, (bool) ($a["fire"] ?? false) ? 1 / 3 : 0.0);
+					$at = new Position((float) $a["x"], (float) $a["y"], (float) $a["z"], $world);
+					//without a source entity the block at the centre is the source, so plugins get a BlockExplodeEvent they can cancel
+					$explosion = new Explosion($at, max(0.1, (float) $a["r"]), (isset($a["src"]) ? $this->entity($a["src"]) : null) ?? $world->getBlock($at), (bool) ($a["fire"] ?? false) ? 1 / 3 : 0.0);
 					if((bool) ($a["breaks"] ?? true)){
 						$explosion->explodeA();
 					}

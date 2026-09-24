@@ -25,6 +25,7 @@ namespace pocketmine\addon\entity\ai\goal;
 
 use pocketmine\addon\entity\ai\Goal;
 use pocketmine\entity\object\ItemEntity;
+use pocketmine\event\entity\EntityItemPickupEvent;
 use pocketmine\item\Item;
 use pocketmine\item\StringToItemParser;
 use function is_array;
@@ -105,8 +106,9 @@ final class PickupItemsGoal extends Goal{
 			$this->navigator()->moveTo($this->target->getPosition(), $this->speedMultiplier(), $this->now());
 			return;
 		}
-		$item = $this->target->getItem();
-		if($this->mob->takeItem($item, $this->data["can_pickup_to_hand_or_equipment"] ?? true)){
+		$event = new EntityItemPickupEvent($this->mob, $this->target, $this->target->getItem(), $this->mob->getInventory());
+		$event->call();
+		if(!$event->isCancelled() && $this->mob->takeItem($event->getItem(), (bool) ($this->data["can_pickup_to_hand_or_equipment"] ?? true))){
 			$this->target->flagForDespawn();
 		}
 		$this->target = null;

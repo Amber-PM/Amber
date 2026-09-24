@@ -110,6 +110,8 @@ use const PREG_SET_ORDER;
  */
 final class CommandBridge{
 	private const INPUT_LOCKS = ["camera" => 2, "movement" => 4, "lateral_movement" => 16, "sneak" => 32, "jump" => 64, "mount" => 128, "dismount" => 256, "move_forward" => 512, "move_backward" => 1024, "move_left" => 2048, "move_right" => 4096];
+	/** Input lock names and the script API's InputPermissionCategory numbers. */
+	private const INPUT_CATEGORIES = ["camera" => 1, "movement" => 2, "lateral_movement" => 4, "sneak" => 5, "jump" => 6, "mount" => 7, "dismount" => 8, "move_forward" => 9, "move_backward" => 10, "move_left" => 11, "move_right" => 12];
 	/** Commands accepted and ignored, because there is nothing for them to do on this server. */
 	private const NOOP = ["music", "mobevent", "reload", "dialogue", "ride", "aimassist", "controlscheme"];
 
@@ -1023,7 +1025,12 @@ final class CommandBridge{
 			return false;
 		}
 		$locks = $this->inputLocks[$player] ?? 0;
+		$before = $locks;
 		$locks = $enabled ? $locks & ~$flag : $locks | $flag;
+		$category = self::INPUT_CATEGORIES[strtolower($permission)] ?? (is_numeric($permission) ? (int) $permission : null);
+		if($locks !== $before && $category !== null){
+			$this->manager->getScriptHost()?->queueEvent("playerInputPermissionCategoryChange", ["player" => $player->getId(), "category" => $category, "enabled" => $enabled]);
+		}
 		$this->inputLocks[$player] = $locks;
 		$player->getNetworkSession()->sendDataPacket(UpdateClientInputLocksPacket::create($locks, $player->getPosition()));
 		if($permission === "movement"){

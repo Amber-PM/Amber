@@ -64,7 +64,7 @@ final class AddonWorldRules{
 		"mobgriefing" => true, "naturalregeneration" => true, "playerssleepingpercentage" => 100, "projectilescanbreakblocks" => true,
 		"pvp" => true, "randomtickspeed" => 1, "recipesunlock" => true, "respawnblocksexplode" => true, "sendcommandfeedback" => true,
 		"showbordereffect" => true, "showcoordinates" => false, "showdaysplayed" => false, "showdeathmessages" => true,
-		"showrecipemessages" => true, "showtags" => true, "spawnradius" => 5, "tntexplodes" => true, "tntexplosiondropdecay" => false,
+		"showrecipemessages" => true, "showtags" => true, "spawnradius" => 5, "tntexplodes" => true, "tntexplosiondropdecay" => false, "dolimitedcrafting" => false,
 	];
 	/** Rules the client needs to know. */
 	private const CLIENT_RULES = ["showcoordinates", "showdaysplayed", "doimmediaterespawn", "showdeathmessages", "dodaylightcycle", "showtags", "recipesunlock", "showrecipemessages"];
@@ -75,6 +75,10 @@ final class AddonWorldRules{
 	private array $weather = [];
 	/** @var \Closure(World, string, string) : void|null called when a world's weather changes */
 	private ?\Closure $onWeatherChange = null;
+	/** @var \Closure(World, string, string, int) : bool|null asked before the weather changes; true cancels */
+	private ?\Closure $beforeWeatherChange = null;
+	/** @var \Closure(string, bool|int) : void|null called when a game rule changes */
+	private ?\Closure $onRuleChange = null;
 
 	public function __construct(private Server $server, private string $file){
 		$data = is_file($file) ? json_decode((string) @file_get_contents($file), true) : null;
@@ -87,6 +91,16 @@ final class AddonWorldRules{
 
 	public function onWeatherChange(\Closure $callback) : void{
 		$this->onWeatherChange = $callback;
+	}
+
+	/** @param \Closure(World, string, string, int) : bool $callback returns true to cancel the change */
+	public function beforeWeatherChange(\Closure $callback) : void{
+		$this->beforeWeatherChange = $callback;
+	}
+
+	/** @param \Closure(string, bool|int) : void $callback */
+	public function onRuleChange(\Closure $callback) : void{
+		$this->onRuleChange = $callback;
 	}
 
 	// ---------------------------------------------------------------- game rules
@@ -112,8 +126,12 @@ final class AddonWorldRules{
 		}else{
 			$value = (int) $value;
 		}
+		$changed = $this->getRule($rule) !== $value;
 		$this->rules[$rule] = $value;
 		$this->save();
+		if($changed && $this->onRuleChange !== null){
+			($this->onRuleChange)($rule, $value);
+		}
 		if($rule === "dodaylightcycle"){
 			foreach($this->server->getWorldManager()->getWorlds() as $world){
 				(bool) $value ? $world->startTime() : $world->stopTime();
@@ -180,7 +198,11 @@ final class AddonWorldRules{
 			return;
 		}
 		$old = $this->getWeather($world);
-		$this->weather[$world->getFolderName()] = [$weather, $ticks ?? mt_rand(6000, 18000)];
+		$ticks ??= mt_rand(6000, 18000);
+		if($old !== $weather && $this->beforeWeatherChange !== null && ($this->beforeWeatherChange)($world, $old, $weather, $ticks) === true){
+			return;
+		}
+		$this->weather[$world->getFolderName()] = [$weather, $ticks];
 		foreach($world->getPlayers() as $player){
 			$this->sendWeather($player, $weather);
 		}
