@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\addon\entity\ai\goal;
 
+use pocketmine\addon\entity\EntityFilter;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\ai\Goal;
 use pocketmine\addon\script\ScriptHost;
@@ -100,7 +101,8 @@ final class MoveToBlockGoal extends Goal{
 		if($this->mode === self::LAND ? !$this->inLiquid() : ($this->mode !== self::BLOCKS && $this->inLiquid())){
 			return false;
 		}
-		if($this->mode === self::BLOCKS && !$this->chance($this->float("start_chance", 1.0) / 20)){
+		//start_chance is rolled once each tick_interval, as in the game
+		if($this->mode === self::BLOCKS && !EntityFilter::chance($this->float("start_chance", 1.0))){
 			return false;
 		}
 		$this->goal = $this->search();

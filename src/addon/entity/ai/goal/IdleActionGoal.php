@@ -70,7 +70,8 @@ final class IdleActionGoal extends Goal{
 	}
 
 	private function findFood() : bool{
-		if($this->mob->isSitting() || !$this->chance($this->float("success_chance", 0.02) / 20)){
+		//success_chance is a chance per tick, as in the game
+		if($this->mob->isSitting() || !$this->chance($this->float("success_chance", 0.02))){
 			return false;
 		}
 		$pos = $this->mob->getPosition();
