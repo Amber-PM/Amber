@@ -112,6 +112,12 @@ final class AddonManager{
 	/** First runtime ID in the actor identifier list for custom entities. */
 	private const ENTITY_RUNTIME_ID_BASE = 5000;
 
+	private const MAX_DEPTH = 3;
+	private const MAX_ZIP_ENTRIES = 10000;
+	private const MAX_ZIP_FILE_SIZE = 100 * 1024 * 1024; // 100 MiB
+	private const MAX_ZIP_TOTAL_SIZE = 500 * 1024 * 1024; // 500 MiB
+	private const MAX_COMPRESSION_RATIO = 100.0;
+
 	private static ?self $instance = null;
 
 	/** @var AddonPack[] */
@@ -182,7 +188,8 @@ final class AddonManager{
 			}
 			$full = Path::join($this->path, $entry);
 			try{
-				foreach($this->unpack($full, $entry) as $pack){
+				$budget = new AddonExtractionBudget();
+				foreach($this->unpack($full, $entry, 0, $budget) as $pack){
 					$this->packs[] = $pack;
 				}
 			}catch(AddonException $e){
@@ -245,9 +252,14 @@ final class AddonManager{
 	 * @return list<AddonPack>
 	 * @throws AddonException
 	 */
-	private function unpack(string $path, string $source) : array{
+	private function unpack(string $path, string $source, int $depth = 0, ?AddonExtractionBudget $budget = null) : array{
+		$budget ??= new AddonExtractionBudget();
+		if($depth > self::MAX_DEPTH){
+			$this->logger->debug("Add-on $source: skipped $path: exceeded maximum nesting depth of " . self::MAX_DEPTH);
+			return [];
+		}
 		if(is_dir($path)){
-			return $this->findPacks($path, $source);
+			return $this->findPacks($path, $source, $depth, $budget);
 		}
 		$extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 		if(!in_array($extension, ["mcaddon", "mcpack", "zip"], true)){
@@ -258,29 +270,99 @@ final class AddonManager{
 			throw new AddonException("cannot read $path");
 		}
 		$target = Path::join($this->path, ".cache", "unpacked", $hash);
-		if(!is_dir($target)){
-			$this->extractZip($path, $target);
-		}
-		return $this->findPacks($target, $source);
+		$this->extractZip($path, $target, $budget);
+		return $this->findPacks($target, $source, $depth, $budget);
 	}
 
 	/** @throws AddonException */
-	private function extractZip(string $zipPath, string $target) : void{
+	private function extractZip(string $zipPath, string $target, ?AddonExtractionBudget $budget = null) : void{
+		$budget ??= new AddonExtractionBudget();
+
 		$zip = new \ZipArchive();
 		if($zip->open($zipPath) !== true){
 			throw new AddonException(basename($zipPath) . " is not a valid zip archive");
 		}
+		if($zip->numFiles > self::MAX_ZIP_ENTRIES){
+			$zip->close();
+			if(is_dir($target)){
+				Filesystem::recursiveUnlink($target);
+			}
+			throw new AddonException(basename($zipPath) . " contains too many entries ($zip->numFiles > " . self::MAX_ZIP_ENTRIES . ")");
+		}
+		if($budget->totalEntries + $zip->numFiles > self::MAX_ZIP_ENTRIES){
+			$zip->close();
+			if(is_dir($target)){
+				Filesystem::recursiveUnlink($target);
+			}
+			throw new AddonException(basename($zipPath) . " exceeds cumulative add-on entry limit (" . ($budget->totalEntries + $zip->numFiles) . " > " . self::MAX_ZIP_ENTRIES . ")");
+		}
+
+		$archiveUncompressed = 0;
 		for($i = 0; $i < $zip->numFiles; ++$i){
-			$name = $zip->getNameIndex($i);
-			if($name === false || str_contains($name, "..") || str_starts_with($name, "/")){
+			$stat = $zip->statIndex($i);
+			if($stat === false){
 				$zip->close();
+				if(is_dir($target)){
+					Filesystem::recursiveUnlink($target);
+				}
+				throw new AddonException(basename($zipPath) . " contains unreadable entry metadata at index $i");
+			}
+			$name = $stat["name"];
+			if($name === "" || str_contains($name, "..") || str_starts_with($name, "/") || str_starts_with($name, "\\")){
+				$zip->close();
+				if(is_dir($target)){
+					Filesystem::recursiveUnlink($target);
+				}
 				throw new AddonException(basename($zipPath) . " contains an unsafe path");
 			}
+			$isDir = str_ends_with($name, "/");
+			if(!$isDir){
+				$size = $stat["size"];
+				if($size > self::MAX_ZIP_FILE_SIZE){
+					$zip->close();
+					if(is_dir($target)){
+						Filesystem::recursiveUnlink($target);
+					}
+					throw new AddonException(basename($zipPath) . " contains file '$name' exceeding maximum size limit");
+				}
+				$archiveUncompressed += $size;
+				if($archiveUncompressed > self::MAX_ZIP_TOTAL_SIZE){
+					$zip->close();
+					if(is_dir($target)){
+						Filesystem::recursiveUnlink($target);
+					}
+					throw new AddonException(basename($zipPath) . " exceeds maximum total uncompressed size limit");
+				}
+				if($budget->totalBytes + $archiveUncompressed > self::MAX_ZIP_TOTAL_SIZE){
+					$zip->close();
+					if(is_dir($target)){
+						Filesystem::recursiveUnlink($target);
+					}
+					throw new AddonException(basename($zipPath) . " exceeds cumulative add-on uncompressed size limit");
+				}
+				$compSize = $stat["comp_size"];
+				if($size > 64 * 1024 && ($size / max(1, $compSize)) > self::MAX_COMPRESSION_RATIO){
+					$zip->close();
+					if(is_dir($target)){
+						Filesystem::recursiveUnlink($target);
+					}
+					throw new AddonException(basename($zipPath) . " entry '$name' exceeds maximum compression ratio");
+				}
+			}
 		}
-		@mkdir($target, 0777, true);
-		if(!$zip->extractTo($target)){
-			$zip->close();
-			throw new AddonException("failed to extract " . basename($zipPath));
+
+		$budget->totalEntries += $zip->numFiles;
+		$budget->totalBytes += $archiveUncompressed;
+
+		if(!is_dir($target)){
+			@mkdir($target, 0777, true);
+			if(!$zip->extractTo($target)){
+				$zip->close();
+				if(is_dir($target)){
+					Filesystem::recursiveUnlink($target);
+				}
+				throw new AddonException("failed to extract " . basename($zipPath));
+			}
 		}
 		$zip->close();
 	}
@@ -292,12 +374,13 @@ final class AddonManager{
 	 * @return list<AddonPack>
 	 * @throws AddonException
 	 */
-	private function findPacks(string $dir, string $source, int $depth = 0) : array{
+	private function findPacks(string $dir, string $source, int $depth = 0, ?AddonExtractionBudget $budget = null) : array{
+		$budget ??= new AddonExtractionBudget();
+		if($depth > self::MAX_DEPTH){
+			return [];
+		}
 		if(is_file(Path::join($dir, "manifest.json"))){
 			return [AddonPack::fromDirectory($dir, $source)];
-		}
-		if($depth > 3){
-			return [];
 		}
 		$packs = [];
 		$entries = scandir($dir);
@@ -309,15 +392,19 @@ final class AddonManager{
 			if(is_dir($full)){
 				//one broken pack must not take the rest of the add-on down with it
 				try{
-					foreach($this->findPacks($full, $source, $depth + 1) as $pack){
+					foreach($this->findPacks($full, $source, $depth + 1, $budget) as $pack){
 						$packs[] = $pack;
 					}
 				}catch(AddonException $e){
 					$this->logger->error("Add-on $source: skipped $entry: " . $e->getMessage());
 				}
 			}elseif(in_array(strtolower(pathinfo($full, PATHINFO_EXTENSION)), ["mcpack", "zip"], true)){
-				foreach($this->unpack($full, "$source/$entry") as $pack){
-					$packs[] = $pack;
+				try{
+					foreach($this->unpack($full, "$source/$entry", $depth + 1, $budget) as $pack){
+						$packs[] = $pack;
+					}
+				}catch(AddonException $e){
+					$this->logger->error("Add-on $source: skipped $entry: " . $e->getMessage());
 				}
 			}
 		}
