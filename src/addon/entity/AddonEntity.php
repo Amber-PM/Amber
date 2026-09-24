@@ -30,6 +30,7 @@ use pocketmine\addon\AddonTimings;
 use pocketmine\addon\entity\ai\MobBrain;
 use pocketmine\addon\event\AddonEntityTriggerEvent;
 use pocketmine\addon\loot\LootContext;
+use pocketmine\addon\script\ScriptHost;
 use pocketmine\block\Water;
 use pocketmine\entity\animation\ArmSwingAnimation;
 use pocketmine\entity\Attribute;
@@ -58,8 +59,11 @@ use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
+use pocketmine\network\mcpe\protocol\BossEventPacket;
 use pocketmine\network\mcpe\protocol\SetActorDataPacket;
+use pocketmine\network\mcpe\protocol\SetActorLinkPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute as NetworkAttribute;
+use pocketmine\network\mcpe\protocol\types\entity\EntityLink;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -68,12 +72,16 @@ use pocketmine\player\Player;
 use pocketmine\world\Explosion;
 use pocketmine\world\particle\HeartParticle;
 use function array_filter;
+use function array_intersect;
 use function array_is_list;
 use function array_keys;
 use function array_map;
 use function array_search;
 use function array_values;
 use function atan2;
+use function cos;
+use function count;
+use function deg2rad;
 use function explode;
 use function floor;
 use function in_array;
@@ -88,6 +96,7 @@ use function max;
 use function min;
 use function mt_rand;
 use function rtrim;
+use function sin;
 use function sqrt;
 use function str_contains;
 use function strtolower;
@@ -166,6 +175,21 @@ class AddonEntity extends Living{
 
 	private bool $playerNear = true;
 	private bool $alwaysActive = false;
+
+	/** @var array<int, Entity> seat index => rider */
+	private array $riders = [];
+	/** @var \WeakMap<Entity, AddonEntity>|null rider => the add-on entity it rides */
+	private static ?\WeakMap $vehicles = null;
+	/** @var array{float, float, bool} controlling rider's input: strafe, forward, jump */
+	private array $riderInput = [0.0, 0.0, false];
+	private int $riderInputTick = -1;
+
+	/** @var \WeakReference<Entity>|null */
+	private ?\WeakReference $leashHolder = null;
+
+	/** @var array<int, Player> players currently shown this entity's boss bar */
+	private array $bossViewers = [];
+	private bool $bossDirty = true;
 	private int $projectileAge = 0;
 	private bool $stuck = false;
 
@@ -784,6 +808,19 @@ class AddonEntity extends Living{
 			$this->brain->tick($this->playerNear);
 			AddonTimings::$ai->stopTiming();
 		}
+		if($this->riders !== []){
+			$this->updateRiders();
+		}
+		if($this->leashHolder !== null){
+			$this->updateLeash();
+		}
+		if($this->bossDirty && $this->bossViewers !== []){
+			$this->bossDirty = false;
+			$packet = BossEventPacket::healthPercent($this->getId(), $this->getHealth() / max(1, $this->getMaxHealth()));
+			foreach($this->bossViewers as $viewer){
+				$viewer->getNetworkSession()->sendDataPacket($packet);
+			}
+		}
 		$this->flushProperties();
 		return true;
 	}
@@ -791,6 +828,7 @@ class AddonEntity extends Living{
 	/** Once a second: despawning, daylight, owner lookup, damage and effect auras. */
 	private function slowTick() : void{
 		$c = $this->components;
+		$this->updateBossBar();
 		if(is_array($c["minecraft:despawn"] ?? null) || isset($c["minecraft:despawn"])){
 			if($this->checkDespawn(is_array($c["minecraft:despawn"]) ? $c["minecraft:despawn"] : [])){
 				return;
@@ -937,6 +975,9 @@ class AddonEntity extends Living{
 
 	protected function tryChangeMovement() : void{
 		parent::tryChangeMovement();
+		if($this->knockbackTicks === 0 && $this->steerByRider()){
+			return;
+		}
 		if($this->brain === null || $this->knockbackTicks > 0 || isset($this->components["minecraft:projectile"])){
 			return;
 		}
@@ -1063,6 +1104,9 @@ class AddonEntity extends Living{
 	}
 
 	protected function onDeath() : void{
+		$this->ejectRiders();
+		$this->unleash();
+		$this->hideBossBar();
 		parent::onDeath();
 		$this->brain?->stopAll();
 	}
@@ -1339,13 +1383,319 @@ class AddonEntity extends Living{
 				}
 			}
 		}
-		if(isset($c["minecraft:sittable"]) && $this->isTamed() && $this->getOwningEntity() === $player){
+		if(isset($c["minecraft:leashable"])){
+			if($this->getLeashHolder() === $player){
+				$this->unleash();
+				return true;
+			}
+			if(!$held->isNull() && ScriptHost::itemWire($held)["id"] === "minecraft:lead" && $this->leashTo($player)){
+				$this->consume($player, $held);
+				return true;
+			}
+		}
+		if(isset($c["minecraft:sittable"]) && $this->isTamed() && $this->getOwningEntity() === $player && !$player->isSneaking()){
 			$this->setSitting(!$this->sitting);
 			$sittable = is_array($c["minecraft:sittable"]) ? $c["minecraft:sittable"] : [];
 			$this->triggerEventDefinition($sittable[$this->sitting ? "sit_event" : "stand_event"] ?? null, $player);
 			return true;
 		}
+		$rideable = $c["minecraft:rideable"] ?? null;
+		if(is_array($rideable) && !($player->isSneaking() && (bool) ($rideable["crouching_skip_interact"] ?? true)) && $this->addRider($player)){
+			return true;
+		}
 		return false;
+	}
+
+	// ------------------------------------------------------------------ riding
+
+	/** The add-on entity this entity rides, if any. */
+	public static function getVehicleOf(Entity $rider) : ?AddonEntity{
+		return self::$vehicles !== null ? (self::$vehicles[$rider] ?? null) : null;
+	}
+
+	/** @return list<Entity> */
+	public function getRiders() : array{
+		return array_values($this->riders);
+	}
+
+	/** @return list<mixed[]> */
+	private function seats() : array{
+		$rideable = is_array($this->components["minecraft:rideable"] ?? null) ? $this->components["minecraft:rideable"] : [];
+		$seats = $rideable["seats"] ?? [];
+		$seats = is_array($seats) ? (array_is_list($seats) ? $seats : [$seats]) : [];
+		$count = max(1, (int) ($rideable["seat_count"] ?? count($seats)));
+		$out = [];
+		for($i = 0; $i < $count; ++$i){
+			$out[] = is_array($seats[$i] ?? null) ? $seats[$i] : (is_array($seats[0] ?? null) ? $seats[0] : []);
+		}
+		return $out;
+	}
+
+	/** Whether the entity may ride this one: minecraft:rideable, a free seat, and its family allowed. */
+	public function canAddRider(Entity $rider) : bool{
+		$rideable = $this->components["minecraft:rideable"] ?? null;
+		if(!is_array($rideable) || $rider === $this || $rider->isClosed() || !$rider->isAlive() || self::getVehicleOf($rider) !== null || $rider->getWorld() !== $this->getWorld()){
+			return false;
+		}
+		if(count($this->riders) >= count($this->seats())){
+			return false;
+		}
+		$families = is_array($rideable["family_types"] ?? null) ? $rideable["family_types"] : [];
+		return $families === [] || array_intersect($families, EntityFilter::familiesOf($rider)) !== [];
+	}
+
+	/** Puts an entity in the first free seat. Plugins and scripts can call this directly. */
+	public function addRider(Entity $rider) : bool{
+		if(!$this->canAddRider($rider)){
+			return false;
+		}
+		$seat = 0;
+		while(isset($this->riders[$seat])){
+			$seat++;
+		}
+		$this->riders[$seat] = $rider;
+		self::$vehicles ??= new \WeakMap();
+		self::$vehicles[$rider] = $this;
+		$this->applyRiderMetadata($rider, $seat, true);
+		$this->broadcastLink($rider, $seat === $this->controllingSeat() ? EntityLink::TYPE_RIDER : EntityLink::TYPE_PASSENGER);
+		$this->navigatorStop();
+		$rideable = is_array($this->components["minecraft:rideable"]) ? $this->components["minecraft:rideable"] : [];
+		$this->triggerEventDefinition($rideable["on_rider_enter_event"] ?? null, $rider);
+		return true;
+	}
+
+	public function removeRider(Entity $rider) : bool{
+		$seat = array_search($rider, $this->riders, true);
+		if($seat === false){
+			return false;
+		}
+		unset($this->riders[$seat]);
+		if(self::$vehicles !== null){
+			unset(self::$vehicles[$rider]);
+		}
+		$this->broadcastLink($rider, EntityLink::TYPE_REMOVE);
+		if(!$rider->isClosed()){
+			$this->applyRiderMetadata($rider, (int) $seat, false);
+			$exit = $this->location->add(0, $this->size->getHeight() + 0.1, 0);
+			if($rider instanceof Player){
+				$rider->teleport($exit);
+			}else{
+				$rider->teleport(Location::fromObject($exit, $this->getWorld(), $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+			}
+		}
+		$rideable = is_array($this->components["minecraft:rideable"] ?? null) ? $this->components["minecraft:rideable"] : [];
+		$this->triggerEventDefinition($rideable["on_rider_exit_event"] ?? null, $rider);
+		return true;
+	}
+
+	public function ejectRiders() : void{
+		foreach($this->riders as $rider){
+			$this->removeRider($rider);
+		}
+	}
+
+	private function controllingSeat() : int{
+		$rideable = is_array($this->components["minecraft:rideable"] ?? null) ? $this->components["minecraft:rideable"] : [];
+		return (int) ($rideable["controlling_seat"] ?? 0);
+	}
+
+	private function applyRiderMetadata(Entity $rider, int $seat, bool $riding) : void{
+		$properties = $rider->getNetworkProperties();
+		$properties->setGenericFlag(EntityMetadataFlags::RIDING, $riding);
+		if($riding){
+			$config = $this->seats()[$seat] ?? [];
+			$position = is_array($config["position"] ?? null) ? $config["position"] : [0, $this->size->getHeight(), 0];
+			$properties->setVector3(EntityMetadataProperties::RIDER_SEAT_POSITION, new Vector3((float) ($position[0] ?? 0), (float) ($position[1] ?? 0), (float) ($position[2] ?? 0)));
+			$properties->setByte(EntityMetadataProperties::RIDER_ROTATION_LOCKED, (bool) ($config["lock_rider_rotation"] ?? false) ? 1 : 0);
+			$limit = is_numeric($config["lock_rider_rotation"] ?? null) ? (float) $config["lock_rider_rotation"] : 181.0;
+			$properties->setFloat(EntityMetadataProperties::RIDER_MAX_ROTATION, $limit);
+			$properties->setFloat(EntityMetadataProperties::RIDER_MIN_ROTATION, -$limit);
+		}
+		$rider->sendData(null);
+		$this->networkPropertiesDirty = true;
+	}
+
+	private function broadcastLink(Entity $rider, int $type) : void{
+		$packet = SetActorLinkPacket::create(new EntityLink($this->getId(), $rider->getId(), $type, true, false, 0.0));
+		$viewers = $this->getViewers();
+		if($rider instanceof Player){
+			$viewers[] = $rider;
+		}
+		foreach($viewers as $viewer){
+			$viewer->getNetworkSession()->sendDataPacket($packet);
+		}
+	}
+
+	/** Keeps riders seated; drops the ones that left, died or changed world. */
+	private function updateRiders() : void{
+		foreach($this->riders as $seat => $rider){
+			if($rider->isClosed() || !$rider->isAlive() || $rider->getWorld() !== $this->getWorld() || $rider->getPosition()->distanceSquared($this->location) > 100){
+				$this->removeRider($rider);
+				continue;
+			}
+			if(!$rider instanceof Player){
+				//players report their seat position themselves; other riders are carried
+				$config = $this->seats()[$seat] ?? [];
+				$offset = is_array($config["position"] ?? null) ? $config["position"] : [0, $this->size->getHeight(), 0];
+				$yaw = deg2rad($this->location->yaw);
+				$x = (float) ($offset[0] ?? 0);
+				$z = (float) ($offset[2] ?? 0);
+				$target = $this->location->add($x * cos($yaw) - $z * sin($yaw), (float) ($offset[1] ?? 0), $x * sin($yaw) + $z * cos($yaw));
+				$rider->teleport(Location::fromObject($target, $this->getWorld(), $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+			}
+		}
+	}
+
+	/** @internal the controlling player's movement input, from PlayerAuthInputPacket */
+	public static function setRiderInput(Player $player, float $strafe, float $forward, bool $jump) : void{
+		$vehicle = self::getVehicleOf($player);
+		if($vehicle !== null && ($vehicle->riders[$vehicle->controllingSeat()] ?? null) === $player){
+			$vehicle->riderInput = [$strafe, $forward, $jump];
+			$vehicle->riderInputTick = $vehicle->now();
+		}
+	}
+
+	/** Moves the entity by its controlling rider's input (minecraft:input_ground_controlled / input_air_controlled). */
+	private function steerByRider() : bool{
+		$rider = $this->riders[$this->controllingSeat()] ?? null;
+		$c = $this->components;
+		$ground = isset($c["minecraft:input_ground_controlled"]) || isset($c["minecraft:behavior.controlled_by_player"]);
+		$air = isset($c["minecraft:input_air_controlled"]);
+		if(!$rider instanceof Player || (!$ground && !$air)){
+			return false;
+		}
+		[$strafe, $forward, $jump] = $this->now() - $this->riderInputTick < 5 ? $this->riderInput : [0.0, 0.0, false];
+		$yaw = $rider->getLocation()->yaw;
+		$this->setRotation($yaw, 0.0);
+		$movement = AddonJson::scalar($c["minecraft:movement"] ?? null);
+		$multiplier = is_array($c["minecraft:input_ground_controlled"] ?? null) ? (float) ($c["minecraft:input_ground_controlled"]["movement_speed_multiplier"] ?? 1.0) : 1.0;
+		$speed = (is_numeric($movement) ? (float) $movement : 0.2) * $multiplier;
+		$rad = deg2rad($yaw);
+		$dx = -sin($rad) * $forward + cos($rad) * $strafe;
+		$dz = cos($rad) * $forward + sin($rad) * $strafe;
+		$length = sqrt($dx * $dx + $dz * $dz);
+		if($length > 1){
+			$dx /= $length;
+			$dz /= $length;
+		}
+		$my = $this->motion->y;
+		if($air){
+			$my = -sin(deg2rad($rider->getLocation()->pitch)) * $forward * $speed;
+		}elseif($jump && $this->onGround){
+			$my = $this->getJumpVelocity();
+		}
+		$this->motion = new Vector3($dx * $speed, $my, $dz * $speed);
+		return true;
+	}
+
+	private function navigatorStop() : void{
+		$this->brain?->getNavigator()->stop();
+	}
+
+	// ------------------------------------------------------------------ leashing
+
+	public function getLeashHolder() : ?Entity{
+		$holder = $this->leashHolder?->get();
+		return $holder !== null && !$holder->isClosed() ? $holder : null;
+	}
+
+	/** Leashes the entity to a holder (minecraft:leashable). */
+	public function leashTo(Entity $holder) : bool{
+		$leashable = $this->components["minecraft:leashable"] ?? null;
+		if(!is_array($leashable) && $leashable === null){
+			return false;
+		}
+		if($this->getLeashHolder() !== null && !(bool) (is_array($leashable) ? ($leashable["can_be_stolen"] ?? false) : false)){
+			return false;
+		}
+		$this->leashHolder = \WeakReference::create($holder);
+		$this->networkPropertiesDirty = true;
+		$this->triggerEventDefinition(is_array($leashable) ? ($leashable["on_leash"] ?? null) : null, $holder);
+		return true;
+	}
+
+	public function unleash() : void{
+		if($this->leashHolder === null){
+			return;
+		}
+		$holder = $this->getLeashHolder();
+		$this->leashHolder = null;
+		$this->networkPropertiesDirty = true;
+		$leashable = $this->components["minecraft:leashable"] ?? null;
+		$this->triggerEventDefinition(is_array($leashable) ? ($leashable["on_unleash"] ?? null) : null, $holder);
+	}
+
+	/** Pulls the entity towards its holder past soft_distance; the lead breaks past max_distance. */
+	private function updateLeash() : void{
+		$holder = $this->getLeashHolder();
+		$leashable = is_array($this->components["minecraft:leashable"] ?? null) ? $this->components["minecraft:leashable"] : [];
+		if($holder === null || !isset($this->components["minecraft:leashable"]) || $holder->getWorld() !== $this->getWorld()){
+			$this->unleash();
+			return;
+		}
+		$soft = (float) ($leashable["soft_distance"] ?? 4.0);
+		$max = (float) ($leashable["max_distance"] ?? 10.0);
+		$delta = $holder->getPosition()->subtractVector($this->location);
+		$distance = $delta->length();
+		if($distance > $max){
+			$this->unleash();
+			return;
+		}
+		if($distance > $soft){
+			$pull = min(0.4, ($distance - $soft) * 0.08);
+			$this->setMotion($this->motion->addVector($delta->divide($distance)->multiply($pull)));
+		}
+	}
+
+	// ------------------------------------------------------------------ boss bar
+
+	/** minecraft:boss: shows the bar to players within hud_range, hides it from the rest. */
+	private function updateBossBar() : void{
+		$boss = $this->components["minecraft:boss"] ?? null;
+		if(!is_array($boss) && $boss === null){
+			$this->hideBossBar();
+			return;
+		}
+		$range = is_array($boss) ? (float) ($boss["hud_range"] ?? 55) : 55.0;
+		$title = is_array($boss) && is_string($boss["name"] ?? null) ? $boss["name"] : ($this->getNameTag() !== "" ? $this->getNameTag() : $this->getName());
+		$darken = is_array($boss) && (bool) ($boss["should_darken_sky"] ?? false);
+		$inRange = [];
+		foreach($this->getWorld()->getPlayers() as $player){
+			if($player->getPosition()->distanceSquared($this->location) <= $range * $range){
+				$inRange[$player->getId()] = $player;
+			}
+		}
+		$show = BossEventPacket::show($this->getId(), $title, $this->getHealth() / max(1, $this->getMaxHealth()), $darken);
+		foreach($inRange as $id => $player){
+			if(!isset($this->bossViewers[$id])){
+				$player->getNetworkSession()->sendDataPacket($show);
+			}
+		}
+		$hide = BossEventPacket::hide($this->getId());
+		foreach($this->bossViewers as $id => $player){
+			if(!isset($inRange[$id]) && $player->isConnected()){
+				$player->getNetworkSession()->sendDataPacket($hide);
+			}
+		}
+		$this->bossViewers = $inRange;
+	}
+
+	private function hideBossBar() : void{
+		if($this->bossViewers === []){
+			return;
+		}
+		$hide = BossEventPacket::hide($this->getId());
+		foreach($this->bossViewers as $player){
+			if($player->isConnected()){
+				$player->getNetworkSession()->sendDataPacket($hide);
+			}
+		}
+		$this->bossViewers = [];
+	}
+
+	public function setHealth(float $amount) : void{
+		parent::setHealth($amount);
+		$this->bossDirty = true;
 	}
 
 	/** @param mixed[] $entry */
@@ -1482,6 +1832,13 @@ class AddonEntity extends Living{
 		$properties->setGenericFlag(EntityMetadataFlags::IGNITED, isset($c["minecraft:is_ignited"]) || $this->fuseTicks > 0);
 		$properties->setGenericFlag(EntityMetadataFlags::INLOVE, $this->loveTicks > 0);
 		$properties->setGenericFlag(EntityMetadataFlags::CAN_FLY, isset($c["minecraft:can_fly"]));
+		//Entity::syncNetworkData() resets the lead holder, so it is set here
+		$holder = $this->getLeashHolder();
+		$properties->setLong(EntityMetadataProperties::LEAD_HOLDER_EID, $holder?->getId() ?? -1);
+		$properties->setGenericFlag(EntityMetadataFlags::LEASHED, $holder !== null);
+		$controllable = isset($c["minecraft:input_ground_controlled"]) || isset($c["minecraft:input_air_controlled"]);
+		$properties->setGenericFlag(EntityMetadataFlags::WASD_CONTROLLED, $controllable && isset($this->riders[$this->controllingSeat()]));
+		$properties->setByte(EntityMetadataProperties::CONTROLLING_RIDER_SEAT_NUMBER, $this->controllingSeat());
 	}
 
 	protected function sendSpawnPacket(Player $player) : void{
@@ -1500,13 +1857,22 @@ class AddonEntity extends Living{
 			}, $this->attributeMap->getAll()),
 			$this->getAllNetworkData(),
 			$this->propertySyncData(),
-			[]
+			array_map(fn(int $seat) : EntityLink => new EntityLink($this->getId(), $this->riders[$seat]->getId(), $seat === $this->controllingSeat() ? EntityLink::TYPE_RIDER : EntityLink::TYPE_PASSENGER, true, false, 0.0), array_keys($this->riders))
 		));
 		$networkSession = $player->getNetworkSession();
 		$networkSession->getEntityEventBroadcaster()->onMobArmorChange([$networkSession], $this);
 	}
 
+	protected function onDispose() : void{
+		$this->ejectRiders();
+		$this->hideBossBar();
+		$this->leashHolder = null;
+		parent::onDispose();
+	}
+
 	protected function destroyCycles() : void{
+		$this->riders = [];
+		$this->bossViewers = [];
 		$this->brain?->stopAll();
 		$this->brain = null;
 		$this->lastDamager = null;

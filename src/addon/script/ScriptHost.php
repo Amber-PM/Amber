@@ -1099,6 +1099,31 @@ final class ScriptHost{
 					$player->getNetworkSession()->sendDataPacket(RemoveObjectivePacket::create("amber_script_" . strtolower((string) $a["slot"])));
 				}
 				return null;
+			case "rideadd":
+				$vehicle = $this->entity($a["id"] ?? null);
+				$rider = $this->entity($a["rider"] ?? null);
+				return $vehicle instanceof AddonEntity && $rider !== null && $vehicle->addRider($rider);
+			case "rideremove":
+				$vehicle = $this->entity($a["id"] ?? null);
+				$rider = $this->entity($a["rider"] ?? null);
+				return $vehicle instanceof AddonEntity && $rider !== null && $vehicle->removeRider($rider);
+			case "rideeject":
+				$vehicle = $this->entity($a["id"] ?? null);
+				if($vehicle instanceof AddonEntity){
+					$vehicle->ejectRiders();
+				}
+				return null;
+			case "leash":
+				$e = $this->entity($a["id"] ?? null);
+				$holder = isset($a["holder"]) ? $this->entity($a["holder"]) : null;
+				if(!$e instanceof AddonEntity){
+					return false;
+				}
+				if($holder === null){
+					$e->unleash();
+					return true;
+				}
+				return $e->leashTo($holder);
 			case "tame":
 				$e = $this->entity($a["id"] ?? null);
 				$owner = $this->entity($a["owner"] ?? null);
@@ -1179,7 +1204,13 @@ final class ScriptHost{
 			$s["slot"] = $e->getInventory()->getHeldItemIndex();
 			$s["flying"] = $e->isFlying();
 		}
+		$vehicle = AddonEntity::getVehicleOf($e);
+		if($vehicle !== null){
+			$s["vehicle"] = (string) $vehicle->getId();
+		}
 		if($e instanceof AddonEntity){
+			$s["riders"] = array_map(static fn(Entity $r) : string => (string) $r->getId(), $e->getRiders());
+			$s["leashHolder"] = $e->getLeashHolder() === null ? null : (string) $e->getLeashHolder()->getId();
 			$s["comps"] = array_keys($e->getComponents());
 			$s["tamed"] = $e->isTamed();
 			$owner = $e->getOwningEntityId();

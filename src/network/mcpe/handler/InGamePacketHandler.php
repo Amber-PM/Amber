@@ -219,6 +219,8 @@ class InGamePacketHandler extends PacketHandler{
 		}
 
 		$inputFlags = $packet->getInputFlags();
+		//steering an add-on mount (a no-op unless the player rides one)
+		\pocketmine\addon\entity\AddonEntity::setRiderInput($this->player, $packet->getMoveVecX(), $packet->getMoveVecZ(), $inputFlags->get(PlayerAuthInputFlags::JUMPING));
 		if($this->lastPlayerAuthInputFlags === null || !$inputFlags->equals($this->lastPlayerAuthInputFlags)){
 			$this->lastPlayerAuthInputFlags = $inputFlags;
 
@@ -648,6 +650,10 @@ class InGamePacketHandler extends PacketHandler{
 			//the inventory was closed when it wasn't.
 			//this is also sent whenever entity metadata updates, which can get really spammy.
 			//TODO: implement handling for this where it matters
+			return true;
+		}
+		if($packet->action === InteractPacket::ACTION_LEAVE_VEHICLE){
+			\pocketmine\addon\entity\AddonEntity::getVehicleOf($this->player)?->removeRider($this->player);
 			return true;
 		}
 		$target = $this->player->getWorld()->getEntity($packet->targetActorRuntimeId);
