@@ -20,6 +20,7 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 ### Key Features
 * 🌐 **Dynamic Multi-Version Support** - Concurrently supports Minecraft: Bedrock protocols from **589 to 2193** (v1.20.0 to v1.26.50) out of the box.
 * ⚙️ **Protocol-Isolated Dictionaries & Registries** - Utilizes version-aware mappings for block state NBTs, crafting recipes, and creative inventories using isolated instances to prevent memory cross-contamination.
+* 📦 **Bedrock Add-on Loader** - Loads `.mcaddon` / `.mcpack` add-ons from the `addons/` folder: resource packs, custom items, blocks, entities and recipes, sent to every client from v1.21.0 in the format that version reads. See [ADDONS.md](ADDONS.md).
 * 🛠️ **Native Anvil & Repair System** - Provides built-in support for anvil transactions (`AnvilTransaction`), item renaming, item repairing, and enchantment combining (using customizable cost calculations).
 * 🎯 **Custom Event Dispatchers** - Exposes developer-focused events such as `PlayerPressurePlateTriggerEvent`, `SessionDisconnectEvent`, and `ItemEntityDropEvent` for granular event manipulation.
 * 🧩 **Extensible Plugin API** - Keeps full compatibility with the official PocketMine-MP v5 plugin API, enabling most standard plugins to run without modifications.
@@ -98,6 +99,9 @@ The system automatically infers parsers based on the parameter types of your clo
 | `float` / `#[FloatRange(min, max)]` | Decimal values with range bounds | `FloatArgumentParser` |
 | `string` / `#[EnumValues(...)]` | Custom static dropdown options | `StringArgumentParser` |
 | `#[DynamicEnum(ProviderClass::class)]` | Dynamically calculated option enums | `DynamicEnumArgumentParser` |
+
+## Bedrock Add-ons
+Drop a Bedrock add-on (`.mcaddon`, `.mcpack`, `.zip` or an unpacked pack folder) into the server's `addons/` folder and restart. Its resource pack is sent to players, and its custom items, blocks, entities and recipes become real server content, usable from `/addons` and from plugins through `Server::getAddonManager()`. Add-ons written for Minecraft 1.21.0 or later are supported. Behavior-pack scripts are not run. The full guide, including what is supported and the plugin API, is in [ADDONS.md](ADDONS.md).
 
 ## Developing Plugins
 AmberPM maintains compatibility with the PocketMine-MP v5 API. Refer to the following resources:

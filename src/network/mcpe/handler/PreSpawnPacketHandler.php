@@ -137,7 +137,7 @@ class PreSpawnPacketHandler extends PacketHandler{
 				true,
 				null,
 				new ServerTelemetryData("", "", "", ""),
-				[],
+				\pocketmine\addon\AddonManager::getInstance()?->getBlockPaletteEntries($this->session->getProtocolId()) ?? [],
 				0,
 				$typeConverter->getItemTypeDictionary()->getEntries(),
 			));
@@ -145,6 +145,9 @@ class PreSpawnPacketHandler extends PacketHandler{
 			if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_60){
 				$this->session->getLogger()->debug("Sending items");
 				$this->session->sendDataPacket(ItemRegistryPacket::create($typeConverter->getItemTypeDictionary()->getEntries()));
+			}elseif(($addonItems = \pocketmine\addon\AddonManager::getInstance()?->getComponentItemTypeEntries() ?? []) !== []){
+				//before 1.21.60 this packet is ItemComponentPacket: component data for custom items only
+				$this->session->sendDataPacket(ItemRegistryPacket::create($addonItems));
 			}
 
 			$this->session->getLogger()->debug("Sending actor identifiers");
