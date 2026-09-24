@@ -158,6 +158,9 @@ class AddonEntity extends Living{
 	private array $tags = [];
 
 	private ?MobBrain $brain = null;
+	private ?EntityFeatures $features = null;
+	/** ticks until the next hop, for minecraft:movement.jump / movement.skip */
+	private int $hopDelay = 0;
 	private string $behaviorKey = "";
 
 	private int $variant = 0;
@@ -253,6 +256,7 @@ class AddonEntity extends Living{
 
 	protected function initEntity(CompoundTag $nbt) : void{
 		parent::initEntity($nbt);
+		$this->getFeatures()->load($nbt);
 
 		$groups = $nbt->getListTag(self::TAG_GROUPS);
 		if($groups !== null){
@@ -324,8 +328,19 @@ class AddonEntity extends Living{
 		}
 	}
 
+	/** The components that run on their own: sounds, sensors, anger, spawning, schedules, teleporting... */
+	public function getFeatures() : EntityFeatures{
+		return $this->features ??= new EntityFeatures($this);
+	}
+
+	/** minecraft:transient entities are never saved. */
+	public function canSaveWithChunk() : bool{
+		return !isset($this->components["minecraft:transient"]) && parent::canSaveWithChunk();
+	}
+
 	public function saveNBT() : CompoundTag{
 		$nbt = parent::saveNBT()->setString(self::TAG_IDENTIFIER, $this->addonDefinition->getIdentifier());
+		$this->getFeatures()->save($nbt);
 		$nbt->setTag(self::TAG_GROUPS, new ListTag(array_map(static fn(string $g) : StringTag => new StringTag($g), $this->activeGroups), NBT::TAG_String));
 		$properties = CompoundTag::create();
 		foreach($this->properties as $name => $value){
@@ -508,6 +523,7 @@ class AddonEntity extends Living{
 		if(isset($c["minecraft:instant_despawn"])){
 			$this->flagForDespawn();
 		}
+		$this->getFeatures()->componentsChanged($old, $c);
 	}
 
 	private static function intValue(mixed $component) : int{
@@ -797,6 +813,13 @@ class AddonEntity extends Living{
 		$this->ownerName = $owner?->getName();
 	}
 
+	/** Tames the mob for a player (minecraft:tamemount, scripts and plugins). */
+	public function tameBy(Player $owner) : void{
+		$this->tamed = true;
+		$this->setOwner($owner);
+		$this->networkPropertiesDirty = true;
+	}
+
 	// ------------------------------------------------------------------ ticking
 
 	private function now() : int{
@@ -888,6 +911,7 @@ class AddonEntity extends Living{
 			$this->brain->tick($this->playerNear);
 			AddonTimings::$ai->stopTiming();
 		}
+		$this->getFeatures()->tick($now);
 		if($this->riders !== []){
 			$this->updateRiders();
 		}
@@ -1074,6 +1098,22 @@ class AddonEntity extends Living{
 		if(!$navigator->isMoving()){
 			return;
 		}
+		$hop = $this->components["minecraft:movement.jump"] ?? $this->components["minecraft:movement.skip"] ?? null;
+		if($hop !== null && !$navigator->isDirect()){
+			if(!$this->onGround){
+				return; //keep the hop's momentum
+			}
+			if($this->hopDelay > 0){
+				$this->hopDelay--;
+				$this->motion = new Vector3(0, $this->motion->y, 0);
+				return;
+			}
+			$delay = is_array($hop) ? ($hop["jump_delay"] ?? [0, 0]) : [0, 0];
+			$this->hopDelay = is_array($delay) ? mt_rand((int) ((float) ($delay[0] ?? 0) * 20), (int) ((float) ($delay[1] ?? $delay[0] ?? 0) * 20)) : (int) ((float) $delay * 20);
+			$this->jump();
+			$this->motion = new Vector3($navigator->getWantedX() * 2, $this->motion->y, $navigator->getWantedZ() * 2);
+			return;
+		}
 		if($navigator->isDirect()){
 			$this->motion = new Vector3($navigator->getWantedX(), $navigator->getWantedY(), $navigator->getWantedZ());
 		}elseif($this->onGround || $this->getWorld()->getBlock($this->location) instanceof Water){
@@ -1114,6 +1154,14 @@ class AddonEntity extends Living{
 
 	public function attack(EntityDamageEvent $source) : void{
 		$damager = $source instanceof EntityDamageByEntityEvent ? $source->getDamager() : null;
+		//minecraft:cannot_be_attacked, unless the attacker has minecraft:ignore_cannot_be_attacked (and passes its filters)
+		if($damager !== null && isset($this->components["minecraft:cannot_be_attacked"])){
+			$ignore = $damager instanceof AddonEntity ? $damager->getComponent("minecraft:ignore_cannot_be_attacked") : null;
+			if($ignore === null || (is_array($ignore) && isset($ignore["filters"]) && !EntityFilter::test($ignore["filters"], new FilterContext($damager, $this), $this->reporter()))){
+				$source->cancel();
+				return;
+			}
+		}
 		$context = new FilterContext($this, $damager, $damager, $source->getCause(), $source->getFinalDamage() >= $this->getHealth());
 		foreach(self::triggers($this->components["minecraft:damage_sensor"] ?? null) as $trigger){
 			if(!is_array($trigger)){
@@ -1152,6 +1200,9 @@ class AddonEntity extends Living{
 		}
 		$this->lastHurtTick = $this->now();
 		$this->lastHurtCause = $source->getCause();
+		if($this->isAlive()){
+			$this->getFeatures()->playSound("hurt");
+		}
 		if($damager !== null){
 			$this->lastDamager = \WeakReference::create($damager);
 			if($this->sitting && $damager === $this->getOwningEntity()){
@@ -1322,6 +1373,7 @@ class AddonEntity extends Living{
 	}
 
 	protected function onDeath() : void{
+		$this->getFeatures()->playSound("death");
 		$this->ejectRiders();
 		$this->unleash();
 		$this->hideBossBar();
@@ -1332,6 +1384,10 @@ class AddonEntity extends Living{
 	/** Hits the entity with this mob's minecraft:attack (damage, and an optional effect). */
 	public function attackEntity(Entity $target) : void{
 		$attack = is_array($this->components["minecraft:attack"] ?? null) ? $this->components["minecraft:attack"] : [];
+		if(!isset($attack["damage"]) && isset($this->components["minecraft:attack_damage"])){
+			//the older form of the attack damage
+			$attack["damage"] = AddonJson::scalar($this->components["minecraft:attack_damage"]) ?? 2;
+		}
 		$damage = $attack["damage"] ?? 2;
 		if(is_array($damage)){
 			$min = (int) ($damage["range_min"] ?? $damage[0] ?? 1);
@@ -1341,6 +1397,9 @@ class AddonEntity extends Living{
 		$event = new EntityDamageByEntityEvent($this, $target, EntityDamageEvent::CAUSE_ENTITY_ATTACK, (float) $damage);
 		$this->broadcastAnimation(new ArmSwingAnimation($this));
 		$target->attack($event);
+		if(!$event->isCancelled()){
+			$this->getFeatures()->attacked();
+		}
 		if(!$event->isCancelled() && $target instanceof Living && is_string($attack["effect_name"] ?? null)){
 			$effect = StringToEffectParser::getInstance()->parse($attack["effect_name"]);
 			if($effect !== null){
@@ -1627,7 +1686,9 @@ class AddonEntity extends Living{
 			return true;
 		}
 		$rideable = $c["minecraft:rideable"] ?? null;
-		if(is_array($rideable) && !($player->isSneaking() && (bool) ($rideable["crouching_skip_interact"] ?? true)) && $this->addRider($player)){
+		//behavior.player_ride_tamed: only a tamed mob carries players (a wild one with minecraft:tamemount can be ridden to tame it)
+		$rideAllowed = !isset($this->components["minecraft:behavior.player_ride_tamed"]) || $this->isTamed() || isset($this->components["minecraft:tamemount"]);
+		if(is_array($rideable) && $rideAllowed && !($player->isSneaking() && (bool) ($rideable["crouching_skip_interact"] ?? true)) && $this->addRider($player)){
 			return true;
 		}
 		return false;
@@ -2138,6 +2199,9 @@ class AddonEntity extends Living{
 		$properties->setGenericFlag(EntityMetadataFlags::IGNITED, isset($c["minecraft:is_ignited"]) || $this->fuseTicks > 0);
 		$properties->setGenericFlag(EntityMetadataFlags::INLOVE, $this->loveTicks > 0);
 		$properties->setGenericFlag(EntityMetadataFlags::CAN_FLY, isset($c["minecraft:can_fly"]));
+		$properties->setGenericFlag(EntityMetadataFlags::STUNNED, isset($c["minecraft:is_stunned"]));
+		$properties->setGenericFlag(EntityMetadataFlags::PREGNANT, isset($c["minecraft:is_pregnant"]));
+		$properties->setByte(EntityMetadataProperties::COLOR_2, self::intValue($c["minecraft:color2"] ?? null));
 		//Entity::syncNetworkData() resets the lead holder, so it is set here
 		$holder = $this->getLeashHolder();
 		$properties->setLong(EntityMetadataProperties::LEAD_HOLDER_EID, $holder?->getId() ?? -1);
