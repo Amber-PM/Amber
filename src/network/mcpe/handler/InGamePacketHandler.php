@@ -664,6 +664,9 @@ class InGamePacketHandler extends PacketHandler{
 			$this->inventoryManager->onClientOpenMainInventory();
 			return true;
 		}
+		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target instanceof \pocketmine\addon\entity\AddonEntity){
+			return $target->openInventoryFor($this->player);
+		}
 		return false; //TODO
 	}
 

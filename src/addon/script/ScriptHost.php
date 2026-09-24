@@ -1792,7 +1792,7 @@ final class ScriptHost{
 		if($e instanceof Human){
 			return $kind === "ender" ? $e->getEnderInventory() : $e->getInventory();
 		}
-		return null;
+		return $e instanceof AddonEntity && $kind === "inventory" ? $e->getInventory() : null;
 	}
 
 	/** @return array{size: int, items: array<int, mixed>}|null */
@@ -1818,8 +1818,8 @@ final class ScriptHost{
 			"Chest" => $armor->getChestplate(),
 			"Legs" => $armor->getLeggings(),
 			"Feet" => $armor->getBoots(),
-			"Offhand" => $e instanceof Human ? $e->getOffHandInventory()->getItem(0) : null,
-			default => $e instanceof Human ? $e->getInventory()->getItemInHand() : null,
+			"Offhand" => $e instanceof Human ? $e->getOffHandInventory()->getItem(0) : ($e instanceof AddonEntity ? $e->getOffHandItem() : null),
+			default => $e instanceof Human ? $e->getInventory()->getItemInHand() : ($e instanceof AddonEntity ? $e->getMainHandItem() : null),
 		};
 	}
 
@@ -1834,8 +1834,8 @@ final class ScriptHost{
 			"Chest" => $armor->setChestplate($item),
 			"Legs" => $armor->setLeggings($item),
 			"Feet" => $armor->setBoots($item),
-			"Offhand" => $e instanceof Human ? $e->getOffHandInventory()->setItem(0, $item) : null,
-			default => $e instanceof Human ? $e->getInventory()->setItemInHand($item) : null,
+			"Offhand" => $e instanceof Human ? $e->getOffHandInventory()->setItem(0, $item) : ($e instanceof AddonEntity ? $e->setOffHandItem($item) : null),
+			default => $e instanceof Human ? $e->getInventory()->setItemInHand($item) : ($e instanceof AddonEntity ? $e->setMainHandItem($item) : null),
 		};
 	}
 

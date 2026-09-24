@@ -48,7 +48,14 @@ use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityRegainHealthEvent;
 use pocketmine\item\Durable;
+use pocketmine\item\Armor;
 use pocketmine\item\Item;
+use pocketmine\item\VanillaItems;
+use pocketmine\data\SavedDataLoadingException;
+use pocketmine\data\bedrock\item\SavedItemStackData;
+use pocketmine\network\mcpe\protocol\MobEquipmentPacket;
+use pocketmine\network\mcpe\protocol\types\inventory\ContainerIds;
+use pocketmine\network\mcpe\protocol\types\inventory\ItemStackWrapper;
 use pocketmine\item\StringToItemParser;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\NBT;
@@ -124,6 +131,9 @@ class AddonEntity extends Living{
 	private const TAG_PROPERTIES = "AddonProperties";
 	private const TAG_STATE = "AddonState";
 	private const TAG_TAGS = "AddonTags";
+	private const TAG_INVENTORY = "AddonInventory";
+	private const TAG_MAINHAND = "AddonMainHand";
+	private const TAG_OFFHAND = "AddonOffHand";
 
 	/** Deepest chain of events triggering events before the chain is cut (packs can loop). */
 	private const MAX_EVENT_DEPTH = 16;
@@ -186,6 +196,11 @@ class AddonEntity extends Living{
 
 	/** @var \WeakReference<Entity>|null */
 	private ?\WeakReference $leashHolder = null;
+
+	private ?AddonEntityInventory $inventory = null;
+	private ?Item $mainHand = null;
+	private ?Item $offHand = null;
+	private bool $equipped = false;
 
 	/** @var array<int, Player> players currently shown this entity's boss bar */
 	private array $bossViewers = [];
@@ -253,6 +268,26 @@ class AddonEntity extends Living{
 			$owner = $state->getString("Owner", "");
 			$this->ownerName = $owner !== "" ? $owner : null;
 		}
+		$this->equipped = $state?->getByte("Equipped", 0) === 1;
+		$items = $nbt->getListTag(self::TAG_INVENTORY);
+		if($items !== null && ($inventory = $this->getInventory()) !== null){
+			foreach($items->getValue() as $tag){
+				if($tag instanceof CompoundTag){
+					$slot = $tag->getByte(SavedItemStackData::TAG_SLOT, -1);
+					try{
+						if($slot >= 0 && $slot < $inventory->getSize()){
+							$inventory->setItem($slot, Item::nbtDeserialize($tag));
+						}
+					}catch(SavedDataLoadingException){
+						//an item this server no longer knows: dropped from the container
+					}
+				}
+			}
+		}
+		$hand = $nbt->getCompoundTag(self::TAG_MAINHAND);
+		$this->mainHand = $hand !== null ? Item::nbtDeserialize($hand) : null;
+		$off = $nbt->getCompoundTag(self::TAG_OFFHAND);
+		$this->offHand = $off !== null ? Item::nbtDeserialize($off) : null;
 		$tags = $nbt->getListTag(self::TAG_TAGS);
 		foreach($tags?->getValue() ?? [] as $tag){
 			if($tag instanceof StringTag){
@@ -284,7 +319,21 @@ class AddonEntity extends Living{
 			->setByte("Tamed", $this->tamed ? 1 : 0)
 			->setByte("Sitting", $this->sitting ? 1 : 0)
 			->setInt("Age", $this->ageTicks)
+			->setByte("Equipped", $this->equipped ? 1 : 0)
 			->setString("Owner", $this->ownerName ?? ""));
+		if($this->inventory !== null){
+			$items = [];
+			foreach($this->inventory->getContents() as $slot => $item){
+				$items[] = $item->nbtSerialize($slot);
+			}
+			$nbt->setTag(self::TAG_INVENTORY, new ListTag($items, NBT::TAG_Compound));
+		}
+		if($this->mainHand !== null && !$this->mainHand->isNull()){
+			$nbt->setTag(self::TAG_MAINHAND, $this->mainHand->nbtSerialize());
+		}
+		if($this->offHand !== null && !$this->offHand->isNull()){
+			$nbt->setTag(self::TAG_OFFHAND, $this->offHand->nbtSerialize());
+		}
 		$nbt->setTag(self::TAG_TAGS, new ListTag(array_map(static fn(string $t) : StringTag => new StringTag($t), array_keys($this->tags)), NBT::TAG_String));
 		return $nbt;
 	}
@@ -733,6 +782,10 @@ class AddonEntity extends Living{
 			$this->spawned = true;
 			$this->triggerEvent($this->spawnEvent);
 		}
+		if(!$this->equipped){
+			$this->equipped = true;
+			$this->rollEquipment();
+		}
 	}
 
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
@@ -1086,13 +1139,123 @@ class AddonEntity extends Living{
 	}
 
 	public function getDrops() : array{
+		$drops = [];
 		$loot = $this->components["minecraft:loot"] ?? null;
 		$table = is_array($loot) ? ($loot["table"] ?? null) : null;
 		$tables = AddonManager::getInstance()?->getLootTables();
-		if(!is_string($table) || $tables === null){
-			return [];
+		if(is_string($table) && $tables !== null){
+			$drops = $tables->roll($table, LootContext::forEntityDeath($this, $this->getLastDamager()));
 		}
-		return $tables->roll($table, LootContext::forEntityDeath($this, $this->getLastDamager()));
+		if($this->inventory !== null){
+			foreach($this->inventory->getContents() as $item){
+				$drops[] = $item;
+			}
+			$this->inventory->clearAll();
+		}
+		foreach(["slot.weapon.mainhand" => $this->mainHand, "slot.weapon.offhand" => $this->offHand, "slot.armor.head" => $this->armorInventory->getHelmet(),
+			"slot.armor.chest" => $this->armorInventory->getChestplate(), "slot.armor.legs" => $this->armorInventory->getLeggings(), "slot.armor.feet" => $this->armorInventory->getBoots()] as $slot => $item){
+			if($item !== null && !$item->isNull() && EntityFilter::chance($this->equipmentDropChance($slot))){
+				$drops[] = $item;
+			}
+		}
+		return $drops;
+	}
+
+	// ------------------------------------------------------------------ inventory and equipment
+
+	/** The entity's container (minecraft:inventory), created on first use; null without the component. */
+	public function getInventory() : ?AddonEntityInventory{
+		if($this->inventory !== null){
+			return $this->inventory;
+		}
+		$component = $this->components["minecraft:inventory"] ?? $this->addonDefinition->resolveComponents(array_keys($this->addonDefinition->getComponentGroups()))["minecraft:inventory"] ?? null;
+		if($component === null){
+			return null;
+		}
+		$size = is_array($component) ? (int) ($component["inventory_size"] ?? 5) : 5;
+		if(isset($this->components["minecraft:is_chested"]) && is_array($component) && is_numeric($component["additional_slots_per_strength"] ?? null)){
+			$size += 3 * (int) $component["additional_slots_per_strength"];
+		}
+		return $this->inventory = new AddonEntityInventory($this, max(1, min(54, $size)));
+	}
+
+	/** Opens the entity's inventory for a player, when minecraft:inventory allows it. */
+	public function openInventoryFor(Player $player) : bool{
+		$component = $this->components["minecraft:inventory"] ?? null;
+		$inventory = $this->getInventory();
+		if($inventory === null || $component === null){
+			return false;
+		}
+		if(is_array($component) && ((bool) ($component["private"] ?? false) || ((bool) ($component["restrict_to_owner"] ?? false) && $this->getOwningEntity() !== $player))){
+			return false;
+		}
+		return $player->setCurrentWindow($inventory);
+	}
+
+	public function getMainHandItem() : Item{ return $this->mainHand ?? VanillaItems::AIR(); }
+
+	public function getOffHandItem() : Item{ return $this->offHand ?? VanillaItems::AIR(); }
+
+	public function setMainHandItem(Item $item) : void{
+		$this->mainHand = $item->isNull() ? null : clone $item;
+		$this->sendHeldItems($this->getViewers());
+	}
+
+	public function setOffHandItem(Item $item) : void{
+		$this->offHand = $item->isNull() ? null : clone $item;
+		$this->sendHeldItems($this->getViewers());
+	}
+
+	/** minecraft:equipment: gear from a loot table, rolled once when the entity first spawns. */
+	private function rollEquipment() : void{
+		$equipment = $this->components["minecraft:equipment"] ?? null;
+		$table = is_array($equipment) ? ($equipment["table"] ?? null) : null;
+		$tables = AddonManager::getInstance()?->getLootTables();
+		if(!is_string($table) || $tables === null){
+			return;
+		}
+		foreach($tables->roll($table, new LootContext($this)) as $item){
+			if($item instanceof Armor){
+				$slot = $item->getArmorSlot();
+				if($this->armorInventory->getItem($slot)->isNull()){
+					$this->armorInventory->setItem($slot, $item);
+					continue;
+				}
+			}
+			if($this->mainHand === null){
+				$this->mainHand = $item;
+			}elseif($this->offHand === null){
+				$this->offHand = $item;
+			}
+		}
+		$this->sendHeldItems($this->getViewers());
+	}
+
+	private function equipmentDropChance(string $slot) : float{
+		$equipment = $this->components["minecraft:equipment"] ?? null;
+		foreach(is_array($equipment) && is_array($equipment["slot_drop_chance"] ?? null) ? $equipment["slot_drop_chance"] : [] as $entry){
+			if(is_array($entry) && ($entry["slot"] ?? null) === $slot){
+				return (float) ($entry["drop_chance"] ?? 0);
+			}
+		}
+		return is_array($equipment) ? 0.085 : 0.0; //the game's default for rolled gear; other held items always drop
+	}
+
+	/**
+	 * Held items, encoded for each viewer's own protocol.
+	 *
+	 * @param Player[] $viewers
+	 */
+	private function sendHeldItems(array $viewers) : void{
+		if($this->mainHand === null && $this->offHand === null){
+			return;
+		}
+		foreach($viewers as $viewer){
+			$session = $viewer->getNetworkSession();
+			$converter = $session->getTypeConverter();
+			$session->sendDataPacket(MobEquipmentPacket::create($this->getId(), ItemStackWrapper::legacy($converter->coreItemStackToNet($this->getMainHandItem())), 0, 0, ContainerIds::INVENTORY));
+			$session->sendDataPacket(MobEquipmentPacket::create($this->getId(), ItemStackWrapper::legacy($converter->coreItemStackToNet($this->getOffHandItem())), 0, 0, ContainerIds::OFFHAND));
+		}
 	}
 
 	public function getXpDropAmount() : int{
@@ -1397,6 +1560,9 @@ class AddonEntity extends Living{
 			$this->setSitting(!$this->sitting);
 			$sittable = is_array($c["minecraft:sittable"]) ? $c["minecraft:sittable"] : [];
 			$this->triggerEventDefinition($sittable[$this->sitting ? "sit_event" : "stand_event"] ?? null, $player);
+			return true;
+		}
+		if(isset($c["minecraft:inventory"]) && ($player->isSneaking() || !isset($c["minecraft:rideable"])) && $this->openInventoryFor($player)){
 			return true;
 		}
 		$rideable = $c["minecraft:rideable"] ?? null;
@@ -1861,6 +2027,7 @@ class AddonEntity extends Living{
 		));
 		$networkSession = $player->getNetworkSession();
 		$networkSession->getEntityEventBroadcaster()->onMobArmorChange([$networkSession], $this);
+		$this->sendHeldItems([$player]);
 	}
 
 	protected function onDispose() : void{
