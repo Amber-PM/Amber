@@ -64,6 +64,7 @@ use pocketmine\inventory\Inventory;
 use pocketmine\network\mcpe\protocol\ContainerOpenPacket;
 use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
 use pocketmine\addon\entity\AddonEntityInventory;
+use pocketmine\addon\entity\trade\TradeInventory;
 use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\player\PlayerToggleSneakEvent;
@@ -279,9 +280,11 @@ final class AddonRuntime extends PluginBase{
 		//add-on entity containers open as entity inventories
 		$pm->registerEvent(PlayerLoginEvent::class, function(PlayerLoginEvent $event) : void{
 			$event->getPlayer()->getNetworkSession()->getInvManager()?->getContainerOpenCallbacks()->add(
-				static fn(int $id, Inventory $inventory) : ?array => $inventory instanceof AddonEntityInventory
-					? [ContainerOpenPacket::entityInv($id, WindowTypes::CONTAINER, $inventory->getHolder()->getId())]
-					: null
+				static fn(int $id, Inventory $inventory) : ?array => match(true){
+					$inventory instanceof AddonEntityInventory => [ContainerOpenPacket::entityInv($id, WindowTypes::CONTAINER, $inventory->getHolder()->getId())],
+					$inventory instanceof TradeInventory => [$inventory->createPacket($id)],
+					default => null,
+				}
 			);
 		}, $monitor, $this);
 

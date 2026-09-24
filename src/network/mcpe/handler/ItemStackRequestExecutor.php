@@ -65,6 +65,7 @@ use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Utils;
 use function array_key_first;
 use function count;
+use function max;
 use function spl_object_id;
 
 class ItemStackRequestExecutor{
@@ -327,7 +328,7 @@ class ItemStackRequestExecutor{
 	 * @throws ItemStackRequestProcessException
 	 */
 	private function assertDoingCrafting() : void{
-		if(!$this->specialTransaction instanceof CraftingTransaction && !$this->specialTransaction instanceof EnchantingTransaction){
+		if(!$this->specialTransaction instanceof CraftingTransaction && !$this->specialTransaction instanceof EnchantingTransaction && !$this->specialTransaction instanceof \pocketmine\addon\entity\trade\TradeTransaction){
 			if($this->specialTransaction === null){
 				throw new ItemStackRequestProcessException("Expected CraftRecipe or CraftRecipeAuto action to precede this action");
 			}else{
@@ -380,6 +381,16 @@ class ItemStackRequestExecutor{
 					$this->specialTransaction = new EnchantingTransaction($this->player, $option, $optionId + 1);
 					$this->setNextCreatedItem($window->getOutput($optionId));
 				}
+			}elseif($window instanceof \pocketmine\addon\entity\trade\TradeInventory){
+				//a trade with an add-on mob: the "recipe" is one of its offers
+				$this->assertFirstSpecialTransaction();
+				$offer = $window->getOffer($action->getRecipeId());
+				if($offer === null){
+					throw new ItemStackRequestProcessException("No such trade offer: " . $action->getRecipeId());
+				}
+				$repetitions = $this->player->getNetworkSession()->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_20 ? max(1, $action->getRepetitions()) : 1;
+				$this->specialTransaction = new \pocketmine\addon\entity\trade\TradeTransaction($this->player, $window, $offer, $repetitions);
+				$this->setNextCreatedItem($this->specialTransaction->getResult());
 			}else{
 				$this->beginCrafting($action->getRecipeId(), $this->player->getNetworkSession()->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_20 ? $action->getRepetitions() : 1);
 			}
