@@ -474,7 +474,7 @@ export class Entity{
 	getComponent(id){
 		id = ns(id);
 		const cls = componentClasses[id];
-		const has = alwaysComponents.includes(id) || (this._s().comps ?? []).includes(id) || (id === "minecraft:inventory" && this._s().player) || (id === "minecraft:equippable" && this._s().living) || (id === "minecraft:ender_chest_inventory" && this._s().player) || (id === "minecraft:onfire" && (this._s().fireTicks ?? 0) > 0) || (id === "minecraft:item" && this._s().item) || (id === "minecraft:riding" && this._s().vehicle);
+		const has = alwaysComponents.includes(id) || (this._s().comps ?? []).includes(id) || (id === "minecraft:inventory" && (this._s().player || (this._s().comps ?? []).includes("minecraft:inventory"))) || (id === "minecraft:equippable" && this._s().living) || (id === "minecraft:ender_chest_inventory" && this._s().player) || (id === "minecraft:onfire" && (this._s().fireTicks ?? 0) > 0) || (id === "minecraft:item" && this._s().item) || (id === "minecraft:riding" && this._s().vehicle);
 		if(!has) return undefined;
 		const data = (id in (this._s().compData ?? {})) ? this._s().compData[id] : (this._s().comps?.includes(id) ? call("comp", { id: this.id, name: id }) : undefined);
 		if(cls) return new cls(this, id, data);
