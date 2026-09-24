@@ -51,6 +51,7 @@ use pocketmine\item\Durable;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\StringToEnchantmentParser;
 use pocketmine\item\Item;
+use pocketmine\item\Releasable;
 use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
@@ -204,6 +205,8 @@ final class ScriptHost{
 	private array $dimensionIds = [];
 
 	private CommandBridge $commands;
+	/** @var \WeakMap<Player, array{int, array<string, mixed>, bool}> players using an item: [start tick, item, releasable] */
+	private \WeakMap $itemUse;
 
 	/**
 	 * @param list<AddonPack> $packs behavior packs with a script entry
@@ -220,6 +223,7 @@ final class ScriptHost{
 	){
 		$this->entityTags = new \WeakMap();
 		$this->entityDynamic = new \WeakMap();
+		$this->itemUse = new \WeakMap();
 		$this->commands = $manager->getCommandBridge();
 		$this->loadDynamic();
 	}
@@ -539,6 +543,33 @@ final class ScriptHost{
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * itemStartUse / itemStopUse / itemReleaseUse, which PocketMine has no events for: derived from each player's
+	 * using-item state, once a tick, only while a script listens.
+	 */
+	public function tickItemUse(int $currentTick) : void{
+		if(!isset($this->subscriptions["after:itemStartUse"]) && !isset($this->subscriptions["after:itemStopUse"]) && !isset($this->subscriptions["after:itemReleaseUse"])){
+			return;
+		}
+		foreach($this->server->getOnlinePlayers() as $player){
+			$using = $player->isUsingItem();
+			$state = $this->itemUse[$player] ?? null;
+			if($using && $state === null){
+				$item = $player->getInventory()->getItemInHand();
+				$this->itemUse[$player] = [$currentTick, self::itemWire($item), $item instanceof Releasable];
+				$this->queueEvent("itemStartUse", ["player" => $player->getId(), "item" => $this->itemUse[$player][1]]);
+			}elseif(!$using && $state !== null){
+				unset($this->itemUse[$player]);
+				[$start, $item, $releasable] = $state;
+				$duration = $currentTick - $start;
+				if($releasable){
+					$this->queueEvent("itemReleaseUse", ["player" => $player->getId(), "item" => $item, "duration" => $duration]);
+				}
+				$this->queueEvent("itemStopUse", ["player" => $player->getId(), "item" => $item, "duration" => $duration]);
+			}
+		}
 	}
 
 	public function wants(string $key) : bool{

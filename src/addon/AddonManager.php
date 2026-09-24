@@ -28,6 +28,7 @@ use pocketmine\addon\block\AddonBlockDefinition;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\addon\entity\ai\MobBrain;
+use pocketmine\addon\entity\trade\TradeTable;
 use pocketmine\addon\item\AddonArmorItem;
 use pocketmine\addon\item\AddonDurableItem;
 use pocketmine\addon\item\AddonFoodItem;
@@ -95,6 +96,7 @@ use pocketmine\world\format\io\GlobalItemDataHandlers;
 use pocketmine\world\World;
 use Symfony\Component\Filesystem\Path;
 use function array_filter;
+use function array_key_exists;
 use function array_keys;
 use function array_map;
 use function array_search;
@@ -547,9 +549,6 @@ final class AddonManager{
 		$this->behaviorRoots[] = $pack->getPath();
 		if($pack->getScriptEntry() !== null){
 			$this->scriptPacks[] = $pack;
-		}
-		if(is_dir(Path::join($pack->getPath(), "trading"))){
-			$this->logger->warning("Add-on " . $pack->getName() . ": trade tables are not run by the server");
 		}
 		foreach($this->jsonFiles(Path::join($pack->getPath(), "spawn_rules")) as $file){
 			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
@@ -1010,6 +1009,22 @@ final class AddonManager{
 		return $this->scoreboard ??= new AddonScoreboard($this->server, Path::join($this->path, ".runtime", "scoreboard.json"));
 	}
 
+	/** @var array<string, TradeTable|null> */
+	private array $tradeTables = [];
+
+	/** A trade table from any behavior pack, parsed once. */
+	public function getTradeTable(string $path) : ?TradeTable{
+		if(!array_key_exists($path, $this->tradeTables)){
+			try{
+				$this->tradeTables[$path] = TradeTable::load($path, $this->behaviorRoots);
+			}catch(AddonException $e){
+				$this->logger->warning("Add-on trade table $path could not be read: " . $e->getMessage());
+				$this->tradeTables[$path] = null;
+			}
+		}
+		return $this->tradeTables[$path];
+	}
+
 	public function getStructures() : AddonStructures{
 		return $this->structures ??= new AddonStructures($this->behaviorRoots, $this->logger);
 	}
@@ -1025,6 +1040,7 @@ final class AddonManager{
 		}
 		if($this->scriptHost !== null && $this->scriptHost->isRunning()){
 			AddonTimings::$scripts->startTiming();
+			$this->scriptHost->tickItemUse($currentTick);
 			$this->scriptHost->tick($currentTick);
 			AddonTimings::$scripts->stopTiming();
 		}

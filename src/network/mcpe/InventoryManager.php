@@ -326,6 +326,7 @@ class InventoryManager{
 			$inventory instanceof CraftingTableInventory => UIInventorySlotOffset::CRAFTING3X3_INPUT,
 			$inventory instanceof CartographyTableInventory => UIInventorySlotOffset::CARTOGRAPHY_TABLE,
 			$inventory instanceof SmithingTableInventory => UIInventorySlotOffset::SMITHING_TABLE,
+			$inventory instanceof \pocketmine\addon\entity\trade\TradeInventory => $inventory->getTrader()->usesNewTradeScreen() ? UIInventorySlotOffset::TRADE2_INGREDIENT : UIInventorySlotOffset::TRADE_INGREDIENT,
 			default => null,
 		};
 	}

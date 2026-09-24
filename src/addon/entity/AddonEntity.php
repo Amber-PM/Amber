@@ -31,6 +31,9 @@ use pocketmine\addon\entity\ai\MobBrain;
 use pocketmine\addon\event\AddonEntityTriggerEvent;
 use pocketmine\addon\loot\LootContext;
 use pocketmine\addon\script\ScriptHost;
+use pocketmine\addon\entity\trade\TradeInventory;
+use pocketmine\addon\entity\trade\TradeOffer;
+use pocketmine\addon\entity\trade\TradeTable;
 use pocketmine\block\Water;
 use pocketmine\entity\animation\ArmSwingAnimation;
 use pocketmine\entity\Attribute;
@@ -134,6 +137,7 @@ class AddonEntity extends Living{
 	private const TAG_INVENTORY = "AddonInventory";
 	private const TAG_MAINHAND = "AddonMainHand";
 	private const TAG_OFFHAND = "AddonOffHand";
+	private const TAG_TRADES = "AddonTrades";
 
 	/** Deepest chain of events triggering events before the chain is cut (packs can loop). */
 	private const MAX_EVENT_DEPTH = 16;
@@ -201,6 +205,14 @@ class AddonEntity extends Living{
 	private ?Item $mainHand = null;
 	private ?Item $offHand = null;
 	private bool $equipped = false;
+
+	/** @var list<TradeOffer>|null rolled on first trade */
+	private ?array $tradeOffers = null;
+	private int $tradeExp = 0;
+	private ?TradeTable $tradeTable = null;
+	/** @var \WeakReference<Player>|null the player trading right now */
+	private ?\WeakReference $tradingWith = null;
+	private const TRADE_NET_ID_BASE = 1000000;
 
 	/** @var array<int, Player> players currently shown this entity's boss bar */
 	private array $bossViewers = [];
@@ -284,6 +296,17 @@ class AddonEntity extends Living{
 				}
 			}
 		}
+		$this->tradeExp = $state?->getInt("TradeExp", 0) ?? 0;
+		$offers = $nbt->getListTag(self::TAG_TRADES);
+		if($offers !== null){
+			$this->tradeOffers = [];
+			foreach($offers->getValue() as $i => $tag){
+				$offer = $tag instanceof CompoundTag ? TradeOffer::load($tag, self::TRADE_NET_ID_BASE + $i) : null;
+				if($offer !== null){
+					$this->tradeOffers[] = $offer;
+				}
+			}
+		}
 		$hand = $nbt->getCompoundTag(self::TAG_MAINHAND);
 		$this->mainHand = $hand !== null ? Item::nbtDeserialize($hand) : null;
 		$off = $nbt->getCompoundTag(self::TAG_OFFHAND);
@@ -320,6 +343,7 @@ class AddonEntity extends Living{
 			->setByte("Sitting", $this->sitting ? 1 : 0)
 			->setInt("Age", $this->ageTicks)
 			->setByte("Equipped", $this->equipped ? 1 : 0)
+			->setInt("TradeExp", $this->tradeExp)
 			->setString("Owner", $this->ownerName ?? ""));
 		if($this->inventory !== null){
 			$items = [];
@@ -327,6 +351,9 @@ class AddonEntity extends Living{
 				$items[] = $item->nbtSerialize($slot);
 			}
 			$nbt->setTag(self::TAG_INVENTORY, new ListTag($items, NBT::TAG_Compound));
+		}
+		if($this->tradeOffers !== null){
+			$nbt->setTag(self::TAG_TRADES, new ListTag(array_map(static fn(TradeOffer $o) : CompoundTag => $o->save(), $this->tradeOffers), NBT::TAG_Compound));
 		}
 		if($this->mainHand !== null && !$this->mainHand->isNull()){
 			$nbt->setTag(self::TAG_MAINHAND, $this->mainHand->nbtSerialize());
@@ -863,6 +890,15 @@ class AddonEntity extends Living{
 		}
 		if($this->riders !== []){
 			$this->updateRiders();
+		}
+		if($this->tradingWith !== null){
+			$trader = $this->tradingWith->get();
+			if($trader === null || !$trader->isConnected() || !($trader->getCurrentWindow() instanceof TradeInventory)){
+				$this->tradingWith = null;
+			}else{
+				$this->brain?->getNavigator()->stop();
+				$this->lookAt($trader->getEyePos());
+			}
 		}
 		if($this->leashHolder !== null){
 			$this->updateLeash();
@@ -1562,6 +1598,9 @@ class AddonEntity extends Living{
 			$this->triggerEventDefinition($sittable[$this->sitting ? "sit_event" : "stand_event"] ?? null, $player);
 			return true;
 		}
+		if((isset($c["minecraft:trade_table"]) || isset($c["minecraft:economy_trade_table"])) && !$this->isBaby() && !$player->isSneaking() && $this->openTradeFor($player)){
+			return true;
+		}
 		if(isset($c["minecraft:inventory"]) && ($player->isSneaking() || !isset($c["minecraft:rideable"])) && $this->openInventoryFor($player)){
 			return true;
 		}
@@ -1756,6 +1795,85 @@ class AddonEntity extends Living{
 
 	private function navigatorStop() : void{
 		$this->brain?->getNavigator()->stop();
+	}
+
+	// ------------------------------------------------------------------ trading
+
+	/** @return array<string, mixed>|null the trade_table or economy_trade_table component */
+	private function tradeComponent() : ?array{
+		$component = $this->components["minecraft:trade_table"] ?? $this->components["minecraft:economy_trade_table"] ?? null;
+		return is_array($component) ? $component : null;
+	}
+
+	private function table() : ?TradeTable{
+		$component = $this->tradeComponent();
+		$path = is_string($component["table"] ?? null) ? $component["table"] : null;
+		if($path === null){
+			return null;
+		}
+		return $this->tradeTable ??= AddonManager::getInstance()?->getTradeTable($path);
+	}
+
+	/** @return list<TradeOffer> */
+	public function getTradeOffers() : array{
+		if($this->tradeOffers === null){
+			$this->tradeOffers = $this->table()?->roll(self::TRADE_NET_ID_BASE) ?? [];
+		}
+		return $this->tradeOffers;
+	}
+
+	/** @return list<int> */
+	public function getTradeTierExperience() : array{
+		return $this->table()?->getTierExperience() ?? [0];
+	}
+
+	public function getTradeTier() : int{
+		$tier = 0;
+		foreach($this->getTradeTierExperience() as $index => $exp){
+			if($this->tradeExp >= $exp){
+				$tier = $index;
+			}
+		}
+		return $tier;
+	}
+
+	public function getTradeDisplayName() : string{
+		$component = $this->tradeComponent();
+		return is_string($component["display_name"] ?? null) ? $component["display_name"] : $this->getName();
+	}
+
+	public function usesNewTradeScreen() : bool{
+		return (bool) ($this->tradeComponent()["new_screen"] ?? true);
+	}
+
+	/** Opens the trade screen (minecraft:trade_table / economy_trade_table). */
+	public function openTradeFor(Player $player) : bool{
+		if($this->tradeComponent() === null || $this->getTradeOffers() === []){
+			return false;
+		}
+		$current = $this->tradingWith?->get();
+		if($current !== null && $current !== $player && $current->getCurrentWindow() instanceof TradeInventory){
+			return false; //one customer at a time, as in the game
+		}
+		$this->tradingWith = \WeakReference::create($player);
+		return $player->setCurrentWindow(new TradeInventory($this, $player));
+	}
+
+	/** @internal after a trade went through */
+	public function onTraded(Player $player, TradeOffer $offer, int $repetitions) : void{
+		$tierBefore = $this->getTradeTier();
+		$this->tradeExp += $offer->traderExp * $repetitions;
+		if($offer->rewardExp){
+			$this->getWorld()->dropExperience($player->getPosition(), mt_rand(3, 6) * $repetitions);
+		}
+		$window = $player->getCurrentWindow();
+		if($window instanceof TradeInventory && ($id = $player->getNetworkSession()->getInvManager()?->getWindowId($window)) !== null){
+			//refresh uses, and new offers if the trader reached a new tier
+			$player->getNetworkSession()->sendDataPacket($window->createPacket($id));
+		}
+		if($this->getTradeTier() > $tierBefore){
+			$this->getWorld()->addParticle($this->location->add(0, $this->size->getHeight() + 0.3, 0), new HeartParticle());
+		}
 	}
 
 	// ------------------------------------------------------------------ leashing
