@@ -25,20 +25,27 @@ namespace pocketmine\addon;
 
 use pocketmine\addon\block\AddonBlock;
 use pocketmine\addon\entity\AddonEntity;
+use pocketmine\addon\entity\AddonEntityInventory;
 use pocketmine\addon\entity\CombatMemory;
+use pocketmine\addon\entity\trade\TradeInventory;
 use pocketmine\addon\script\ScriptHost;
+use pocketmine\addon\world\AddonWorldRules;
 use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
+use pocketmine\block\Button;
+use pocketmine\block\Fire;
+use pocketmine\block\inventory\BlockInventory;
+use pocketmine\block\Lever;
+use pocketmine\block\SimplePressurePlate;
+use pocketmine\block\utils\AnalogRedstoneSignalEmitter;
+use pocketmine\entity\object\PrimedTNT;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\event\block\BlockBreakEvent;
-use pocketmine\event\block\BlockPlaceEvent;
 use pocketmine\event\block\BlockBurnEvent;
+use pocketmine\event\block\BlockExplodeEvent;
+use pocketmine\event\block\BlockPlaceEvent;
 use pocketmine\event\block\BlockSpreadEvent;
-use pocketmine\event\entity\EntityRegainHealthEvent;
-use pocketmine\event\player\PlayerDeathEvent;
-use pocketmine\event\world\WorldLoadEvent;
-use pocketmine\entity\object\PrimedTNT;
-use pocketmine\block\Fire;
-use pocketmine\addon\world\AddonWorldRules;
+use pocketmine\event\block\PressurePlateUpdateEvent;
 use pocketmine\event\entity\EntityDamageByChildEntityEvent;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
@@ -46,12 +53,20 @@ use pocketmine\event\entity\EntityDeathEvent;
 use pocketmine\event\entity\EntityDespawnEvent;
 use pocketmine\event\entity\EntityEffectAddEvent;
 use pocketmine\event\entity\EntityExplodeEvent;
+use pocketmine\event\entity\EntityItemPickupEvent;
+use pocketmine\event\entity\EntityRegainHealthEvent;
 use pocketmine\event\entity\EntitySpawnEvent;
 use pocketmine\event\entity\EntityTeleportEvent;
 use pocketmine\event\entity\ProjectileHitBlockEvent;
 use pocketmine\event\entity\ProjectileHitEntityEvent;
 use pocketmine\event\EventPriority;
+use pocketmine\entity\Entity;
+use pocketmine\event\inventory\InventoryCloseEvent;
+use pocketmine\event\inventory\InventoryOpenEvent;
 use pocketmine\event\player\PlayerChatEvent;
+use pocketmine\event\player\PlayerDeathEvent;
+use pocketmine\event\player\PlayerDropItemEvent;
+use pocketmine\event\player\PlayerEmoteEvent;
 use pocketmine\event\player\PlayerEntityInteractEvent;
 use pocketmine\event\player\PlayerGameModeChangeEvent;
 use pocketmine\event\player\PlayerInteractEvent;
@@ -60,18 +75,26 @@ use pocketmine\event\player\PlayerItemHeldEvent;
 use pocketmine\event\player\PlayerItemUseEvent;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerLoginEvent;
-use pocketmine\inventory\Inventory;
-use pocketmine\network\mcpe\protocol\ContainerOpenPacket;
-use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
-use pocketmine\addon\entity\AddonEntityInventory;
-use pocketmine\addon\entity\trade\TradeInventory;
 use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerQuitEvent;
-use pocketmine\event\player\PlayerToggleSneakEvent;
 use pocketmine\event\player\PlayerRespawnEvent;
+use pocketmine\event\player\PlayerToggleSneakEvent;
+use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\world\ChunkLoadEvent;
+use pocketmine\event\world\WorldLoadEvent;
+use pocketmine\inventory\CallbackInventoryListener;
+use pocketmine\inventory\Inventory;
 use pocketmine\item\Item;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
+use pocketmine\network\mcpe\protocol\AnimatePacket;
+use pocketmine\network\mcpe\protocol\ContainerOpenPacket;
+use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
+use pocketmine\network\mcpe\protocol\types\InputMode;
+use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
+use pocketmine\network\mcpe\protocol\types\PlayerAction;
+use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
+use pocketmine\network\mcpe\protocol\types\PlayerBlockAction;
 use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
 use pocketmine\world\format\Chunk;
@@ -81,13 +104,18 @@ use function array_flip;
 use function array_intersect_key;
 use function array_keys;
 use function array_map;
+use function array_slice;
 use function array_values;
 use function count;
 use function in_array;
 use function is_array;
+use function is_numeric;
 use function is_string;
+use function max;
+use function min;
 use function str_replace;
 use function strtolower;
+use function ucfirst;
 
 /**
  * The add-on runtime's event wiring, owned by an internal plugin (it is never listed as one).
@@ -99,6 +127,9 @@ use function strtolower;
  * decided.
  */
 final class AddonRuntime extends PluginBase{
+	/** blockExplode events one explosion sends at most (an explosion can destroy thousands of blocks). */
+	private const MAX_EXPLODED_BLOCK_EVENTS = 512;
+
 	private ?AddonManager $manager = null;
 
 	/** @internal */
@@ -498,6 +529,242 @@ final class AddonRuntime extends PluginBase{
 			}
 			$host->queueEvent("explosion", $data);
 		}, EventPriority::LOW, $this);
+
+		$this->registerVanillaEvents();
+	}
+
+	/**
+	 * The rest of the game's script events, matched against its 1.26.50 API: healing and health changes, item
+	 * pickups and drops, sneaking, containers, levers, buttons and pressure plates, exploded blocks, emotes,
+	 * button and input-mode changes, swings, starting and cancelling block breaking, and inventory changes.
+	 * Taming is fired by AddonEntity; game rules, weather and input permissions by the world features.
+	 */
+	private function registerVanillaEvents() : void{
+		$pm = $this->getServer()->getPluginManager();
+		$monitor = EventPriority::MONITOR;
+
+		$pm->registerEvent(EntityRegainHealthEvent::class, function(EntityRegainHealthEvent $event) : void{
+			$reply = $this->host()?->before("entityHeal", self::healData($event));
+			if(($reply["cancel"] ?? false) === true){
+				$event->cancel();
+			}elseif(is_numeric($reply["healing"] ?? null)){
+				$event->setAmount(max(0.0, (float) $reply["healing"]));
+			}
+		}, EventPriority::LOW, $this);
+		$pm->registerEvent(EntityRegainHealthEvent::class, function(EntityRegainHealthEvent $event) : void{
+			$host = $this->host();
+			if($host === null){
+				return;
+			}
+			$entity = $event->getEntity();
+			$host->queueEvent("entityHeal", self::healData($event));
+			$old = $entity->getHealth();
+			$new = min((float) $entity->getMaxHealth(), $old + $event->getAmount());
+			if($new !== $old){
+				$host->queueEvent("entityHealthChanged", ["entity" => $entity->getId(), "old" => $old, "new" => $new]);
+			}
+		}, $monitor, $this);
+		$pm->registerEvent(EntityDamageEvent::class, function(EntityDamageEvent $event) : void{
+			$entity = $event->getEntity();
+			$old = $entity->getHealth();
+			$new = max(0.0, $old - $event->getFinalDamage());
+			if($new !== $old){
+				$this->host()?->queueEvent("entityHealthChanged", ["entity" => $entity->getId(), "old" => $old, "new" => $new]);
+			}
+		}, $monitor, $this);
+
+		$pm->registerEvent(EntityItemPickupEvent::class, function(EntityItemPickupEvent $event) : void{
+			$data = ["entity" => $event->getEntity()->getId(), "item" => $event->getOrigin()->getId()];
+			if(($this->host()?->before("entityItemPickup", $data)["cancel"] ?? false) === true){
+				$event->cancel();
+			}
+		}, EventPriority::LOW, $this);
+		$pm->registerEvent(EntityItemPickupEvent::class, function(EntityItemPickupEvent $event) : void{
+			$this->host()?->queueEvent("entityItemPickup", ["entity" => $event->getEntity()->getId(), "items" => [ScriptHost::itemWire($event->getItem())]]);
+		}, $monitor, $this);
+		$pm->registerEvent(PlayerDropItemEvent::class, function(PlayerDropItemEvent $event) : void{
+			$this->host()?->queueEvent("entityItemDrop", ["entity" => $event->getPlayer()->getId(), "items" => [ScriptHost::itemWire($event->getItem())]]);
+		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerToggleSneakEvent::class, function(PlayerToggleSneakEvent $event) : void{
+			$this->host()?->queueEvent($event->isSneaking() ? "entityStartSneaking" : "entityStopSneaking", ["entity" => $event->getPlayer()->getId()]);
+		}, $monitor, $this);
+
+		$container = function(Inventory $inventory, Player $player, bool $open) : void{
+			$host = $this->host();
+			if($host === null){
+				return;
+			}
+			if($inventory instanceof BlockInventory){
+				$at = $inventory->getHolder();
+				$host->queueEvent($open ? "blockContainerOpened" : "blockContainerClosed", ["block" => $this->blockData($at->getWorld()->getBlock($at), $at), "player" => $player->getId()]);
+			}elseif($inventory instanceof AddonEntityInventory){
+				$host->queueEvent($open ? "entityContainerOpened" : "entityContainerClosed", ["entity" => $inventory->getHolder()->getId(), "player" => $player->getId()]);
+			}
+		};
+		$pm->registerEvent(InventoryOpenEvent::class, function(InventoryOpenEvent $event) use ($container) : void{
+			$container($event->getInventory(), $event->getPlayer(), true);
+		}, $monitor, $this);
+		$pm->registerEvent(InventoryCloseEvent::class, function(InventoryCloseEvent $event) use ($container) : void{
+			$container($event->getInventory(), $event->getPlayer(), false);
+		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerInteractEvent::class, function(PlayerInteractEvent $event) : void{
+			$host = $this->host();
+			if($host === null){
+				return;
+			}
+			$block = $event->getBlock();
+			$player = $event->getPlayer();
+			$data = ["player" => $player->getId(), "block" => $this->blockData($block), "face" => self::faceName($event->getFace()), "item" => $event->getItem()->isNull() ? null : ScriptHost::itemWire($event->getItem())];
+			if($event->getAction() === PlayerInteractEvent::LEFT_CLICK_BLOCK){
+				$host->queueEvent("playerStartBreakingBlock", $data);
+				$host->queueEvent("entityHitBlock", ["damager" => $player->getId(), "block" => $data["block"], "face" => $data["face"]]);
+				return;
+			}
+			if($block instanceof Lever){
+				$host->queueEvent("leverAction", ["block" => $data["block"], "player" => $player->getId(), "powered" => !$block->isActivated()]);
+			}elseif($block instanceof Button && !$block->isPressed()){
+				$host->queueEvent("buttonPush", ["block" => $data["block"], "source" => $player->getId()]);
+			}
+			if($data["item"] !== null){
+				//the server sees one use per click, so a use on a block starts and stops in the same tick
+				$host->queueEvent("itemStartUseOn", $data);
+				$host->queueEvent("itemStopUseOn", $data);
+			}
+		}, $monitor, $this);
+
+		$pm->registerEvent(PressurePlateUpdateEvent::class, function(PressurePlateUpdateEvent $event) : void{
+			$host = $this->host();
+			$old = self::plateSignal($event->getBlock());
+			$new = self::plateSignal($event->getNewState());
+			if($host === null || ($old > 0) === ($new > 0)){
+				return;
+			}
+			$data = ["block" => $this->blockData($event->getBlock()), "previous" => $old, "power" => $new];
+			if($new > 0){
+				$source = $event->getActivatingEntities()[0] ?? null;
+				$host->queueEvent("pressurePlatePush", $data + ["source" => $source?->getId()]);
+			}else{
+				$host->queueEvent("pressurePlatePop", $data);
+			}
+		}, $monitor, $this);
+
+		/** @param Block[] $blocks */
+		$exploded = function(array $blocks, ?Entity $source) : void{
+			$host = $this->host();
+			if($host === null || !$host->isSubscribed("after", "blockExplode")){
+				return;
+			}
+			foreach(array_slice($blocks, 0, self::MAX_EXPLODED_BLOCK_EVENTS) as $block){
+				if($block instanceof Block && $block->getTypeId() !== BlockTypeIds::AIR){
+					$host->queueEvent("blockExplode", ["block" => $this->blockData($block), "source" => $source?->getId()]);
+				}
+			}
+		};
+		$pm->registerEvent(EntityExplodeEvent::class, function(EntityExplodeEvent $event) use ($exploded) : void{
+			$exploded($event->getBlockList(), $event->getEntity());
+		}, $monitor, $this);
+		$pm->registerEvent(BlockExplodeEvent::class, function(BlockExplodeEvent $event) use ($exploded) : void{
+			$exploded($event->getAffectedBlocks(), null);
+		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerEmoteEvent::class, function(PlayerEmoteEvent $event) : void{
+			$this->host()?->queueEvent("playerEmote", ["player" => $event->getPlayer()->getId(), "emote" => $event->getEmoteId()]);
+		}, $monitor, $this);
+
+		//button presses, input mode, swings and cancelled breaking come straight from the client's input
+		/** @var \WeakMap<Player, array{int, bool, bool}> $inputs input mode, jump held, sneak held */
+		$inputs = new \WeakMap();
+		$pm->registerEvent(DataPacketReceiveEvent::class, function(DataPacketReceiveEvent $event) use ($inputs) : void{
+			$packet = $event->getPacket();
+			if(!$packet instanceof PlayerAuthInputPacket && !$packet instanceof AnimatePacket){
+				return;
+			}
+			$host = $this->host();
+			$player = $event->getOrigin()->getPlayer();
+			if($host === null || $player === null || !$player->isConnected()){
+				return;
+			}
+			if($packet instanceof AnimatePacket){
+				if($packet->action === AnimatePacket::ACTION_SWING_ARM){
+					$held = $player->getInventory()->getItemInHand();
+					$host->queueEvent("playerSwingStart", ["player" => $player->getId(), "item" => $held->isNull() ? null : ScriptHost::itemWire($held), "source" => ucfirst($packet->swingSource ?? "none")]);
+				}
+				return;
+			}
+			$flags = $packet->getInputFlags();
+			$state = [$packet->getInputMode(), $flags->get(PlayerAuthInputFlags::JUMP_DOWN), $flags->get(PlayerAuthInputFlags::SNEAK_DOWN)];
+			$last = $inputs[$player] ?? null;
+			$inputs[$player] = $state;
+			if($last !== null){
+				if($last[0] !== $state[0]){
+					$host->queueEvent("playerInputModeChange", ["player" => $player->getId(), "previous" => self::inputModeName($last[0]), "new" => self::inputModeName($state[0])]);
+				}
+				foreach([1 => "Jump", 2 => "Sneak"] as $i => $button){
+					if($last[$i] !== $state[$i]){
+						$host->queueEvent("playerButtonInput", ["player" => $player->getId(), "button" => $button, "state" => $state[$i] ? "Pressed" : "Released"]);
+					}
+				}
+			}
+			foreach($packet->getBlockActions() ?? [] as $action){
+				if($action instanceof PlayerBlockAction && $action->getActionType() === PlayerAction::ABORT_BREAK){
+					$p = $action->getBlockPosition();
+					$held = $player->getInventory()->getItemInHand();
+					$host->queueEvent("playerCancelBreakingBlock", ["player" => $player->getId(), "block" => $this->blockData($player->getWorld()->getBlockAt($p->getX(), $p->getY(), $p->getZ())), "face" => self::faceName($action->getFace()), "item" => $held->isNull() ? null : ScriptHost::itemWire($held)]);
+				}
+			}
+		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerJoinEvent::class, function(PlayerJoinEvent $event) : void{
+			$player = $event->getPlayer();
+			$ref = \WeakReference::create($player);
+			$changed = function(Inventory $inventory, int $slot, Item $before) use ($ref) : void{
+				$player = $ref->get();
+				$host = $this->host();
+				if($player === null || $host === null){
+					return;
+				}
+				$after = $inventory->getItem($slot);
+				if(!$after->equalsExact($before)){
+					$host->queueEvent("playerInventoryItemChange", [
+						"player" => $player->getId(), "slot" => $slot, "inventoryType" => $slot < 9 ? "Hotbar" : "Inventory",
+						"before" => $before->isNull() ? null : ScriptHost::itemWire($before), "item" => $after->isNull() ? null : ScriptHost::itemWire($after),
+					]);
+				}
+			};
+			$player->getInventory()->getListeners()->add(new CallbackInventoryListener($changed, function(Inventory $inventory, array $oldContents) use ($changed) : void{
+				for($slot = 0, $size = $inventory->getSize(); $slot < $size; $slot++){
+					$changed($inventory, $slot, $oldContents[$slot] ?? VanillaItems::AIR());
+				}
+			}));
+		}, $monitor, $this);
+	}
+
+	/** @return array<string, mixed> */
+	private static function healData(EntityRegainHealthEvent $event) : array{
+		return ["entity" => $event->getEntity()->getId(), "healing" => $event->getAmount(), "cause" => match($event->getRegainReason()){
+			EntityRegainHealthEvent::CAUSE_REGEN => "Regeneration",
+			EntityRegainHealthEvent::CAUSE_SATURATION => "SelfHeal",
+			default => "Heal",
+		}];
+	}
+
+	private static function plateSignal(Block $block) : int{
+		return match(true){
+			$block instanceof SimplePressurePlate => $block->isPressed() ? 15 : 0,
+			$block instanceof AnalogRedstoneSignalEmitter => $block->getOutputSignalStrength(),
+			default => 0,
+		};
+	}
+
+	private static function inputModeName(int $mode) : string{
+		return match($mode){
+			InputMode::TOUCHSCREEN => "Touch",
+			InputMode::GAME_PAD => "Gamepad",
+			InputMode::MOTION_CONTROLLER => "MotionController",
+			default => "KeyboardAndMouse",
+		};
 	}
 
 	/** @return array<string, mixed> */

@@ -32,6 +32,7 @@ function block(d){
 	return b;
 }
 const perm = (d) => d ? api.BlockPermutation.resolve(d.type, d.states ?? {}) : undefined;
+const GAME_RULES = new Map(["commandBlockOutput", "commandBlocksEnabled", "doDayLightCycle", "doEntityDrops", "doFireTick", "doImmediateRespawn", "doInsomnia", "doLimitedCrafting", "doMobLoot", "doMobSpawning", "doTileDrops", "doWeatherCycle", "drowningDamage", "fallDamage", "fireDamage", "freezeDamage", "functionCommandLimit", "keepInventory", "maxCommandChainLength", "mobGriefing", "naturalRegeneration", "playersSleepingPercentage", "projectilesCanBreakBlocks", "pvp", "randomTickSpeed", "recipesUnlock", "respawnBlocksExplode", "sendCommandFeedback", "showBorderEffect", "showCoordinates", "showDaysPlayed", "showDeathMessages", "showRecipeMessages", "showTags", "spawnRadius", "tntExplodes", "tntExplosionDropDecay"].map(r => [r.toLowerCase(), r]));
 const source = (d) => ({ cause: d?.cause ?? "none", damagingEntity: d?.damager ? E(d.damager) : undefined, damagingProjectile: d?.projectile ? E(d.projectile) : undefined });
 
 const builders = {
@@ -44,7 +45,33 @@ const builders = {
 	entityHurt: d => ({ hurtEntity: E(d.entity, d.snap, d.type), damage: d.damage, damageSource: source(d.src) }),
 	entityHealthChanged: d => ({ entity: E(d.entity), oldValue: d.old, newValue: d.new }),
 	entityHitEntity: d => ({ damagingEntity: E(d.damager, undefined, d.damagerType), hitEntity: E(d.entity, undefined, d.type) }),
-	entityHitBlock: d => ({ damagingEntity: E(d.damager), hitBlock: block(d.block), blockFace: d.face ?? "Up" }),
+	entityHitBlock: d => ({ damagingEntity: E(d.damager), hitBlock: block(d.block), hitBlockPermutation: perm(d.block), blockFace: d.face ?? "Up" }),
+	entityHeal: d => ({ healedEntity: E(d.entity), healing: d.healing, healSource: { cause: d.cause } }),
+	entityItemPickup: d => ({ entity: E(d.entity), items: (d.items ?? []).map(item).filter(Boolean) }),
+	entityItemDrop: d => ({ entity: E(d.entity), items: (d.items ?? []).map(item).filter(Boolean) }),
+	entityStartSneaking: d => ({ entity: E(d.entity) }),
+	entityStopSneaking: d => ({ entity: E(d.entity) }),
+	entityTamed: d => ({ entity: E(d.entity), tamingEntity: E(d.player) }),
+	blockContainerOpened: d => ({ block: block(d.block), dimension: dim(d.block.dim), openSource: E(d.player) }),
+	blockContainerClosed: d => ({ block: block(d.block), dimension: dim(d.block.dim), closeSource: E(d.player) }),
+	entityContainerOpened: d => ({ entity: E(d.entity), openSource: E(d.player) }),
+	entityContainerClosed: d => ({ entity: E(d.entity), closeSource: E(d.player) }),
+	leverAction: d => ({ block: block(d.block), dimension: dim(d.block.dim), isPowered: d.powered, player: P(d.player) }),
+	buttonPush: d => ({ block: block(d.block), dimension: dim(d.block.dim), source: E(d.source) }),
+	pressurePlatePush: d => ({ block: block(d.block), dimension: dim(d.block.dim), previousRedstonePower: d.previous, redstonePower: d.power, source: d.source != null ? E(d.source) : undefined }),
+	pressurePlatePop: d => ({ block: block(d.block), dimension: dim(d.block.dim), previousRedstonePower: d.previous, redstonePower: d.power }),
+	blockExplode: d => ({ block: block(d.block), dimension: dim(d.block.dim), explodedBlockPermutation: perm(d.block), source: d.source != null ? E(d.source) : undefined }),
+	gameRuleChange: d => ({ rule: GAME_RULES.get(d.rule) ?? d.rule, value: d.value }),
+	playerEmote: d => ({ player: P(d.player), personaPieceId: d.emote }),
+	playerButtonInput: d => ({ player: P(d.player), button: d.button, newButtonState: d.state }),
+	playerInputModeChange: d => ({ player: P(d.player), previousInputModeUsed: d.previous, newInputModeUsed: d.new }),
+	playerInputPermissionCategoryChange: d => ({ player: P(d.player), category: d.category, enabled: d.enabled }),
+	playerInventoryItemChange: d => ({ player: P(d.player), slot: d.slot, inventoryType: d.inventoryType, beforeItemStack: item(d.before), itemStack: item(d.item) }),
+	playerStartBreakingBlock: d => ({ player: P(d.player), block: block(d.block), dimension: dim(d.block.dim), blockPermutation: perm(d.block), face: d.face, heldItemStack: item(d.item) }),
+	playerCancelBreakingBlock: d => ({ player: P(d.player), block: block(d.block), dimension: dim(d.block.dim), blockPermutation: perm(d.block), face: d.face, heldItemStack: item(d.item), breakProgress: 0 }),
+	playerSwingStart: d => ({ player: P(d.player), heldItemStack: item(d.item), swingSource: d.source }),
+	itemStartUseOn: d => ({ source: P(d.player), itemStack: item(d.item), block: block(d.block), blockFace: d.face }),
+	itemStopUseOn: d => ({ source: P(d.player), itemStack: item(d.item), block: block(d.block) }),
 	entityRemove: d => ({ removedEntityId: String(d.entity), typeId: d.type }),
 	playerBreakBlock: d => ({ player: P(d.player), block: block(d.block), brokenBlockPermutation: perm(d.block), itemStackBeforeBreak: item(d.item), itemStackAfterBreak: item(d.itemAfter ?? d.item), dimension: dim(d.block.dim) }),
 	playerPlaceBlock: d => ({ player: P(d.player), block: block(d.block), dimension: dim(d.block.dim) }),
@@ -116,6 +143,10 @@ const beforeBuilders = {
 	entityRemove: d => ({ removedEntity: E(d.entity) }),
 	effectAdd: d => ({ entity: E(d.entity), effectType: d.effect.type, duration: d.effect.duration, cancel: false }),
 	playerGameModeChange: d => ({ player: P(d.player), fromGameMode: d.from, toGameMode: d.to, cancel: false }),
+	entityHeal: d => ({ healedEntity: E(d.entity), healing: d.healing, healSource: { cause: d.cause }, cancel: false }),
+	entityItemPickup: d => ({ entity: E(d.entity), item: E(d.item), cancel: false }),
+	entityTamed: d => ({ entity: E(d.entity), tamingEntity: E(d.player), cancel: false }),
+	weatherChange: d => ({ previousWeather: d.previous, newWeather: d.new, duration: d.duration, cancel: false }),
 	explosion: d => {
 		let blocks = (d.blocks ?? []).map(b => block({ ...b, dim: d.dim }));
 		return { source: d.source ? E(d.source) : undefined, dimension: dim(d.dim), cancel: false, getImpactedBlocks: () => blocks, setImpactedBlocks: (list) => { blocks = list; } };
@@ -133,6 +164,7 @@ function before(msg){
 		out.message = event.message;
 		if(event._targets) out.targets = event._targets.map(p => p.id);
 	}
+	if(msg.name === "entityHeal") out.healing = event.healing;
 	if(msg.name === "explosion"){
 		out.blocks = event.getImpactedBlocks().map(b => ({ x: b.x, y: b.y, z: b.z }));
 	}
@@ -271,5 +303,8 @@ async function main(){
 		send(reply);
 	}
 }
+
+//a promise a pack forgot to handle is that pack's error, not a reason to stop every pack's scripts
+process.on("unhandledRejection", e => host.error(host.currentPack ?? "", "unhandled promise rejection", e));
 
 main().catch(e => { host.error("", "host", e); process.exit(1); });

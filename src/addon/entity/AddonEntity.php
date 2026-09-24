@@ -1566,7 +1566,10 @@ class AddonEntity extends Living{
 		}
 		if(is_array($c["minecraft:tameable"] ?? null) && !$this->isTamed() && $this->matchesAny($held, $c["minecraft:tameable"]["tame_items"] ?? [])){
 			$this->consume($player, $held);
-			if(EntityFilter::chance((float) ($c["minecraft:tameable"]["probability"] ?? 1.0))){
+			$host = AddonManager::getInstance()?->getScriptHost();
+			$data = ["entity" => $this->getId(), "player" => $player->getId()];
+			if(EntityFilter::chance((float) ($c["minecraft:tameable"]["probability"] ?? 1.0)) && ($host?->before("entityTamed", $data)["cancel"] ?? false) !== true){
+				$host?->queueEvent("entityTamed", $data);
 				$this->tamed = true;
 				$this->setOwner($player);
 				$this->networkPropertiesDirty = true;
