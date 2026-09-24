@@ -62,7 +62,11 @@ directly, so scripts always see the live world, and plugins see script changes i
 
 - `world`, `system` (`run`, `runTimeout`, `runInterval`, `runJob`, `waitTicks`, `clearRun`, `sendScriptEvent`)
 - `Dimension`: blocks, entities with full query options, `spawnEntity`, `spawnItem`, `spawnParticle` (with
-  `MolangVariableMap`), `playSound`, `createExplosion`, `runCommand`, `fillBlocks`, raycasts, light, biomes
+  `MolangVariableMap`), `playSound`, `createExplosion`, `runCommand`, `fillBlocks`, `getBlocks` and
+  `containsBlock` with block filters, raycasts, light, biomes
+- `BlockVolume`, `ListBlockVolume`; `EnchantmentTypes`, `EntityTypes`, `DimensionTypes`, `BiomeTypes`;
+  `world.getLootTableManager()` (pack loot tables and add-on entities' tables), `world.tickingAreaManager`,
+  `world.seed`
 - `Entity` / `Player`: position, rotation, velocity, health, tags, name tags, effects, properties, events,
   impulses and knockback, teleport, damage, dynamic properties, inventory, equipment, messages, titles,
   action bar, sounds, game mode, XP, spawn point, input permissions
@@ -73,22 +77,30 @@ directly, so scripts always see the live world, and plugins see script changes i
   `player.onScreenDisplay` HUD visibility
 - Entity components `rideable`, `riding`, `leashable`, `inventory` and `equippable` on add-on mobs
 - Dynamic properties for the world, entities and players (saved across restarts)
-- After events: spawn, death, hurt, hit, remove, player join/leave/spawn, block break/place, item use (and on
-  a block), interactions with blocks and entities, chat, projectile hits, effects, game mode and dimension
-  changes, hotbar slot, explosions, data-driven entity events, `itemStartUse`/`itemStopUse`/`itemReleaseUse`,
-  `weatherChange`, `scriptEventReceive`, `worldLoad`
-- Before events (cancellable): chat, block break, item use, interactions, effect add, game mode change,
-  explosion, player leave, entity remove
+- After events: spawn, death, hurt, heal, health changes, hit (entities and blocks), remove, player
+  join/leave/spawn, block break/place, starting and cancelling block breaking, swings, item use (and on a
+  block), item pickup and drop, sneaking, containers opened and closed, interactions with blocks and entities,
+  levers, buttons and pressure plates, exploded blocks, chat, emotes, projectile hits, effects, taming, game
+  mode and dimension changes, hotbar slot and inventory changes, button presses and input mode, input
+  permissions, game rules, weather, data-driven entity events, `itemStartUse`/`itemStopUse`/`itemReleaseUse`,
+  `scriptEventReceive`, `worldLoad`
+- Before events (cancellable): chat, block break, item use, interactions, effect add, heal (and change the
+  amount), item pickup, taming, game mode change, weather change, explosion, player leave, entity remove
 - Custom components: items (`onUse`, `onUseOn`, `onConsume`, `onHitEntity`, `onMineBlock`) and blocks
   (`onPlayerInteract`, `onPlace`, `onPlayerBreak`/`onPlayerDestroy`, `onTick` with `minecraft:tick`,
   `onRandomTick`, `onStepOn`/`onStepOff`, `onEntityFallOn`), registered in `startup`/`worldInitialize`
 - Custom commands (`customCommandRegistry`), which become real server commands
 - `@minecraft/server-ui`: `ActionFormData`, `ModalFormData`, `MessageFormData`
-- `@minecraft/math`, `@minecraft/vanilla-data`, `@minecraft/common`
+- `@minecraft/math`, `@minecraft/common`, and `@minecraft/vanilla-data` with the game's own identifiers
 - `@amber/plugins`: call PHP plugins ([see below](#plugins-and-add-ons-together))
 
-Both API generations work: packs written for **1.x** (`isValid()` as a method) and **2.x** (`isValid` as a
-property) each get the form their manifest asks for.
+Both API generations work: packs written for **1.x** (`isValid()` as a method, `"survival"`) and **2.x**
+(`isValid` as a property, `"Survival"`) each get the form their manifest asks for.
+
+**Every import links.** Each `@minecraft` module exports every name the game's does (all classes, enums with
+the game's values, errors, constants), generated from Mojang's script API metadata by
+`tools/generate-addon-script-names.php`. A pack that imports something this server does not implement still
+loads; only using that one thing throws.
 
 **Safe by design.** Scripts run with Node's permission model: they can read their own pack and nothing else,
 cannot write files, start processes, load native code or open network connections, and can only import
@@ -109,14 +121,21 @@ Add-on entities run their behavior pack definition as in the game:
   rule / `summon` events.
 - **Properties** (`int`, `float`, `bool`, `enum`), synced to clients so render controllers and animations
   see them.
-- **Sensors and triggers**: `environment_sensor`, `timer`, `damage_sensor` (per cause, cancel or scale damage),
-  `on_hurt`, `on_hurt_by_player`, `on_target_acquired`, `on_target_escape`.
+- **Sensors and triggers**: `environment_sensor`, `entity_sensor`, `target_nearby_sensor`, `block_sensor`,
+  `inside_block_notifier`, `timer`, `scheduler`, `damage_sensor` (per cause, cancel or scale damage), `on_hurt`,
+  `on_hurt_by_player`, `on_target_acquired`, `on_target_escape`, `on_friendly_anger`.
+- **Sounds**: the pack's ambient (`ambient_sound_interval`), hurt and death sounds.
 - **Interaction**: `interact` (use or hurt the held item, swap it, drop loot, fire events), `tameable`,
-  `healable`, `breedable`, `ageable` (babies grow up, can be fed), `sittable`.
+  `healable`, `breedable` (both `breeds_with` forms) with `offspring` (cross-breeds, inherited properties),
+  `ageable` (babies grow up, can be fed), `sittable`, `tamemount`.
 - **Combat**: `attack` (damage and effect), `shooter` with add-on or vanilla projectiles, `projectile`
-  (impact damage, knockback, effects, sticking, events), `explode`, `area_attack`, `mob_effect`.
+  (impact damage, knockback, effects, sticking, events), `explode`, `area_attack`, `mob_effect`, `angry`
+  (with `broadcast_anger` and `calm_event`), `attack_cooldown`, `damage_over_time`, `follow_range`,
+  `cannot_be_attacked`, `mob_effect_immunity`.
 - **World**: `despawn`, `instant_despawn`, `burns_in_daylight`, `breathable`, `hurt_on_condition`,
-  `spell_effects`, `transformation`, `loot`, `experience_reward`, `persistent`.
+  `spell_effects`, `transformation`, `loot`, `experience_reward`, `persistent`, `transient`, `spawn_entity`
+  (laying eggs and other drops), `teleport`, `home`, `trail`, `buoyant`, `pushable`; `movement.jump` and
+  `movement.skip` move in hops.
 - **Looks**: `variant`, `mark_variant`, `skin_id`, `color`, `scale`, baby/tamed/sitting/saddled/chested/
   sheared/charged flags.
 
@@ -152,7 +171,12 @@ and counts as false.
 `follow_owner`, `follow_mob`, `nearest_attackable_target`, `nearest_prioritized_attackable_target`,
 `hurt_by_target`, `owner_hurt_by_target`, `owner_hurt_target`, `melee_attack`, `melee_box_attack`,
 `delayed_attack`, `ranged_attack`, `avoid_mob_type`, `avoid_entity`, `leap_at_target`, `move_towards_target`,
-`breed`, `stay_while_sitting`, `pickup_items`.
+`breed`, `stay_while_sitting`, `pickup_items`, `equip_item`, `timer_flag_1`/`2`/`3`, `teleport_to_owner`,
+`summon_entity`, `send_event`, `knockback_roar`, `swell`, `move_to_block`, `move_to_water`, `move_to_land`,
+`move_to_lava`, `move_to_liquid`, `move_to_random_block`, `flee_sun`, `avoid_block`, `go_home`,
+`move_towards_home_restriction`, `find_mount`, `mount_pathing`, `run_around_like_crazy`, `player_ride_tamed`,
+`controlled_by_player`, `eat_block`, `random_sitting`, `float_wander`, the slime behaviors, `float_tempt`,
+and the attack variants (`stomp_attack`, `ram_attack`, `charge_attack`, `swoop_attack`, `ocelotattack`).
 
 Walking mobs use A* pathfinding (step up, drop down, avoid lava, fire and cactus, walk through open doors, no corner
 cutting); flying and swimming mobs steer directly. Knockback and collisions still come from the normal entity
@@ -193,7 +217,9 @@ in `addons/.runtime/`:
   `run`, and the old syntax). The server adds the commands packs rely on: `tag`, `summon`, `setblock`, `fill`,
   `particle`, `playsound`, `stopsound`, `camerashake`, `inputpermission`, `playanimation`, `tellraw`, `damage`,
   `event entity`, `replaceitem`, `testfor`, `function`, `camera`, `fog`, `hud`, `weather`, `gamerule`,
-  `scoreboard`, `tickingarea`, `structure load`, and entity-aware `kill`, `tp` and `effect`. Every other
+  `scoreboard`, `tickingarea`, `structure load`, `scriptevent`, `schedule`, `clone`, `testforblock`,
+  `testforblocks`, `loot`, `titleraw`, `spreadplayers`, `toggledownfall`, `daylock`, `clearspawnpoint`, and
+  entity-aware `kill`, `tp` and `effect`. Every other
   command goes to the server's command map, **so plugin commands work from add-ons**.
 
 ## Plugins and add-ons together
@@ -374,9 +400,13 @@ operators, unless a plugin already has that name: the plugin's command always wi
 
 - **Vanilla overrides** (`minecraft:player`, `minecraft:zombie`...): skipped with one warning; the server keeps
   its own versions (PocketMine has no vanilla mob AI to override).
-- **Entity components** `npc` (dialogue), `dash`, `trusting` and `peek`: listed at startup; plugins can
-  implement them.
-- **Scripts**: `@minecraft/server-net`, `server-gametest` and `server-editor` import but throw if used.
+- **Behaviors and components tied to the game's villages, raids and specific vanilla mobs** (villager
+  schedules and trading AI, raids, the ender dragon, warden, squid, panda...), `npc` dialogue, `dash`,
+  `trusting`, `peek`, and physics details PocketMine does not model (pistons pushing mobs, freezing): behaviors
+  are named at startup, and plugins can add them with `MobBrain::registerGoal()`.
+- **Scripts**: `@minecraft/server-net`, `server-gametest`, `server-editor`, `debug-utilities` and
+  `server-graphics` import with all their names but throw if used; the same goes for the few
+  `@minecraft/server` classes with nothing behind them here (aim assist, waypoints, primitive shapes...).
   Structures can be loaded and placed, not saved from the world.
 - **Commands**: `music`, `mobevent`, `dialogue`, `ride`, `aimassist` and `controlscheme` are accepted and do
   nothing; `structure save` is not available.
