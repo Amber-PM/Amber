@@ -48,6 +48,7 @@ use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\Location;
+use pocketmine\inventory\CreativeCategory;
 use pocketmine\inventory\CreativeGroup;
 use pocketmine\inventory\CreativeInventory;
 use pocketmine\item\Item;
@@ -138,7 +139,7 @@ final class AddonManager{
 	private array $itemRuntimeIds = [];
 	/** @var array<string, int> */
 	private array $blockNumericIds = [];
-	/** @var array<string, CreativeGroup> */
+	/** @var array<string, array{0: ?CreativeGroup, 1: CreativeCategory}> */
 	private array $creativeGroups = [];
 
 	/** @var array<string, list<\Closure>> */
@@ -551,7 +552,8 @@ final class AddonManager{
 		$this->itemRuntimeIds[$id] = self::ITEM_RUNTIME_ID_BASE + count($this->itemRuntimeIds);
 		$this->items[$id] = $item;
 		if(!$definition->isHiddenInCommands()){
-			CreativeInventory::getInstance()->add($item, $definition->getCategory(), $this->creativeGroup($definition->getGroup(), $item));
+			[$group, $category] = $this->resolveCreativeGroup($definition->getCategory(), $definition->getGroup());
+			CreativeInventory::getInstance()->add($item, $category, $group);
 		}
 	}
 
@@ -595,7 +597,8 @@ final class AddonManager{
 		$this->registerAliases($id, static fn() => $block->asItem());
 
 		$this->blocks[$id] = $block;
-		CreativeInventory::getInstance()->add($block->asItem(), $definition->getCategory(), $this->creativeGroup($definition->getGroup(), $block->asItem()));
+		[$group, $category] = $this->resolveCreativeGroup($definition->getCategory(), $definition->getGroup());
+		CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
 	}
 
 	private function registerEntities() : void{
@@ -626,11 +629,19 @@ final class AddonManager{
 		}
 	}
 
-	private function creativeGroup(?string $name, Item $icon) : ?CreativeGroup{
-		if($name === null){
-			return null;
+	/**
+	 * @return array{0: ?CreativeGroup, 1: CreativeCategory}
+	 */
+	private function resolveCreativeGroup(CreativeCategory $category, ?string $name) : array{
+		if($name === null || $name === ""){
+			return [null, $category];
 		}
-		return $this->creativeGroups[$name] ??= new CreativeGroup($name, $icon);
+		if(isset($this->creativeGroups[$name])){
+			return $this->creativeGroups[$name];
+		}
+		$resolved = CreativeInventory::getInstance()->findGroupAndCategory($name, $category)
+			?? CreativeInventory::getInstance()->findGroupAndCategory($name);
+		return $this->creativeGroups[$name] = $resolved ?? [null, $category];
 	}
 
 	/**
