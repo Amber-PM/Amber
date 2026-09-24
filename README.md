@@ -113,6 +113,8 @@ AmberPM runs Minecraft: Bedrock Edition add-ons, not just their content. Put an 
 | Scripts (`@minecraft/server`) | Run in a sandboxed Node.js host, in step with the server tick |
 | Loot tables, spawn rules | Drops, and natural spawning around players |
 | Recipes, functions | Crafting, furnaces, stonecutter, brewing; `.mcfunction` files |
+| Riding, trading, inventories | Steerable mounts, leads, trade screens, mob inventories and equipment, boss bars |
+| World | Game rules, weather, scoreboards, ticking areas, structures, camera presets and fog |
 
 **Requirements:** nothing for most add-ons. Add-ons with scripts need [Node.js](https://nodejs.org) 22.15 or newer on the server machine; without it, everything except the scripts still works.
 

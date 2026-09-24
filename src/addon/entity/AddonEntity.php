@@ -1242,6 +1242,25 @@ class AddonEntity extends Living{
 		$this->sendHeldItems($this->getViewers());
 	}
 
+	/**
+	 * Takes an item off the ground (behavior.pickup_items): into the inventory, else an empty armour slot or
+	 * hand. Returns false when there is no room.
+	 */
+	public function takeItem(Item $item, bool $toEquipment = true) : bool{
+		$inventory = $this->getInventory();
+		if($inventory !== null && $inventory->canAddItem($item)){
+			$inventory->addItem($item);
+		}elseif($toEquipment && $item instanceof Armor && $this->armorInventory->getItem($item->getArmorSlot())->isNull()){
+			$this->armorInventory->setItem($item->getArmorSlot(), $item);
+		}elseif($toEquipment && $this->mainHand === null){
+			$this->setMainHandItem($item);
+		}else{
+			return false;
+		}
+		$this->broadcastSound(new \pocketmine\world\sound\ItemFrameAddItemSound());
+		return true;
+	}
+
 	/** minecraft:equipment: gear from a loot table, rolled once when the entity first spawns. */
 	private function rollEquipment() : void{
 		$equipment = $this->components["minecraft:equipment"] ?? null;
