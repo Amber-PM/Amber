@@ -65,6 +65,12 @@ final class BlockItemIdMap{
 		$this->itemToBlockId = array_flip($this->blockToItemId);
 	}
 
+	/** Maps an extra block to its item (add-on blocks use the same ID for both). */
+	public function register(string $blockId, string $itemId) : void{
+		$this->blockToItemId[$blockId] = $itemId;
+		$this->itemToBlockId[$itemId] = $blockId;
+	}
+
 	public function lookupItemId(string $blockId) : ?string{
 		return $this->blockToItemId[$blockId] ?? null;
 	}

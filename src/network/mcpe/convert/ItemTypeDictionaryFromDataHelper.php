@@ -99,6 +99,9 @@ final class ItemTypeDictionaryFromDataHelper{
 			}
 			$params[] = new ItemTypeEntry($name, $entry["runtime_id"], $entry["component_based"], $entry["version"] ?? 2, $componentNbt === null ? $emptyNBT : new CacheableNbt($nbtSerializer->read(ErrorToExceptionHandler::trapAndRemoveFalse(fn() => base64_decode($componentNbt, true)))->mustGetCompoundTag()));
 		}
+		foreach(\pocketmine\addon\AddonManager::getInstance()?->getItemTypeEntries() ?? [] as $entry){
+			$params[] = $entry;
+		}
 		return new ItemTypeDictionary($params);
 	}
 }
