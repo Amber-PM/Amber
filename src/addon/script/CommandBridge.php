@@ -26,6 +26,11 @@ namespace pocketmine\addon\script;
 use pocketmine\addon\AddonManager;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\EntityFilter;
+use pocketmine\addon\world\AddonWorldRules;
+use pocketmine\camera\options\CameraEaseType;
+use pocketmine\camera\options\CameraFadeOptions;
+use pocketmine\camera\options\CameraSetOptions;
+use pocketmine\color\Color;
 use pocketmine\console\ConsoleCommandSender;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\StringToEffectParser;
@@ -37,11 +42,13 @@ use pocketmine\item\StringToItemParser;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\AnimateEntityPacket;
 use pocketmine\network\mcpe\protocol\CameraShakePacket;
+use pocketmine\network\mcpe\protocol\PlayerFogPacket;
 use pocketmine\network\mcpe\protocol\PlaySoundPacket;
 use pocketmine\network\mcpe\protocol\StopSoundPacket;
 use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\player\Player;
 use pocketmine\Server;
+use pocketmine\utils\TextFormat;
 use pocketmine\world\World;
 use function array_filter;
 use function array_map;
@@ -58,12 +65,15 @@ use function file;
 use function floor;
 use function implode;
 use function in_array;
+use function intdiv;
+use function is_bool;
 use function is_file;
 use function is_numeric;
 use function json_decode;
 use function ltrim;
 use function max;
 use function min;
+use function mt_rand;
 use function preg_match;
 use function preg_match_all;
 use function shuffle;
@@ -89,7 +99,22 @@ use const PREG_SET_ORDER;
 final class CommandBridge{
 	private const INPUT_LOCKS = ["camera" => 2, "movement" => 4, "lateral_movement" => 16, "sneak" => 32, "jump" => 64, "mount" => 128, "dismount" => 256, "move_forward" => 512, "move_backward" => 1024, "move_left" => 2048, "move_right" => 4096];
 	/** Commands accepted and ignored, because there is nothing for them to do on this server. */
-	private const NOOP = ["gamerule", "tickingarea", "fog", "music", "weather", "mobevent", "structure", "reload", "camera", "hud", "dialogue", "ride", "scoreboard", "titleraw", "aimassist", "controlscheme"];
+	private const NOOP = ["music", "mobevent", "reload", "hud", "dialogue", "ride", "aimassist", "controlscheme"];
+
+	/** Vanilla commands this bridge provides to players and operators (where no plugin has the name). */
+	public const PROVIDED = [
+		"camera" => "Controls a player's camera", "camerashake" => "Shakes a player's camera", "damage" => "Damages entities",
+		"event" => "Runs an add-on entity event", "execute" => "Runs a command as or at entities", "fill" => "Fills a region with a block",
+		"fog" => "Adds or removes fog settings", "function" => "Runs a function file", "gamerule" => "Shows or changes game rules",
+		"inputpermission" => "Locks player input", "particle" => "Spawns a particle", "playanimation" => "Plays an entity animation",
+		"playsound" => "Plays a sound", "replaceitem" => "Replaces items in entity slots", "scoreboard" => "Manages scoreboards",
+		"setblock" => "Changes a block", "stopsound" => "Stops sounds", "structure" => "Loads structures from add-ons", "summon" => "Summons an entity",
+		"tag" => "Manages entity tags", "tellraw" => "Sends a JSON message", "testfor" => "Counts entities matching a selector",
+		"tickingarea" => "Keeps areas of the world loaded", "weather" => "Sets the weather",
+	];
+
+	/** @var \WeakMap<Player, list<array{string, string}>> active fog layers: [user id, fog id] */
+	private \WeakMap $fogs;
 
 	/** @var \WeakMap<Player, int> */
 	private \WeakMap $inputLocks;
@@ -99,6 +124,7 @@ final class CommandBridge{
 
 	public function __construct(private Server $server, private AddonManager $manager){
 		$this->inputLocks = new \WeakMap();
+		$this->fogs = new \WeakMap();
 	}
 
 	/**
@@ -106,7 +132,7 @@ final class CommandBridge{
 	 *
 	 * @return int the success count, as the game reports it
 	 */
-	public function run(string $command, ?Entity $executor, ?World $world = null, ?Vector3 $origin = null, ?float $yaw = null, ?float $pitch = null) : int{
+	public function run(string $command, ?Entity $executor, ?World $world = null, ?Vector3 $origin = null, ?float $yaw = null, ?float $pitch = null, ?CommandOutput $output = null) : int{
 		$command = trim($command);
 		if($command === "" || str_starts_with($command, "#")){
 			return 0;
@@ -124,7 +150,7 @@ final class CommandBridge{
 		$origin ??= $executor?->getPosition()->asVector3() ?? $world->getSpawnLocation()->asVector3();
 		$yaw ??= $executor?->getLocation()->yaw ?? 0.0;
 		$pitch ??= $executor?->getLocation()->pitch ?? 0.0;
-		$context = new CommandContext($executor, $world, $origin, $yaw, $pitch);
+		$context = new CommandContext($executor, $world, $origin, $yaw, $pitch, $output);
 
 		$this->depth++;
 		try{
@@ -167,6 +193,13 @@ final class CommandBridge{
 			case "tellraw": return $this->tellraw($args, $ctx);
 			case "testfor": return count($this->select($args[0] ?? "@s", $ctx));
 			case "replaceitem": return $this->replaceitem($args, $ctx);
+			case "camera": return $this->camera($args, $ctx);
+			case "fog": return $this->fog($args, $ctx);
+			case "weather": return $this->weather($args, $ctx);
+			case "gamerule": return $this->gamerule($args, $ctx);
+			case "tickingarea": return $this->tickingarea($args, $ctx);
+			case "scoreboard": return $this->scoreboard($args, $ctx);
+			case "structure": return $this->structure($args, $ctx);
 		}
 		if(in_array($name, self::NOOP, true)){
 			$this->reportOnce($name, "/$name is not supported by this server and does nothing");
@@ -654,6 +687,343 @@ final class CommandBridge{
 				default => false,
 			};
 		});
+	}
+
+	// ---------------------------------------------------------------- camera, fog, weather, game rules, ticking areas
+
+	/** @param list<string> $args camera <players> clear | fade [time <in> <hold> <out>] [color <r> <g> <b>] | set <preset> [ease <seconds> <type>] [pos <x y z>] [rot <x> <y>] [facing <target>|<x y z>] [default] */
+	private function camera(array $args, CommandContext $ctx) : int{
+		$targets = array_values(array_filter($this->select($args[0] ?? "@s", $ctx), static fn(Entity $e) : bool => $e instanceof Player));
+		$action = strtolower($args[1] ?? "clear");
+		$rest = array_slice($args, 2);
+		$success = 0;
+		foreach($targets as $player){
+			/** @var Player $player */
+			$camera = $player->getCamera();
+			try{
+				$ok = match($action){
+					"clear" => $camera->clear(),
+					"fade" => $camera->fade(self::fadeOptions($rest)),
+					"set" => $camera->set(self::ns($rest[0] ?? "minecraft:free"), $this->cameraSetOptions(array_slice($rest, 1), $ctx->as($player))),
+					default => false,
+				};
+			}catch(\InvalidArgumentException $e){
+				$ctx->say(TextFormat::RED . $e->getMessage());
+				$ok = false;
+			}
+			$success += $ok ? 1 : 0;
+		}
+		return $success;
+	}
+
+	/** @param list<string> $args */
+	private static function fadeOptions(array $args) : CameraFadeOptions{
+		$in = 0.5;
+		$hold = 1.0;
+		$out = 0.5;
+		$color = new Color(0, 0, 0);
+		for($i = 0; $i < count($args); ++$i){
+			if(strtolower($args[$i]) === "time"){
+				[$in, $hold, $out] = [(float) ($args[$i + 1] ?? $in), (float) ($args[$i + 2] ?? $hold), (float) ($args[$i + 3] ?? $out)];
+				$i += 3;
+			}elseif(strtolower($args[$i]) === "color"){
+				$color = new Color((int) ($args[$i + 1] ?? 0), (int) ($args[$i + 2] ?? 0), (int) ($args[$i + 3] ?? 0));
+				$i += 3;
+			}
+		}
+		return new CameraFadeOptions($color, $in, $hold, $out);
+	}
+
+	/** @param list<string> $args */
+	private function cameraSetOptions(array $args, CommandContext $ctx) : CameraSetOptions{
+		$options = CameraSetOptions::create();
+		for($i = 0; $i < count($args); ++$i){
+			switch(strtolower($args[$i])){
+				case "ease":
+					$options->setEase(CameraEaseType::tryFrom(strtolower($args[$i + 2] ?? "linear")) ?? CameraEaseType::LINEAR, (float) ($args[$i + 1] ?? 1));
+					$i += 2;
+					break;
+				case "pos":
+					$options->setPosition($this->position(array_slice($args, $i + 1, 3), $ctx));
+					$i += 3;
+					break;
+				case "rot":
+					$options->setRotation((float) ($args[$i + 1] ?? 0), (float) ($args[$i + 2] ?? 0));
+					$i += 2;
+					break;
+				case "facing":
+					if(str_starts_with($args[$i + 1] ?? "", "@")){
+						$target = $this->select($args[$i + 1], $ctx)[0] ?? null;
+						$options->setFacingPosition($target?->getEyePos());
+						$i += 1;
+					}else{
+						$options->setFacingPosition($this->position(array_slice($args, $i + 1, 3), $ctx));
+						$i += 3;
+					}
+					break;
+				case "default":
+					$options->setDefault(true);
+					break;
+			}
+		}
+		return $options;
+	}
+
+	/** @param list<string> $args fog <players> push <fog id> <user id> | pop <user id> | remove <user id> */
+	private function fog(array $args, CommandContext $ctx) : int{
+		$mode = strtolower($args[1] ?? "");
+		return $this->each($args[0] ?? "@s", $ctx, function(Entity $e) use ($mode, $args) : bool{
+			if(!$e instanceof Player){
+				return false;
+			}
+			$layers = $this->fogs[$e] ?? [];
+			if($mode === "push"){
+				$layers[] = [(string) ($args[3] ?? ""), self::ns($args[2] ?? "")];
+			}elseif($mode === "pop"){
+				for($i = count($layers) - 1; $i >= 0; --$i){
+					if($layers[$i][0] === ($args[2] ?? "")){
+						array_splice($layers, $i, 1);
+						break;
+					}
+				}
+			}elseif($mode === "remove"){
+				$layers = array_values(array_filter($layers, static fn(array $l) : bool => $l[0] !== ($args[2] ?? "")));
+			}else{
+				return false;
+			}
+			$this->fogs[$e] = $layers;
+			$e->getNetworkSession()->sendDataPacket(PlayerFogPacket::create(array_map(static fn(array $l) : string => $l[1], $layers)));
+			return true;
+		});
+	}
+
+	/** @param list<string> $args weather clear|rain|thunder [seconds] | weather query */
+	private function weather(array $args, CommandContext $ctx) : int{
+		$rules = $this->manager->getWorldRules();
+		$type = strtolower($args[0] ?? "query");
+		if($type === "query"){
+			$ctx->say("Weather in " . $ctx->world->getFolderName() . ": " . $rules->getWeather($ctx->world));
+			return 1;
+		}
+		if(!in_array($type, [AddonWorldRules::CLEAR, AddonWorldRules::RAIN, AddonWorldRules::THUNDER], true)){
+			return 0;
+		}
+		$rules->setWeather($ctx->world, $type, isset($args[1]) ? (int) $args[1] * 20 : null);
+		$ctx->say("Weather set to $type");
+		return 1;
+	}
+
+	/** @param list<string> $args gamerule [rule [value]] */
+	private function gamerule(array $args, CommandContext $ctx) : int{
+		$rules = $this->manager->getWorldRules();
+		if(!isset($args[0])){
+			$list = [];
+			foreach($rules->getRules() as $rule => $value){
+				$list[] = "$rule = " . (is_bool($value) ? ($value ? "true" : "false") : $value);
+			}
+			$ctx->say(implode(", ", $list));
+			return 1;
+		}
+		$rule = strtolower($args[0]);
+		if(!isset($args[1])){
+			$value = $rules->getRule($rule);
+			if($value === null){
+				$ctx->say(TextFormat::RED . "Unknown game rule $rule");
+				return 0;
+			}
+			$ctx->say("$rule = " . (is_bool($value) ? ($value ? "true" : "false") : $value));
+			return 1;
+		}
+		if(!$rules->setRule($rule, $args[1])){
+			$ctx->say(TextFormat::RED . "Unknown game rule $rule");
+			return 0;
+		}
+		$ctx->say("Game rule $rule is now " . $args[1]);
+		return 1;
+	}
+
+	/** @param list<string> $args tickingarea add <from> <to> [name] | add circle <center> <radius> [name] | remove <name>|<x y z> | remove_all | list */
+	private function tickingarea(array $args, CommandContext $ctx) : int{
+		$areas = $this->manager->getTickingAreas();
+		switch(strtolower($args[0] ?? "list")){
+			case "add":
+				if(strtolower($args[1] ?? "") === "circle"){
+					$center = $this->position(array_slice($args, 2, 3), $ctx);
+					$radius = max(1, min(4, (int) ($args[5] ?? 1))) * 16;
+					$name = $args[6] ?? ("area" . count($areas->getAreas()));
+					$error = $areas->add($ctx->world, $name, (int) floor($center->x) - $radius, (int) floor($center->z) - $radius, (int) floor($center->x) + $radius, (int) floor($center->z) + $radius);
+				}else{
+					$a = $this->position(array_slice($args, 1, 3), $ctx);
+					$b = $this->position(array_slice($args, 4, 3), $ctx);
+					$name = $args[7] ?? ("area" . count($areas->getAreas()));
+					$error = $areas->add($ctx->world, $name, (int) floor($a->x), (int) floor($a->z), (int) floor($b->x), (int) floor($b->z));
+				}
+				$ctx->say($error === null ? "Added ticking area $name" : TextFormat::RED . $error);
+				return $error === null ? 1 : 0;
+			case "remove":
+				$name = $args[1] ?? "";
+				if(self::isCoord($name)){
+					$pos = $this->position(array_slice($args, 1, 3), $ctx);
+					foreach($areas->getAreas() as $areaName => $area){
+						if($area["world"] === $ctx->world->getFolderName() && ((int) floor($pos->x) >> 4) >= $area["x1"] && ((int) floor($pos->x) >> 4) <= $area["x2"] && ((int) floor($pos->z) >> 4) >= $area["z1"] && ((int) floor($pos->z) >> 4) <= $area["z2"]){
+							$name = $areaName;
+						}
+					}
+				}
+				$removed = $areas->remove($name);
+				$ctx->say($removed ? "Removed ticking area $name" : TextFormat::RED . "No ticking area $name");
+				return $removed ? 1 : 0;
+			case "remove_all":
+				$ctx->say("Removed " . $areas->removeAll() . " ticking area(s)");
+				return 1;
+			default:
+				foreach($areas->getAreas() as $name => $area){
+					$ctx->say("$name: " . $area["world"] . " chunks " . $area["x1"] . "," . $area["z1"] . " to " . $area["x2"] . "," . $area["z2"]);
+				}
+				if($areas->getAreas() === []){
+					$ctx->say("No ticking areas");
+				}
+				return 1;
+		}
+	}
+
+	/** @param list<string> $args structure load <name> <x y z> */
+	private function structure(array $args, CommandContext $ctx) : int{
+		if(strtolower($args[0] ?? "") !== "load"){
+			$ctx->say(TextFormat::RED . "Only /structure load is supported");
+			return 0;
+		}
+		$structure = $this->manager->getStructures()->get($args[1] ?? "");
+		if($structure === null){
+			$ctx->say(TextFormat::RED . "Structure " . ($args[1] ?? "") . " not found");
+			return 0;
+		}
+		$pos = isset($args[2]) ? $this->position(array_slice($args, 2, 3), $ctx) : $ctx->origin;
+		$placed = $structure->place($ctx->world, (int) floor($pos->x), (int) floor($pos->y), (int) floor($pos->z), $this->manager);
+		$ctx->say("Placed structure " . $args[1] . " ($placed blocks)");
+		return 1;
+	}
+
+	// ---------------------------------------------------------------- scoreboard
+
+	/** @param list<string> $args */
+	private function scoreboard(array $args, CommandContext $ctx) : int{
+		$board = $this->manager->getScoreboard();
+		$section = strtolower($args[0] ?? "");
+		$action = strtolower($args[1] ?? "");
+		if($section === "objectives"){
+			switch($action){
+				case "add":
+					$ok = $board->addObjective($args[2] ?? "", implode(" ", array_slice($args, 4)));
+					$ctx->say($ok ? "Added objective " . ($args[2] ?? "") : TextFormat::RED . "Objective " . ($args[2] ?? "") . " already exists");
+					return $ok ? 1 : 0;
+				case "remove":
+					return $board->removeObjective($args[2] ?? "") ? 1 : 0;
+				case "setdisplay":
+					$slot = strtolower($args[2] ?? "sidebar");
+					$order = strtolower($args[4] ?? "descending") === "ascending" ? 0 : 1;
+					return $board->setDisplay($slot, $args[3] ?? null, $order) ? 1 : 0;
+				default:
+					foreach($board->getObjectives() as $id => $name){
+						$ctx->say("$id: $name");
+					}
+					return 1;
+			}
+		}
+		if($section !== "players"){
+			return 0;
+		}
+		$objective = $args[3] ?? "";
+		switch($action){
+			case "set":
+			case "add":
+			case "remove":
+				$amount = (int) ($args[4] ?? 0);
+				$count = 0;
+				foreach($this->participants($args[2] ?? "", $ctx) as $participant){
+					if($action === "set"){
+						$count += $board->setScore($objective, $participant, $amount) ? 1 : 0;
+					}else{
+						$count += $board->addScore($objective, $participant, $action === "add" ? $amount : -$amount) !== null ? 1 : 0;
+					}
+				}
+				return $count;
+			case "random":
+				$count = 0;
+				foreach($this->participants($args[2] ?? "", $ctx) as $participant){
+					$count += $board->setScore($objective, $participant, mt_rand((int) ($args[4] ?? 0), (int) ($args[5] ?? 0))) ? 1 : 0;
+				}
+				return $count;
+			case "reset":
+				$count = 0;
+				foreach($this->participants($args[2] ?? "*", $ctx) as $participant){
+					$count += $board->resetScore($args[3] ?? null, $participant) ? 1 : 0;
+				}
+				return $count;
+			case "test":
+				$min = ($args[4] ?? "*") === "*" ? \PHP_INT_MIN : (int) $args[4];
+				$max = ($args[5] ?? "*") === "*" ? \PHP_INT_MAX : (int) $args[5];
+				$count = 0;
+				foreach($this->participants($args[2] ?? "", $ctx) as $participant){
+					$score = $board->getScore($objective, $participant);
+					if($score !== null && $score >= $min && $score <= $max){
+						$count++;
+					}
+				}
+				return $count;
+			case "operation":
+				//operation <targets> <objective> <op> <sources> <objective>
+				$op = $args[4] ?? "=";
+				$sources = $this->participants($args[5] ?? "", $ctx);
+				$sourceObjective = $args[6] ?? $objective;
+				$count = 0;
+				foreach($this->participants($args[2] ?? "", $ctx) as $target){
+					foreach($sources as $source){
+						$a = $board->getScore($objective, $target) ?? 0;
+						$b = $board->getScore($sourceObjective, $source) ?? 0;
+						$result = match($op){
+							"+=" => $a + $b, "-=" => $a - $b, "*=" => $a * $b, "/=" => $b === 0 ? $a : intdiv($a, $b), "%=" => $b === 0 ? $a : $a % $b,
+							"<" => min($a, $b), ">" => max($a, $b), "><" => $b, default => $b,
+						};
+						if($op === "><"){
+							$board->setScore($sourceObjective, $source, $a);
+						}
+						$count += $board->setScore($objective, $target, $result) ? 1 : 0;
+					}
+				}
+				return $count;
+			default:
+				$who = isset($args[2]) ? $this->participants($args[2], $ctx) : $board->getParticipants();
+				foreach($who as $participant){
+					$line = [];
+					foreach($board->getObjectives() as $id => $_){
+						$score = $board->getScore($id, $participant);
+						if($score !== null){
+							$line[] = "$id: $score";
+						}
+					}
+					if($line !== []){
+						$ctx->say("$participant - " . implode(", ", $line));
+					}
+				}
+				return 1;
+		}
+	}
+
+	/**
+	 * Scoreboard participants for a target: player names, "entity:<id>" for other entities, "*" for everyone
+	 * already on the board, or the literal name (fake players).
+	 *
+	 * @return list<string>
+	 */
+	private function participants(string $target, CommandContext $ctx) : array{
+		if($target === "*"){
+			return $this->manager->getScoreboard()->getParticipants();
+		}
+		if(!str_starts_with($target, "@")){
+			return [trim($target, "\"")];
+		}
+		return array_map(static fn(Entity $e) : string => $e instanceof Player ? $e->getName() : "entity:" . $e->getId(), $this->select($target, $ctx));
 	}
 
 	/**

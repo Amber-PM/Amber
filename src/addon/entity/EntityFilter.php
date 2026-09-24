@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\addon\entity;
 
+use pocketmine\addon\AddonManager;
 use pocketmine\block\Lava;
 use pocketmine\block\Water;
 use pocketmine\entity\effect\StringToEffectParser;
@@ -205,8 +206,9 @@ final class EntityFilter{
 			case "is_weather":
 			case "weather":
 			case "weather_at_position":
-				//PocketMine has no weather
-				return self::compare(strtolower((string) $value) === "clear", $operator, true);
+				$weather = AddonManager::getInstance()?->getWorldRules()->getWeather($context->self->getWorld()) ?? "clear";
+				$wanted = strtolower((string) $value);
+				return self::compare($weather === $wanted || ($wanted === "precipitation" && $weather !== "clear"), $operator, true);
 		}
 
 		if($subject === null){

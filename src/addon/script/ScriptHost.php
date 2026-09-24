@@ -31,6 +31,10 @@ use pocketmine\addon\entity\EntityFilter;
 use pocketmine\addon\event\AddonScriptEvent;
 use pocketmine\block\Block;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\camera\options\CameraEaseType;
+use pocketmine\camera\options\CameraFadeOptions;
+use pocketmine\camera\options\CameraSetOptions;
+use pocketmine\color\Color;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\EffectIdMap;
 use pocketmine\entity\effect\EffectInstance;
@@ -111,10 +115,12 @@ use function max;
 use function min;
 use function mkdir;
 use function preg_match;
+use function preg_replace;
 use function proc_close;
 use function proc_get_status;
 use function proc_open;
 use function proc_terminate;
+use function round;
 use function spl_object_id;
 use function sqrt;
 use function str_contains;
@@ -128,6 +134,7 @@ use function strpos;
 use function strtolower;
 use function substr;
 use function trim;
+use function ucfirst;
 use function usort;
 use function version_compare;
 use const JSON_INVALID_UTF8_SUBSTITUTE;
@@ -1028,8 +1035,45 @@ final class ScriptHost{
 				}
 				return null;
 			case "camera":
-				$this->reportOnce("camera", "player.camera is not supported by this server");
-				return null;
+				$player = $this->entity($a["id"] ?? null);
+				if(!$player instanceof Player){
+					return false;
+				}
+				$camera = $player->getCamera();
+				try{
+					switch($a["action"] ?? ""){
+						case "clear":
+							return $camera->clear();
+						case "fade":
+							$time = is_array($a["o"]["fadeTime"] ?? null) ? $a["o"]["fadeTime"] : [];
+							$color = is_array($a["o"]["fadeColor"] ?? null) ? $a["o"]["fadeColor"] : [];
+							return $camera->fade(new CameraFadeOptions(
+								new Color((int) round((float) ($color["red"] ?? 0) * 255), (int) round((float) ($color["green"] ?? 0) * 255), (int) round((float) ($color["blue"] ?? 0) * 255)),
+								(float) ($time["fadeInTime"] ?? 0.5), (float) ($time["holdTime"] ?? 1.0), (float) ($time["fadeOutTime"] ?? 0.5)
+							));
+						case "set":
+							$o = is_array($a["o"] ?? null) ? $a["o"] : [];
+							$options = CameraSetOptions::create();
+							if(is_array($o["location"] ?? null)){
+								$options->setPosition(new Vector3((float) $o["location"]["x"], (float) $o["location"]["y"], (float) $o["location"]["z"]));
+							}
+							if(is_array($o["rotation"] ?? null)){
+								$options->setRotation((float) ($o["rotation"]["x"] ?? 0), (float) ($o["rotation"]["y"] ?? 0));
+							}
+							if(is_array($o["facingLocation"] ?? null)){
+								$options->setFacingPosition(new Vector3((float) $o["facingLocation"]["x"], (float) $o["facingLocation"]["y"], (float) $o["facingLocation"]["z"]));
+							}elseif(isset($o["facingEntity"]) && ($facing = $this->entity($o["facingEntity"])) !== null){
+								$options->setFacingPosition($facing->getEyePos());
+							}
+							if(is_array($o["easeOptions"] ?? null)){
+								$options->setEase(CameraEaseType::tryFrom(self::snake((string) ($o["easeOptions"]["easeType"] ?? "Linear"))) ?? CameraEaseType::LINEAR, (float) ($o["easeOptions"]["easeTime"] ?? 1));
+							}
+							return $camera->set(str_contains((string) $a["preset"], ":") ? (string) $a["preset"] : "minecraft:" . $a["preset"], $options);
+					}
+				}catch(\InvalidArgumentException $e){
+					throw new \InvalidArgumentException($e->getMessage());
+				}
+				return false;
 			case "anim":
 				$e = $this->entity($a["id"] ?? null);
 				if($e !== null){
@@ -1088,9 +1132,33 @@ final class ScriptHost{
 			case "plist":
 				return array_keys($this->pluginFunctions);
 			case "gamerule":
-				return null;
+				return $this->manager->getWorldRules()->getRule(strtolower((string) ($a["name"] ?? "")));
 			case "setgamerule":
+				$this->manager->getWorldRules()->setRule(strtolower((string) ($a["name"] ?? "")), is_bool($a["v"] ?? null) || is_int($a["v"] ?? null) ? $a["v"] : (string) ($a["v"] ?? ""));
 				return null;
+			case "weather":
+				$world = $this->worldFor((string) ($a["dim"] ?? ""));
+				return $world === null ? "Clear" : ucfirst($this->manager->getWorldRules()->getWeather($world));
+			case "setweather":
+				$world = $this->worldFor((string) ($a["dim"] ?? ""));
+				if($world !== null){
+					$this->manager->getWorldRules()->setWeather($world, strtolower((string) ($a["type"] ?? "clear")), isset($a["ticks"]) ? (int) $a["ticks"] : null);
+				}
+				return null;
+			case "sb":
+				return $this->scoreboardOp($a);
+			case "structids":
+				return $this->manager->getStructures()->getNames();
+			case "structget":
+				$structure = $this->manager->getStructures()->get((string) ($a["name"] ?? ""));
+				return $structure === null ? null : ["id" => $structure->getName(), "size" => $structure->getSize()];
+			case "structplace":
+				$structure = $this->manager->getStructures()->get((string) ($a["name"] ?? ""));
+				$world = $this->worldFor((string) ($a["dim"] ?? ""));
+				if($structure === null || $world === null){
+					throw new \InvalidArgumentException("Structure " . ($a["name"] ?? "") . " not found");
+				}
+				return $structure->place($world, (int) floor((float) $a["x"]), (int) floor((float) $a["y"]), (int) floor((float) $a["z"]), $this->manager);
 			case "sbshow":
 				$this->showObjective((string) $a["slot"], (string) $a["id"], (string) ($a["name"] ?? $a["id"]), (int) ($a["order"] ?? 1), is_array($a["scores"] ?? null) ? $a["scores"] : []);
 				return null;
@@ -1659,6 +1727,36 @@ final class ScriptHost{
 				$player->getNetworkSession()->sendDataPacket($packet);
 			}
 		}
+	}
+
+	/**
+	 * world.scoreboard, served by the shared AddonScoreboard (what /scoreboard and plugins see).
+	 *
+	 * @param mixed[] $a
+	 */
+	private function scoreboardOp(array $a) : mixed{
+		$board = $this->manager->getScoreboard();
+		$objective = (string) ($a["obj"] ?? "");
+		$participant = (string) ($a["p"] ?? "");
+		return match((string) ($a["do"] ?? "")){
+			"objectives" => $board->getObjectives(),
+			"add" => $board->addObjective($objective, (string) ($a["name"] ?? $objective)),
+			"remove" => $board->removeObjective($objective),
+			"get" => $board->getScore($objective, $participant),
+			"set" => $board->setScore($objective, $participant, (int) ($a["v"] ?? 0)),
+			"addscore" => $board->addScore($objective, $participant, (int) ($a["v"] ?? 0)),
+			"reset" => $board->resetScore($objective === "" ? null : $objective, $participant),
+			"scores" => $board->getScores($objective),
+			"participants" => $board->getParticipants(),
+			"display" => $board->setDisplay(strtolower((string) ($a["slot"] ?? "sidebar")), $objective === "" ? null : $objective, (int) ($a["order"] ?? 1)),
+			"getdisplay" => $board->getDisplay(strtolower((string) ($a["slot"] ?? "sidebar"))),
+			default => null,
+		};
+	}
+
+	/** "InOutSine" -> "in_out_sine" */
+	private static function snake(string $name) : string{
+		return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $name));
 	}
 
 	/** @param array<string, int> $scores */

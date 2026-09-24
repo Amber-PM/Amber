@@ -36,27 +36,33 @@ final class CommandContext{
 		public readonly World $world,
 		public readonly Vector3 $origin,
 		public readonly float $yaw,
-		public readonly float $pitch
+		public readonly float $pitch,
+		public readonly ?CommandOutput $output = null
 	){}
 
+	/** Adds a line to the command's output, when someone reads it. */
+	public function say(string $line) : void{
+		$this->output?->add($line);
+	}
+
 	public function as(Entity $entity) : self{
-		return new self($entity, $this->world, $this->origin, $this->yaw, $this->pitch);
+		return new self($entity, $this->world, $this->origin, $this->yaw, $this->pitch, $this->output);
 	}
 
 	public function at(Entity $entity) : self{
 		$location = $entity->getLocation();
-		return new self($this->executor, $entity->getWorld(), $location->asVector3(), $location->yaw, $location->pitch);
+		return new self($this->executor, $entity->getWorld(), $location->asVector3(), $location->yaw, $location->pitch, $this->output);
 	}
 
 	public function positioned(Vector3 $position) : self{
-		return new self($this->executor, $this->world, $position, $this->yaw, $this->pitch);
+		return new self($this->executor, $this->world, $position, $this->yaw, $this->pitch, $this->output);
 	}
 
 	public function rotated(float $yaw, float $pitch) : self{
-		return new self($this->executor, $this->world, $this->origin, $yaw, $pitch);
+		return new self($this->executor, $this->world, $this->origin, $yaw, $pitch, $this->output);
 	}
 
 	public function in(World $world) : self{
-		return new self($this->executor, $world, $this->origin, $this->yaw, $this->pitch);
+		return new self($this->executor, $world, $this->origin, $this->yaw, $this->pitch, $this->output);
 	}
 }
