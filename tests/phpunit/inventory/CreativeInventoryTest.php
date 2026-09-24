@@ -122,4 +122,47 @@ final class CreativeInventoryTest extends TestCase{
 		self::assertCount(count($unfilteredPacket->getItems()) - 205, $firstPlayerPacket->getItems());
 		self::assertCount(count($inventory->getAllEntries()), $firstPlayerPacket->getItems());
 	}
+
+	public function testFindGroup() : void{
+		$inventory = CreativeInventory::getInstance();
+
+		$group = $inventory->findGroup("itemGroup.name.sword");
+		self::assertNotNull($group);
+		self::assertSame("itemGroup.name.sword", $group->getName() instanceof Translatable ? $group->getName()->getText() : $group->getName());
+
+		$groupShort = $inventory->findGroup("sword");
+		self::assertNotNull($groupShort);
+		self::assertSame($group, $groupShort);
+
+		$groupWithCategory = $inventory->findGroup("itemGroup.name.sword", CreativeCategory::EQUIPMENT);
+		self::assertNotNull($groupWithCategory);
+		self::assertSame($group, $groupWithCategory);
+
+		$groupWrongCategory = $inventory->findGroup("itemGroup.name.sword", CreativeCategory::CONSTRUCTION);
+		self::assertNull($groupWrongCategory);
+
+		$unknownGroup = $inventory->findGroup("nonexistent_group_name");
+		self::assertNull($unknownGroup);
+	}
+
+	public function testFindGroupAndCategory() : void{
+		$inventory = CreativeInventory::getInstance();
+
+		$result = $inventory->findGroupAndCategory("itemGroup.name.sword");
+		self::assertNotNull($result);
+		[$group, $category] = $result;
+		self::assertSame(CreativeCategory::EQUIPMENT, $category);
+		self::assertSame("itemGroup.name.sword", $group->getName() instanceof Translatable ? $group->getName()->getText() : $group->getName());
+
+		$resultShort = $inventory->findGroupAndCategory("sword");
+		self::assertNotNull($resultShort);
+		self::assertSame($group, $resultShort[0]);
+		self::assertSame(CreativeCategory::EQUIPMENT, $resultShort[1]);
+
+		$resultOre = $inventory->findGroupAndCategory("ore");
+		self::assertNotNull($resultOre);
+		self::assertSame(CreativeCategory::NATURE, $resultOre[1]);
+
+		self::assertNull($inventory->findGroupAndCategory("unknown_random_group"));
+	}
 }

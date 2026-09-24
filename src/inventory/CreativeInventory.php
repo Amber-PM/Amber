@@ -35,6 +35,7 @@ use pocketmine\utils\SingletonTrait;
 use Symfony\Component\Filesystem\Path;
 use function array_filter;
 use function array_map;
+use function str_starts_with;
 
 final class CreativeInventory{
 	use SingletonTrait;
@@ -154,6 +155,38 @@ final class CreativeInventory{
 		}
 
 		return -1;
+	}
+
+	/**
+	 * @return array{0: CreativeGroup, 1: CreativeCategory}|null
+	 */
+	public function findGroupAndCategory(string $name, ?CreativeCategory $category = null) : ?array{
+		$candidates = [$name];
+		if(!str_starts_with($name, "itemGroup.name.")){
+			$candidates[] = "itemGroup.name." . $name;
+		}
+
+		foreach($this->creative as $entry){
+			if($category !== null && $entry->getCategory() !== $category){
+				continue;
+			}
+			$group = $entry->getGroup();
+			if($group !== null){
+				$groupName = $group->getName();
+				$text = $groupName instanceof Translatable ? $groupName->getText() : $groupName;
+				foreach($candidates as $candidate){
+					if($text === $candidate){
+						return [$group, $entry->getCategory()];
+					}
+				}
+			}
+		}
+
+		return null;
+	}
+
+	public function findGroup(string $name, ?CreativeCategory $category = null) : ?CreativeGroup{
+		return $this->findGroupAndCategory($name, $category)[0] ?? null;
 	}
 
 	/**
