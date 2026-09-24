@@ -2141,7 +2141,16 @@ class AddonEntity extends Living{
 	/** @return mixed[]|null the breeds_with entry for this partner */
 	private function breedPartner(AddonEntity $other) : ?array{
 		$breedable = is_array($this->components["minecraft:breedable"] ?? null) ? $this->components["minecraft:breedable"] : [];
-		$with = self::listOf($breedable["breeds_with"] ?? []);
+		$with = $breedable["breeds_with"] ?? [];
+		//the current format maps mate types to their options: {"minecraft:cow": {}}
+		if(is_array($with) && !array_is_list($with) && !isset($with["mate_type"])){
+			$entries = [];
+			foreach($with as $mate => $options){
+				$entries[] = ["mate_type" => (string) $mate] + (is_array($options) ? $options : []);
+			}
+			$with = $entries;
+		}
+		$with = self::listOf($with);
 		if($with === []){
 			return $other->getAddonIdentifier() === $this->getAddonIdentifier() ? [] : null;
 		}
@@ -2159,7 +2168,11 @@ class AddonEntity extends Living{
 			return;
 		}
 		$entry = $this->breedPartner($mate) ?? [];
-		$babyType = is_string($entry["baby_type"] ?? null) ? $entry["baby_type"] : $this->getAddonIdentifier();
+		//minecraft:offspring names the baby for each mate type (a horse and a donkey make a mule)
+		$offspring = is_array($this->components["minecraft:offspring"] ?? null) ? $this->components["minecraft:offspring"] : [];
+		$pairs = is_array($offspring["offspring_pairs"] ?? null) ? $offspring["offspring_pairs"] : [];
+		$babyType = is_string($pairs[$mate->getAddonIdentifier()] ?? null) ? $pairs[$mate->getAddonIdentifier()]
+			: (is_string($entry["baby_type"] ?? null) ? $entry["baby_type"] : $this->getAddonIdentifier());
 		$baby = AddonManager::getInstance()?->createEntity($babyType, $this->getLocation());
 		foreach([$this, $mate] as $parent){
 			$parent->loveTicks = 0;
@@ -2171,6 +2184,14 @@ class AddonEntity extends Living{
 		}
 		$event = $entry["breed_event"] ?? null;
 		$baby->setSpawnEvent(is_array($event) && is_string($event["event"] ?? null) ? $event["event"] : "minecraft:entity_born");
+		//property_inheritance: the baby takes each listed property from one of its parents
+		foreach(is_array($offspring["property_inheritance"] ?? null) ? $offspring["property_inheritance"] : [] as $property => $rule){
+			$parent = mt_rand(0, 1) === 0 ? $this : $mate;
+			$value = $parent->getProperty((string) $property);
+			if($value !== null){
+				$baby->setProperty((string) $property, $value);
+			}
+		}
 		if($this->isTamed() && $this->ownerName !== null){
 			$baby->tamed = true;
 			$baby->ownerName = $this->ownerName;
