@@ -38,7 +38,11 @@ use function is_array;
 use function is_numeric;
 use function is_string;
 use function max;
+use function min;
+use function round;
 use function str_replace;
+use function str_starts_with;
+use function strtolower;
 use function ucwords;
 
 /**

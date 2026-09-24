@@ -163,6 +163,17 @@ class AddonBlock extends Block{
 		return true;
 	}
 
+	/** minecraft:loot: the pack's loot table instead of the block itself. */
+	public function getDropsForCompatibleTool(Item $item) : array{
+		$loot = $this->addonDefinition->getComponents()["minecraft:loot"] ?? null;
+		$table = \is_array($loot) ? ($loot["value"] ?? $loot["table"] ?? null) : $loot;
+		$tables = AddonManager::getInstance()?->getLootTables();
+		if(\is_string($table) && $tables !== null && $tables->exists($table)){
+			return $tables->roll($table, new \pocketmine\addon\loot\LootContext(null, null, $item, false));
+		}
+		return parent::getDropsForCompatibleTool($item);
+	}
+
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
 		if($player !== null && (AddonManager::getInstance()?->dispatchBlockInteract($player, $this, $item) ?? false)){
 			return true;

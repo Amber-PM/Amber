@@ -152,6 +152,9 @@ class PreSpawnPacketHandler extends PacketHandler{
 
 			$this->session->getLogger()->debug("Sending actor identifiers");
 			$this->session->sendDataPacket(StaticPacketCache::getInstance()->getAvailableActorIdentifiers());
+			foreach(\pocketmine\addon\AddonManager::getInstance()?->getActorPropertyPackets() ?? [] as $packet){
+				$this->session->sendDataPacket($packet);
+			}
 
 			$this->session->getLogger()->debug("Sending biome definitions");
 			$this->session->sendDataPacket(StaticPacketCache::getInstance()->getBiomeDefs($this->session->getProtocolId()));

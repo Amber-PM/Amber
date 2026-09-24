@@ -28,13 +28,17 @@ use pocketmine\crafting\ExactRecipeIngredient;
 use pocketmine\crafting\FurnaceRecipe;
 use pocketmine\crafting\FurnaceType;
 use pocketmine\crafting\MetaWildcardRecipeIngredient;
+use pocketmine\crafting\PotionContainerChangeRecipe;
+use pocketmine\crafting\PotionTypeRecipe;
 use pocketmine\crafting\RecipeIngredient;
 use pocketmine\crafting\ShapedRecipe;
 use pocketmine\crafting\ShapelessRecipe;
 use pocketmine\crafting\ShapelessRecipeType;
 use pocketmine\crafting\TagWildcardRecipeIngredient;
 use pocketmine\item\Item;
+use pocketmine\item\PotionType;
 use pocketmine\item\StringToItemParser;
+use pocketmine\item\VanillaItems;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
 use function array_is_list;
 use function count;
@@ -46,7 +50,11 @@ use function is_numeric;
 use function is_string;
 use function max;
 use function str_contains;
+use function str_pad;
+use function str_starts_with;
 use function strlen;
+use function strtoupper;
+use function substr;
 use function substr_count;
 
 /**
@@ -56,7 +64,7 @@ use function substr_count;
  * Supported: minecraft:recipe_shaped (crafting table), minecraft:recipe_shapeless (crafting table, stonecutter,
  * cartography and smithing tables) and minecraft:recipe_furnace (furnace, blast furnace, smoker, campfires).
  * Ingredients may be an exact item ({"item", "data"}), any variant of an item ({"item"} with no data) or an item
- * tag ({"tag"}). Other recipe types (brewing, smithing transforms and trims, material reduction) are counted and
+ * tag ({"tag"}). Brewing mixes and container changes are registered with the brewing stand. Other recipe types (smithing transforms and trims, material reduction) are counted and
  * reported rather than guessed at.
  */
 final class AddonRecipes{
@@ -97,6 +105,8 @@ final class AddonRecipes{
 					"minecraft:recipe_shaped" => $this->shaped($recipe),
 					"minecraft:recipe_shapeless" => $this->shapeless($recipe),
 					"minecraft:recipe_furnace" => $this->furnace($recipe),
+					"minecraft:recipe_brewing_mix" => $this->brewingMix($recipe),
+					"minecraft:recipe_brewing_container" => $this->brewingContainer($recipe),
 					default => $this->unsupported++,
 				};
 			}
@@ -222,6 +232,59 @@ final class AddonRecipes{
 			}
 		}
 		return $tags;
+	}
+
+	/**
+	 * minecraft:recipe_brewing_mix: a potion type plus a reagent makes another potion type
+	 * ("minecraft:potion_type:awkward" + "minecraft:blaze_powder" -> "minecraft:potion_type:strength").
+	 *
+	 * @param mixed[] $recipe
+	 * @throws AddonException
+	 */
+	private function brewingMix(array $recipe) : void{
+		$input = self::potionType($recipe["input"] ?? null);
+		$output = self::potionType($recipe["output"] ?? null);
+		if($input === null || $output === null){
+			//custom potion types cannot be expressed on this server
+			$this->unsupported++;
+			return;
+		}
+		$this->manager->registerPotionTypeRecipe(new PotionTypeRecipe(
+			new ExactRecipeIngredient(VanillaItems::POTION()->setType($input)),
+			$this->ingredient($recipe["reagent"] ?? null),
+			VanillaItems::POTION()->setType($output)
+		));
+		$this->registered++;
+	}
+
+	/**
+	 * minecraft:recipe_brewing_container: a reagent turns one potion container into another
+	 * ("minecraft:potion" + "minecraft:gunpowder" -> "minecraft:splash_potion").
+	 *
+	 * @param mixed[] $recipe
+	 * @throws AddonException
+	 */
+	private function brewingContainer(array $recipe) : void{
+		[$input] = self::itemRef($recipe["input"] ?? null);
+		[$output] = self::itemRef($recipe["output"] ?? null);
+		//fails early for items the server does not have
+		$this->item($input, 0);
+		$this->item($output, 0);
+		$this->manager->registerPotionContainerChangeRecipe(new PotionContainerChangeRecipe($input, $this->ingredient($recipe["reagent"] ?? null), $output));
+		$this->registered++;
+	}
+
+	private static function potionType(mixed $value) : ?PotionType{
+		if(!is_string($value) || !str_starts_with($value, "minecraft:potion_type:")){
+			return null;
+		}
+		$name = strtoupper(substr($value, strlen("minecraft:potion_type:")));
+		foreach(PotionType::cases() as $case){
+			if($case->name === $name){
+				return $case;
+			}
+		}
+		return null;
 	}
 
 	/** @throws AddonException */
