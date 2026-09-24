@@ -16,10 +16,13 @@ const modules = {
 	"@minecraft/common": "common.mjs",
 	"@minecraft/math": "math.mjs",
 	"@minecraft/vanilla-data": "vanilla-data.mjs",
-	"@minecraft/server-gametest": "unsupported.mjs",
-	"@minecraft/server-net": "unsupported.mjs",
+	//modules this server does not provide: every name imports, and using one throws
+	"@minecraft/server-gametest": "server-gametest-names.mjs",
+	"@minecraft/server-net": "server-net-names.mjs",
 	"@minecraft/server-editor": "unsupported.mjs",
-	"@minecraft/debug-utilities": "unsupported.mjs",
+	"@minecraft/debug-utilities": "debug-utilities-names.mjs",
+	"@minecraft/diagnostics": "diagnostics-names.mjs",
+	"@minecraft/server-graphics": "server-graphics-names.mjs",
 	"@minecraft/server-admin": "admin.mjs",
 	"@amber/plugins": "bridge.mjs",
 };

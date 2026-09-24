@@ -6,6 +6,7 @@
 
 import { call as ipcCall, post as ipcPost } from "./ipc.mjs";
 import { host } from "./state.mjs";
+import * as Names from "./server-names.mjs";
 
 // Reads keep the per-tick caches; anything else may change the world, so cached state is dropped after it.
 const READ_OPS = new Set(["ent", "ents", "comp", "block", "top", "light", "biome", "ray", "rayents", "inv", "equip", "dp", "dpids", "prop", "geff", "effs", "time", "spawnpoint", "pspawn", "phas", "plist", "gamerule"]);
@@ -23,12 +24,14 @@ function post(op, args){
 
 const enumOf = (names) => Object.freeze(Object.fromEntries(names.map(n => [n, n])));
 
-export const GameMode = Object.freeze({
-	survival: "survival", creative: "creative", adventure: "adventure", spectator: "spectator",
-	Survival: "survival", Creative: "creative", Adventure: "adventure", Spectator: "spectator",
-});
+/** A game mode as the running pack's API version names it: "survival" in 1.x, "Survival" in 2.x. */
+export const _gameModeName = (m) => typeof m !== "string" ? m : (host.legacy() ? m.toLowerCase() : m[0].toUpperCase() + m.slice(1).toLowerCase());
+export const GameMode = Object.freeze(Object.defineProperties({}, Object.fromEntries(["survival", "creative", "adventure", "spectator"].flatMap(m => {
+	const property = { get: () => _gameModeName(m), enumerable: true };
+	return [[m, property], [m[0].toUpperCase() + m.slice(1), property]];
+}))));
 export const EntityDamageCause = enumOf(["anvil", "blockExplosion", "campfire", "charging", "contact", "drowning", "entityAttack", "entityExplosion", "fall", "fallingBlock", "fire", "fireTick", "fireworks", "flyIntoWall", "freezing", "lava", "lightning", "maceSmash", "magic", "magma", "none", "override", "piston", "projectile", "ramAttack", "selfDestruct", "sonicBoom", "soulCampfire", "stalactite", "stalagmite", "starve", "suffocation", "suicide", "temperature", "thorns", "void", "wither"]);
-export const EquipmentSlot = enumOf(["Head", "Chest", "Legs", "Feet", "Mainhand", "Offhand"]);
+export const EquipmentSlot = Object.freeze({ ...Names.EquipmentSlot, ...enumOf(["Head", "Chest", "Legs", "Feet", "Mainhand", "Offhand"]) });
 export const Direction = enumOf(["Down", "Up", "North", "South", "West", "East"]);
 export const DisplaySlotId = enumOf(["BelowName", "List", "Sidebar"]);
 export const ObjectiveSortOrder = Object.freeze({ Ascending: 0, Descending: 1 });
@@ -38,7 +41,7 @@ export const EntityInitializationCause = enumOf(["Born", "Event", "Loaded", "Spa
 export const TimeOfDay = Object.freeze({ Day: 1000, Noon: 6000, Sunset: 12000, Night: 13000, Midnight: 18000, Sunrise: 23000 });
 export const MoonPhase = Object.freeze({ FullMoon: 0, WaningGibbous: 1, FirstQuarter: 2, WaningCrescent: 3, NewMoon: 4, WaxingCrescent: 5, LastQuarter: 6, WaxingGibbous: 7 });
 export const WeatherType = enumOf(["Clear", "Rain", "Thunder"]);
-export const GameRule = Object.freeze(Object.fromEntries(["commandBlockOutput", "commandBlocksEnabled", "doDayLightCycle", "doEntityDrops", "doFireTick", "doImmediateRespawn", "doInsomnia", "doLimitedCrafting", "doMobLoot", "doMobSpawning", "doTileDrops", "doWeatherCycle", "drowningDamage", "fallDamage", "fireDamage", "freezeDamage", "functionCommandLimit", "keepInventory", "maxCommandChainLength", "mobGriefing", "naturalRegeneration", "playersSleepingPercentage", "projectilesCanBreakBlocks", "pvp", "randomTickSpeed", "recipesUnlock", "respawnBlocksExplode", "sendCommandFeedback", "showBorderEffect", "showCoordinates", "showDaysPlayed", "showDeathMessages", "showRecipeMessages", "showTags", "spawnRadius", "tntExplodes", "tntExplosionDropDecay"].map(r => [r[0].toUpperCase() + r.slice(1), r])));
+export const GameRule = Object.freeze({ ...Names.GameRule, ...Object.fromEntries(["commandBlockOutput", "commandBlocksEnabled", "doDayLightCycle", "doEntityDrops", "doFireTick", "doImmediateRespawn", "doInsomnia", "doLimitedCrafting", "doMobLoot", "doMobSpawning", "doTileDrops", "doWeatherCycle", "drowningDamage", "fallDamage", "fireDamage", "freezeDamage", "functionCommandLimit", "keepInventory", "maxCommandChainLength", "mobGriefing", "naturalRegeneration", "playersSleepingPercentage", "projectilesCanBreakBlocks", "pvp", "randomTickSpeed", "recipesUnlock", "respawnBlocksExplode", "sendCommandFeedback", "showBorderEffect", "showCoordinates", "showDaysPlayed", "showDeathMessages", "showRecipeMessages", "showTags", "spawnRadius", "tntExplodes", "tntExplosionDropDecay"].map(r => [r[0].toUpperCase() + r.slice(1), r])) });
 export const EntityHealCause = enumOf(["Heal", "Regeneration", "SelfHeal", "TotemOfUndying"]);
 export const EntitySwingSource = enumOf(["Attack", "Build", "DropItem", "Event", "Interact", "Mine", "None", "ThrowItem", "UseItem"]);
 export const InputMode = enumOf(["Gamepad", "KeyboardAndMouse", "MotionController", "Touch"]);
@@ -50,15 +53,15 @@ export const HudElement = Object.freeze({ PaperDoll: 0, Armor: 1, ToolTips: 2, T
 export const HudVisibility = Object.freeze({ Hide: 0, Reset: 1 });
 export const LiquidType = enumOf(["Water"]);
 export const ItemLockMode = enumOf(["inventory", "none", "slot"]);
-export const EntityComponentTypes = Object.freeze({
+export const EntityComponentTypes = Object.freeze({ ...Names.EntityComponentTypes, 
 	AddRider: "minecraft:addrider", Ageable: "minecraft:ageable", Breathable: "minecraft:breathable", CanClimb: "minecraft:can_climb", CanFly: "minecraft:can_fly",
 	Color: "minecraft:color", Equippable: "minecraft:equippable", Rideable: "minecraft:rideable", Riding: "minecraft:riding", Leashable: "minecraft:leashable", FireImmune: "minecraft:fire_immune", Health: "minecraft:health", Inventory: "minecraft:inventory",
 	IsBaby: "minecraft:is_baby", IsTamed: "minecraft:is_tamed", Item: "minecraft:item", MarkVariant: "minecraft:mark_variant", Movement: "minecraft:movement",
 	OnFire: "minecraft:onfire", Projectile: "minecraft:projectile", Scale: "minecraft:scale", SkinId: "minecraft:skin_id", Tameable: "minecraft:tameable",
 	TypeFamily: "minecraft:type_family", Variant: "minecraft:variant",
 });
-export const ItemComponentTypes = Object.freeze({ Cooldown: "minecraft:cooldown", Durability: "minecraft:durability", Enchantable: "minecraft:enchantable", Food: "minecraft:food" });
-export const BlockComponentTypes = Object.freeze({ Inventory: "minecraft:inventory" });
+export const ItemComponentTypes = Object.freeze({ ...Names.ItemComponentTypes,  Cooldown: "minecraft:cooldown", Durability: "minecraft:durability", Enchantable: "minecraft:enchantable", Food: "minecraft:food" });
+export const BlockComponentTypes = Object.freeze({ ...Names.BlockComponentTypes,  Inventory: "minecraft:inventory" });
 export const CustomCommandPermissionLevel = Object.freeze({ Any: 0, GameDirectors: 1, Admin: 2, Host: 3, Owner: 4 });
 export const CommandPermissionLevel = CustomCommandPermissionLevel;
 
@@ -113,8 +116,8 @@ export class ItemTypes{
 	static getAll(){ return []; }
 }
 
-class ItemComponent{ constructor(stack){ this._stack = stack; } get isValid(){ return host.valid(true); } }
-class ItemDurabilityComponent extends ItemComponent{
+export class ItemComponent{ constructor(stack){ this._stack = stack; } get isValid(){ return host.valid(true); } }
+export class ItemDurabilityComponent extends ItemComponent{
 	static componentId = "minecraft:durability";
 	get damage(){ return this._stack._damage ?? 0; }
 	set damage(v){ this._stack._damage = Math.max(0, v | 0); }
@@ -122,7 +125,7 @@ class ItemDurabilityComponent extends ItemComponent{
 	getDamageChance(unbreaking = 0){ return 100 / (unbreaking + 1); }
 	getDamageChanceRange(){ return { min: 0, max: 100 }; }
 }
-class ItemEnchantableComponent extends ItemComponent{
+export class ItemEnchantableComponent extends ItemComponent{
 	static componentId = "minecraft:enchantable";
 	get slots(){ return []; }
 	getEnchantments(){ return (this._stack._ench ?? []).map(e => ({ type: { id: e.id, maxLevel: e.max ?? 5 }, level: e.lvl })); }
@@ -134,7 +137,7 @@ class ItemEnchantableComponent extends ItemComponent{
 	removeAllEnchantments(){ this._stack._ench = []; }
 	canAddEnchantment(){ return true; }
 }
-class ItemCooldownComponent extends ItemComponent{
+export class ItemCooldownComponent extends ItemComponent{
 	static componentId = "minecraft:cooldown";
 	get cooldownCategory(){ return this._stack.typeId; }
 	get cooldownTicks(){ return 0; }
@@ -142,7 +145,7 @@ class ItemCooldownComponent extends ItemComponent{
 	getCooldownTicksRemaining(){ return 0; }
 	isCooldownCategory(c){ return c === this.cooldownCategory; }
 }
-class ItemFoodComponent extends ItemComponent{
+export class ItemFoodComponent extends ItemComponent{
 	static componentId = "minecraft:food";
 	get canAlwaysEat(){ return false; } get nutrition(){ return 0; } get saturationModifier(){ return 0; } get usingConvertsTo(){ return undefined; }
 }
@@ -293,11 +296,11 @@ export class Container{
 
 // ---------------------------------------------------------------- entity components
 
-class EntityComponent{
+export class EntityComponent{
 	constructor(entity, typeId, data){ this.entity = entity; this.typeId = typeId; this._data = data ?? {}; }
 	get isValid(){ return host.valid(this.entity._valid()); }
 }
-class EntityAttributeComponent extends EntityComponent{
+export class EntityAttributeComponent extends EntityComponent{
 	get currentValue(){ return this.entity._s().hp; }
 	get effectiveMax(){ return this.entity._s().maxHp; }
 	get effectiveMin(){ return 0; }
@@ -307,12 +310,12 @@ class EntityAttributeComponent extends EntityComponent{
 	resetToDefaultValue(){ this.resetToMaxValue(); }
 	resetToMinValue(){ post("hp", { id: this.entity.id, v: 0 }); this.entity._dirty(); }
 }
-class EntityInventoryComponent extends EntityComponent{
+export class EntityInventoryComponent extends EntityComponent{
 	get container(){ return new Container(this.entity, this.typeId === "minecraft:ender_chest_inventory" ? "ender" : "inventory"); }
 	get inventorySize(){ return this.container.size; }
 	get canBeSiphonedFrom(){ return false; } get private(){ return false; } get restrictToOwner(){ return false; } get additionalSlotsPerStrength(){ return 0; } get containerType(){ return "inventory"; }
 }
-class EntityEquippableComponent extends EntityComponent{
+export class EntityEquippableComponent extends EntityComponent{
 	getEquipment(slot){ return ItemStack._from(call("equip", { id: this.entity.id, slot })); }
 	setEquipment(slot, item){ post("setequip", { id: this.entity.id, slot, item: item ? item._toWire() : null }); return true; }
 	getEquipmentSlot(slot){ const self = this; return { getItem: () => self.getEquipment(slot), setItem: (i) => self.setEquipment(slot, i), hasItem: () => self.getEquipment(slot) !== undefined, get isValid(){ return host.valid(true); } }; }
@@ -323,29 +326,29 @@ class EntityValueComponent extends EntityComponent{
 	get value(){ const v = this._data?.value ?? this._data; return typeof v === "number" ? v : (v?.value ?? 0); }
 	set value(v){}
 }
-class EntityTypeFamilyComponent extends EntityComponent{
+export class EntityTypeFamilyComponent extends EntityComponent{
 	getTypeFamilies(){ return this.entity._s().fam ?? []; }
 	hasTypeFamily(f){ return this.getTypeFamilies().includes(f); }
 }
-class EntityOnFireComponent extends EntityComponent{ get onFireTicksRemaining(){ return this.entity._s().fireTicks ?? 0; } }
-class EntityMovementComponent extends EntityAttributeComponent{
+export class EntityOnFireComponent extends EntityComponent{ get onFireTicksRemaining(){ return this.entity._s().fireTicks ?? 0; } }
+export class EntityMovementComponent extends EntityAttributeComponent{
 	get currentValue(){ return this.entity._s().speed ?? 0.1; }
 	get effectiveMax(){ return 1024; }
 	setCurrentValue(v){ post("speed", { id: this.entity.id, v }); return true; }
 }
-class EntityProjectileComponent extends EntityComponent{
+export class EntityProjectileComponent extends EntityComponent{
 	shoot(velocity, opts){ post("imp", { id: this.entity.id, x: velocity.x, y: velocity.y, z: velocity.z, set: true, owner: opts?.owner?.id }); }
 	get owner(){ return this.entity._owner(); }
 	set owner(v){ post("owner", { id: this.entity.id, owner: v?.id ?? null }); }
 }
-class EntityTameableComponent extends EntityComponent{
+export class EntityTameableComponent extends EntityComponent{
 	get isTamed(){ return this.entity._s().tamed ?? false; }
 	get tamedToPlayer(){ return this.entity._owner(); }
 	get tamedToPlayerId(){ return this.entity._s().owner ?? undefined; }
 	tame(player){ post("tame", { id: this.entity.id, owner: player?.id }); this.entity._dirty(); return true; }
 }
-class EntityItemComponent extends EntityComponent{ get itemStack(){ return ItemStack._from(this.entity._s().item); } }
-class EntityRideableComponent extends EntityComponent{
+export class EntityItemComponent extends EntityComponent{ get itemStack(){ return ItemStack._from(this.entity._s().item); } }
+export class EntityRideableComponent extends EntityComponent{
 	get seatCount(){ return this._data?.seat_count ?? (Array.isArray(this._data?.seats) ? this._data.seats.length : 1); }
 	get controllingSeat(){ return this._data?.controlling_seat ?? 0; }
 	get crouchingSkipInteract(){ return this._data?.crouching_skip_interact ?? true; }
@@ -359,10 +362,10 @@ class EntityRideableComponent extends EntityComponent{
 	ejectRider(rider){ call("rideremove", { id: this.entity.id, rider: rider.id }); this.entity._dirty(); }
 	ejectRiders(){ call("rideeject", { id: this.entity.id }); this.entity._dirty(); }
 }
-class EntityRidingComponent extends EntityComponent{
+export class EntityRidingComponent extends EntityComponent{
 	get entityRidingOn(){ const v = this.entity._s().vehicle; return v ? entityFrom(v) : undefined; }
 }
-class EntityLeashableComponent extends EntityComponent{
+export class EntityLeashableComponent extends EntityComponent{
 	get isLeashed(){ return !!this.entity._s().leashHolder; }
 	get leashHolder(){ const h = this.entity._s().leashHolder; return h ? entityFrom(h) : undefined; }
 	get leashHolderEntityId(){ return this.entity._s().leashHolder ?? undefined; }
@@ -552,7 +555,7 @@ export class Entity{
 	getAABB(){ const s = this._s(); return { center: { x: s.x, y: s.y + (s.h ?? 1.8) / 2, z: s.z }, extent: { x: (s.w ?? 0.6) / 2, y: (s.h ?? 1.8) / 2, z: (s.w ?? 0.6) / 2 } }; }
 }
 
-class ScreenDisplay{
+export class ScreenDisplay{
 	constructor(player){ this._p = player; }
 	setTitle(title, options = {}){
 		post("title", { id: this._p.id, kind: "title", text: flattenText(title), sub: options.subtitle !== undefined ? flattenText(options.subtitle) : null, fi: options.fadeInDuration ?? 10, st: options.stayDuration ?? 70, fo: options.fadeOutDuration ?? 20 });
@@ -566,7 +569,7 @@ class ScreenDisplay{
 	get isValid(){ return host.valid(this._p._valid()); }
 }
 
-class PlayerInputPermissions{
+export class PlayerInputPermissions{
 	constructor(p){ this._p = p; }
 	get cameraEnabled(){ return true; } set cameraEnabled(v){ post("inperm", { id: this._p.id, perm: "camera", v: !!v }); }
 	get movementEnabled(){ return true; } set movementEnabled(v){ post("inperm", { id: this._p.id, perm: "movement", v: !!v }); }
@@ -574,7 +577,7 @@ class PlayerInputPermissions{
 	isPermissionCategoryEnabled(){ return true; }
 }
 
-class Camera{
+export class Camera{
 	constructor(p){ this._p = p; }
 	clear(){ call("camera", { id: this._p.id, action: "clear" }); }
 	fade(options){ call("camera", { id: this._p.id, action: "fade", o: options ?? {} }); }
@@ -606,7 +609,7 @@ export class Player extends Entity{
 	get commandPermissionLevel(){ return this._s().op ? 2 : 0; }
 	get playerPermissionLevel(){ return this._s().op ? 2 : 1; }
 	sendMessage(message){ post("msg", { ids: [this.id], text: flattenText(message) }); }
-	getGameMode(){ return this._s().gm; }
+	getGameMode(){ return _gameModeName(this._s().gm); }
 	setGameMode(mode){ post("gm", { id: this.id, mode: mode === undefined ? world._defaultGameMode : String(mode).toLowerCase() }); this._dirty(); }
 	isOp(){ return this._s().op ?? false; }
 	setOp(v){ post("op", { id: this.id, v: !!v }); this._dirty(); }
@@ -740,12 +743,12 @@ export function flushSubscriptions(){
 const afterNames = ["blockContainerClosed", "blockContainerOpened", "blockExplode", "buttonPush", "chatSend", "dataDrivenEntityTrigger", "effectAdd", "entityContainerClosed", "entityContainerOpened", "entityDie", "entityHeal", "entityHealthChanged", "entityHitBlock", "entityHitEntity", "entityHurt", "entityItemDrop", "entityItemPickup", "entityLoad", "entityRemove", "entitySpawn", "entityStartSneaking", "entityStopSneaking", "entityTamed", "entityUpgrade", "explosion", "gameRuleChange", "itemCompleteUse", "itemReleaseUse", "itemStartUse", "itemStartUseOn", "itemStopUse", "itemStopUseOn", "itemUse", "itemUseOn", "leverAction", "pistonActivate", "playerBreakBlock", "playerButtonInput", "playerCancelBreakingBlock", "playerDimensionChange", "playerEmote", "playerGameModeChange", "playerHotbarSelectedSlotChange", "playerInputModeChange", "playerInputPermissionCategoryChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerInventoryItemChange", "playerJoin", "playerLeave", "playerPlaceBlock", "playerSpawn", "playerStartBreakingBlock", "playerSwingStart", "pressurePlatePop", "pressurePlatePush", "projectileHitBlock", "projectileHitEntity", "soundCompleted", "targetBlockHit", "tripWireTrip", "weatherChange", "worldInitialize", "worldLoad"];
 const beforeNames = ["chatSend", "effectAdd", "entityHeal", "entityItemPickup", "entityRemove", "entityTamed", "explosion", "itemUse", "itemUseOn", "playerBreakBlock", "playerGameModeChange", "playerInteractWithBlock", "playerInteractWithEntity", "playerLeave", "weatherChange", "worldInitialize", "startup"];
 
-class WorldAfterEvents{ constructor(){ for(const n of afterNames) this[n] = new EventSignal(n, "after"); } }
-class WorldBeforeEvents{ constructor(){ for(const n of beforeNames) this[n] = new EventSignal(n, "before"); } }
+export class WorldAfterEvents{ constructor(){ for(const n of afterNames) this[n] = new EventSignal(n, "after"); } }
+export class WorldBeforeEvents{ constructor(){ for(const n of beforeNames) this[n] = new EventSignal(n, "before"); } }
 
 // ---------------------------------------------------------------- scoreboard
 
-class ScoreboardIdentity{
+export class ScoreboardIdentity{
 	constructor(key, type, displayName, entity){ this.id = key; this.type = type; this.displayName = displayName; this._entity = entity; }
 	getEntity(){ return this._entity ? entityFrom(this._entity) : undefined; }
 	get isValid(){ return host.valid(true); }
@@ -755,7 +758,7 @@ const identityFor = (k) => k.startsWith("entity:") ? new ScoreboardIdentity(k, "
 const sb = (args) => call("sb", args);
 
 // world.scoreboard is the server's scoreboard: /scoreboard, plugins and every pack see the same objectives
-class ScoreboardObjective{
+export class ScoreboardObjective{
 	constructor(id, displayName){ this.id = id; this.displayName = displayName ?? id; }
 	get isValid(){ return host.valid(this.id in (sb({ do: "objectives" }) ?? {})); }
 	getScore(p){ return sb({ do: "get", obj: this.id, p: participantKey(p) }) ?? undefined; }
@@ -766,7 +769,7 @@ class ScoreboardObjective{
 	getParticipants(){ return Object.keys(sb({ do: "scores", obj: this.id }) ?? {}).map(identityFor); }
 	getScores(){ return Object.entries(sb({ do: "scores", obj: this.id }) ?? {}).map(([k, score]) => ({ participant: identityFor(k), score })); }
 }
-class Scoreboard{
+export class Scoreboard{
 	_identity(e){ return e instanceof Player ? new ScoreboardIdentity(e.name, "Player", e.name, e.id) : new ScoreboardIdentity("entity:" + e.id, "Entity", e.id, e.id); }
 	addObjective(id, displayName){ if(!sb({ do: "add", obj: id, name: displayName ?? id })) throw new Error(`Objective ${id} already exists`); return new ScoreboardObjective(id, displayName ?? id); }
 	removeObjective(o){ return sb({ do: "remove", obj: typeof o === "string" ? o : o.id }); }
@@ -778,7 +781,7 @@ class Scoreboard{
 	getObjectiveAtDisplaySlot(slot){ const d = sb({ do: "getdisplay", slot: String(slot).toLowerCase() }); return d ? { objective: this.getObjective(d.objective), sortOrder: d.order } : undefined; }
 }
 
-class Structure{
+export class Structure{
 	constructor(id, size){ this.id = id; this.size = { x: size[0], y: size[1], z: size[2] }; }
 	get isValid(){ return host.valid(true); }
 	getBlockPermutation(){ return undefined; }
@@ -799,9 +802,9 @@ const structureManager = {
 
 // ---------------------------------------------------------------- world
 
-class GameRules{ constructor(){ return new Proxy(this, { get: (t, k) => (typeof k === "string" ? (call("gamerule", { name: k.toLowerCase() }) ?? undefined) : undefined), set: (t, k, v) => { post("setgamerule", { name: String(k).toLowerCase(), v }); return true; } }); } }
+export class GameRules{ constructor(){ return new Proxy(this, { get: (t, k) => (typeof k === "string" ? (call("gamerule", { name: k.toLowerCase() }) ?? undefined) : undefined), set: (t, k, v) => { post("setgamerule", { name: String(k).toLowerCase(), v }); return true; } }); } }
 
-class World{
+export class World{
 	constructor(){
 		this.afterEvents = new WorldAfterEvents();
 		this.beforeEvents = new WorldBeforeEvents();
@@ -845,8 +848,8 @@ class World{
 
 // ---------------------------------------------------------------- system
 
-class SystemAfterEvents{ constructor(){ this.scriptEventReceive = new EventSignal("scriptEventReceive", "after"); } }
-class SystemBeforeEvents{
+export class SystemAfterEvents{ constructor(){ this.scriptEventReceive = new EventSignal("scriptEventReceive", "after"); } }
+export class SystemBeforeEvents{
 	constructor(){
 		this.watchdogTerminate = new EventSignal("watchdogTerminate", "before");
 		this.startup = new EventSignal("startup", "before");
@@ -854,7 +857,7 @@ class SystemBeforeEvents{
 	}
 }
 
-class System{
+export class System{
 	constructor(){
 		this.afterEvents = new SystemAfterEvents();
 		this.beforeEvents = new SystemBeforeEvents();
@@ -923,16 +926,19 @@ export const blockComponentRegistry = new ComponentRegistry("block");
 
 // custom commands (2.x startup event)
 export const customCommands = new Map();
-class CustomCommandRegistry{
+export class CustomCommandRegistry{
 	registerCommand(definition, callback){ customCommands.set(definition.name, { definition, callback, pack: host.currentPack }); post("customcmd", { name: definition.name, description: definition.description ?? "", permission: definition.permissionLevel ?? 0 }); }
 	registerEnum(){}
 }
 export const customCommandRegistry = new CustomCommandRegistry();
 export const CustomCommandStatus = Object.freeze({ Success: 0, Failure: 1 });
-export const CustomCommandParamType = enumOf(["Boolean", "Integer", "Float", "String", "EntitySelector", "PlayerSelector", "Location", "BlockType", "ItemType", "Enum"]);
+export const CustomCommandParamType = Object.freeze({ ...Names.CustomCommandParamType, ...enumOf(["Boolean", "Integer", "Float", "String", "EntitySelector", "PlayerSelector", "Location", "BlockType", "ItemType", "Enum"]) });
 export const CustomCommandSource = enumOf(["Block", "Entity", "NPCDialogue", "Server"]);
 
 export const TicksPerSecond = 20;
 export const TicksPerDay = 24000;
 export const MinecraftDimensionTypes = Object.freeze({ Overworld: "minecraft:overworld", Nether: "minecraft:nether", TheEnd: "minecraft:the_end" });
 export { flattenText as _flattenText };
+
+// every other name the game's @minecraft/server exports, so any pack's imports link (ours above take precedence)
+export * from "./server-names.mjs";

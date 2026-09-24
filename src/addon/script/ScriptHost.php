@@ -164,7 +164,10 @@ use const M_PI;
  *  - dynamic properties are shared: getDynamicProperty()/setDynamicProperty() see what scripts store.
  */
 final class ScriptHost{
-	private const SCRIPT_FILES = ["host.mjs", "ipc.mjs", "loader.mjs", "state.mjs", "server.mjs", "server-ui.mjs", "common.mjs", "math.mjs", "vanilla-data.mjs", "admin.mjs", "unsupported.mjs", "bridge.mjs"];
+	private const SCRIPT_FILES = ["host.mjs", "ipc.mjs", "loader.mjs", "state.mjs", "server.mjs", "server-ui.mjs", "common.mjs", "math.mjs", "vanilla-data.mjs", "admin.mjs", "unsupported.mjs", "bridge.mjs",
+		//every name the game's modules export (generated from its script API metadata)
+		"server-names.mjs", "server-ui-names.mjs", "common-names.mjs", "server-admin-names.mjs", "server-net-names.mjs", "server-gametest-names.mjs", "debug-utilities-names.mjs", "diagnostics-names.mjs", "server-graphics-names.mjs",
+	];
 	private const DEFAULT_SCOPE = "world";
 
 	/** @var resource|null */

@@ -115,3 +115,6 @@ export class ModalFormData{
 }
 
 export const uiManager = { closeAllForms(player){ post("closeforms", { id: player.id }); } };
+
+// every other name the game's module exports, so any pack's imports link (ours above take precedence)
+export * from "./server-ui-names.mjs";
