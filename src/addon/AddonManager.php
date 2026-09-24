@@ -34,10 +34,15 @@ use pocketmine\addon\item\AddonFoodItem;
 use pocketmine\addon\item\AddonItem;
 use pocketmine\addon\item\AddonItemDefinition;
 use pocketmine\addon\loot\LootTables;
+use pocketmine\addon\script\BridgeCommand;
 use pocketmine\addon\script\CommandBridge;
 use pocketmine\addon\script\ScriptHost;
 use pocketmine\addon\spawn\AddonSpawner;
 use pocketmine\addon\spawn\SpawnRule;
+use pocketmine\addon\world\AddonScoreboard;
+use pocketmine\addon\world\AddonStructures;
+use pocketmine\addon\world\AddonTickingAreas;
+use pocketmine\addon\world\AddonWorldRules;
 use pocketmine\block\Block;
 use pocketmine\block\BlockBreakInfo;
 use pocketmine\block\BlockIdentifier;
@@ -45,6 +50,8 @@ use pocketmine\block\BlockToolType;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\camera\preset\CameraPresetBuilder;
+use pocketmine\camera\preset\CameraPresetRegistry;
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
 use pocketmine\crafting\CraftingManager;
@@ -122,6 +129,7 @@ use function str_starts_with;
 use function strcmp;
 use function strtolower;
 use function trim;
+use function ucfirst;
 use function usort;
 use const PATHINFO_EXTENSION;
 
@@ -196,6 +204,10 @@ final class AddonManager{
 	private ?LootTables $lootTables = null;
 	private ?ScriptHost $scriptHost = null;
 	private ?CommandBridge $commandBridge = null;
+	private ?AddonWorldRules $worldRules = null;
+	private ?AddonTickingAreas $tickingAreas = null;
+	private ?AddonScoreboard $scoreboard = null;
+	private ?AddonStructures $structures = null;
 	private ?AddonSpawner $spawner = null;
 	private ?AddonRuntime $runtime = null;
 	private ?Config $config = null;
@@ -272,6 +284,14 @@ final class AddonManager{
 		$this->reportUnsentComponents();
 		$this->reportEntityFeatures();
 		$this->lootTables = new LootTables($this->behaviorRoots, $this->logger);
+
+		$runtimeDir = Path::join($this->path, ".runtime");
+		@mkdir($runtimeDir, 0777, true);
+		$this->worldRules = new AddonWorldRules($this->server, Path::join($runtimeDir, "gamerules.json"));
+		$this->tickingAreas = new AddonTickingAreas($this->server, Path::join($runtimeDir, "tickingareas.json"));
+		$this->scoreboard = new AddonScoreboard($this->server, Path::join($runtimeDir, "scoreboard.json"));
+		$this->structures = new AddonStructures($this->behaviorRoots, $this->logger);
+		$this->registerCameraPresets();
 
 		//created now, so plugins can expose functions to scripts from onEnable(); Node.js starts in start()
 		$scripting = (array) $this->config()->get("scripting", []);
@@ -924,12 +944,81 @@ final class AddonManager{
 			}
 		}
 
+		//the vanilla commands add-ons use, for players and operators too (names nobody else has)
+		$map = $this->server->getCommandMap();
+		foreach(CommandBridge::PROVIDED as $name => $description){
+			if($map->getCommand($name) === null){
+				$map->register("addons", new BridgeCommand($name, $description, $this->getCommandBridge()));
+			}
+		}
+		foreach($this->server->getWorldManager()->getWorlds() as $world){
+			$this->getWorldRules()->applyToWorld($world);
+			$this->getTickingAreas()->applyToWorld($world);
+		}
+		$this->getWorldRules()->onWeatherChange(function(World $world, string $old, string $new) : void{
+			$host = $this->scriptHost;
+			if($host !== null && $host->isRunning()){
+				$host->queueEvent("weatherChange", ["dim" => $host->dimensionId($world), "previous" => ucfirst($old), "new" => ucfirst($new)]);
+			}
+		});
+
 		$this->scriptHost?->start();
+	}
+
+	/**
+	 * Custom camera presets from behavior packs (cameras/presets/*.json), registered before the preset registry is
+	 * frozen at startup so /camera and scripts can use them.
+	 */
+	private function registerCameraPresets() : void{
+		$registry = CameraPresetRegistry::getInstance();
+		foreach($this->behaviorRoots as $root){
+			foreach($this->jsonFiles(Path::join($root, "cameras", "presets")) as $file){
+				try{
+					$json = AddonJson::decode((string) file_get_contents($file), $file);
+					$preset = $json["minecraft:camera_preset"] ?? null;
+					if(!is_array($preset) || !is_string($preset["identifier"] ?? null) || $registry->isRegistered($preset["identifier"]) || $registry->isFrozen()){
+						continue;
+					}
+					$builder = CameraPresetBuilder::create($preset["identifier"], is_string($preset["inherit_from"] ?? null) ? $preset["inherit_from"] : "minecraft:free");
+					if(isset($preset["pos_x"]) || isset($preset["pos_y"]) || isset($preset["pos_z"])){
+						$builder->setPosition(new Vector3((float) ($preset["pos_x"] ?? 0), (float) ($preset["pos_y"] ?? 0), (float) ($preset["pos_z"] ?? 0)));
+					}
+					if(isset($preset["rot_x"]) || isset($preset["rot_y"])){
+						$builder->setRotation(isset($preset["rot_x"]) ? (float) $preset["rot_x"] : null, isset($preset["rot_y"]) ? (float) $preset["rot_y"] : null);
+					}
+					if(isset($preset["player_effects"])){
+						$builder->setPlayerEffects((bool) $preset["player_effects"]);
+					}
+					$registry->register($builder->build());
+				}catch(\Throwable $e){
+					$this->logger->warning("Add-on camera preset $file could not be registered: " . $e->getMessage());
+				}
+			}
+		}
+	}
+
+	public function getWorldRules() : AddonWorldRules{
+		return $this->worldRules ??= new AddonWorldRules($this->server, Path::join($this->path, ".runtime", "gamerules.json"));
+	}
+
+	public function getTickingAreas() : AddonTickingAreas{
+		return $this->tickingAreas ??= new AddonTickingAreas($this->server, Path::join($this->path, ".runtime", "tickingareas.json"));
+	}
+
+	/** The scoreboard add-on scripts and /scoreboard share (plugins can use it too). */
+	public function getScoreboard() : AddonScoreboard{
+		return $this->scoreboard ??= new AddonScoreboard($this->server, Path::join($this->path, ".runtime", "scoreboard.json"));
+	}
+
+	public function getStructures() : AddonStructures{
+		return $this->structures ??= new AddonStructures($this->behaviorRoots, $this->logger);
 	}
 
 	/** @internal once per server tick */
 	public function tick(int $currentTick) : void{
-		if($this->spawner !== null){
+		$this->worldRules?->tick(1);
+		$this->scoreboard?->tick($currentTick);
+		if($this->spawner !== null && ($this->worldRules?->isEnabled("domobspawning") ?? true)){
 			AddonTimings::$spawner->startTiming();
 			$this->spawner->tick($currentTick);
 			AddonTimings::$spawner->stopTiming();
@@ -944,6 +1033,7 @@ final class AddonManager{
 
 	/** @internal */
 	public function shutdown() : void{
+		$this->scoreboard?->save();
 		$this->scriptHost?->stop();
 		if($this->runtime !== null && $this->runtime->isEnabled()){
 			$this->runtime->onEnableStateChange(false);

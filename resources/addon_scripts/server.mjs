@@ -566,9 +566,14 @@ class PlayerInputPermissions{
 
 class Camera{
 	constructor(p){ this._p = p; }
-	clear(){ post("cmd_p", { cmd: `camera @s clear`, as: this._p.id }); }
-	fade(o){ post("camera", { id: this._p.id, fade: o ?? {} }); }
-	setCamera(preset, o){ post("camera", { id: this._p.id, preset, o: o ?? {} }); }
+	clear(){ call("camera", { id: this._p.id, action: "clear" }); }
+	fade(options){ call("camera", { id: this._p.id, action: "fade", o: options ?? {} }); }
+	setCamera(preset, options){
+		const o = { ...(options ?? {}) };
+		if(o.facingEntity) o.facingEntity = o.facingEntity.id;
+		call("camera", { id: this._p.id, action: "set", preset, o });
+	}
+	setDefaultCamera(preset, easeOptions){ this.setCamera(preset, { easeOptions }); }
 	get isValid(){ return host.valid(true); }
 }
 
@@ -680,8 +685,8 @@ export class Dimension{
 		const p = typeof block === "string" ? new BlockPermutation(block, {}) : (block instanceof BlockType ? new BlockPermutation(block.id, {}) : block);
 		return call("fill", { dim: this.id, x1: from.x, y1: from.y, z1: from.z, x2: to.x, y2: to.y, z2: to.z, type: p._type, states: p._states });
 	}
-	getWeather(){ return "Clear"; }
-	setWeather(){}
+	getWeather(){ return call("weather", { dim: this.id }); }
+	setWeather(type, duration){ post("setweather", { dim: this.id, type: String(type).toLowerCase(), ticks: duration }); }
 	isChunkLoaded(location){ return call("block", { dim: this.id, x: Math.floor(location.x), y: 0, z: Math.floor(location.z) }) !== null; }
 	getLightLevel(location){ return call("light", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z) }) ?? 0; }
 	getSkyLightLevel(location){ return call("light", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z), sky: true }) ?? 0; }
@@ -699,7 +704,7 @@ export class EventSignal{
 		const pack = host.currentPack;
 		this._handlers.push({ callback, options, pack });
 		const key = this._kind + ":" + this._name;
-		if(!subscribed.has(key)){ subscribed.add(key); subscriptionsDirty = true; }
+		if(!subscribed.has(key)){ subscribed.add(key); subscriptionsDirty = true; if(host.tick > 0) flushSubscriptions(); }
 		return callback;
 	}
 	unsubscribe(callback){ this._handlers = this._handlers.filter(h => h.callback !== callback); }
@@ -725,53 +730,60 @@ class WorldBeforeEvents{ constructor(){ for(const n of beforeNames) this[n] = ne
 // ---------------------------------------------------------------- scoreboard
 
 class ScoreboardIdentity{
-	constructor(sb, key, type, displayName, entity){ this._sb = sb; this.id = key; this.type = type; this.displayName = displayName; this._entity = entity; }
+	constructor(key, type, displayName, entity){ this.id = key; this.type = type; this.displayName = displayName; this._entity = entity; }
 	getEntity(){ return this._entity ? entityFrom(this._entity) : undefined; }
 	get isValid(){ return host.valid(true); }
 }
+const participantKey = (p) => typeof p === "string" ? p : (p instanceof ScoreboardIdentity ? p.id : (p instanceof Player ? p.name : "entity:" + p.id));
+const identityFor = (k) => k.startsWith("entity:") ? new ScoreboardIdentity(k, "Entity", k, k.slice(7)) : new ScoreboardIdentity(k, "Player", k);
+const sb = (args) => call("sb", args);
+
+// world.scoreboard is the server's scoreboard: /scoreboard, plugins and every pack see the same objectives
 class ScoreboardObjective{
-	constructor(sb, id, displayName){ this._sb = sb; this.id = id; this.displayName = displayName ?? id; this.scores = {}; }
-	get isValid(){ return host.valid(this._sb._objectives.has(this.id)); }
-	_key(p){
-		if(typeof p === "string") return p;
-		if(p instanceof ScoreboardIdentity) return p.id;
-		if(p instanceof Player) return p.name;
-		return "entity:" + p.id;
-	}
-	getScore(p){ return this.scores[this._key(p)]; }
-	setScore(p, v){ this.scores[this._key(p)] = v | 0; this._sb._save(); }
-	addScore(p, v){ const k = this._key(p); this.scores[k] = (this.scores[k] ?? 0) + (v | 0); this._sb._save(); return this.scores[k]; }
-	removeParticipant(p){ const k = this._key(p); const had = k in this.scores; delete this.scores[k]; this._sb._save(); return had; }
-	hasParticipant(p){ return this._key(p) in this.scores; }
-	getParticipants(){ return Object.keys(this.scores).map(k => this._sb._identityFor(k)); }
-	getScores(){ return Object.entries(this.scores).map(([k, score]) => ({ participant: this._sb._identityFor(k), score })); }
+	constructor(id, displayName){ this.id = id; this.displayName = displayName ?? id; }
+	get isValid(){ return host.valid(this.id in (sb({ do: "objectives" }) ?? {})); }
+	getScore(p){ return sb({ do: "get", obj: this.id, p: participantKey(p) }) ?? undefined; }
+	setScore(p, v){ sb({ do: "set", obj: this.id, p: participantKey(p), v: v | 0 }); }
+	addScore(p, v){ return sb({ do: "addscore", obj: this.id, p: participantKey(p), v: v | 0 }); }
+	removeParticipant(p){ return sb({ do: "reset", obj: this.id, p: participantKey(p) }); }
+	hasParticipant(p){ return this.getScore(p) !== undefined; }
+	getParticipants(){ return Object.keys(sb({ do: "scores", obj: this.id }) ?? {}).map(identityFor); }
+	getScores(){ return Object.entries(sb({ do: "scores", obj: this.id }) ?? {}).map(([k, score]) => ({ participant: identityFor(k), score })); }
 }
 class Scoreboard{
-	constructor(){ this._objectives = new Map(); this._display = {}; this._loaded = false; }
-	_load(){ if(this._loaded) return; this._loaded = true; const d = call("dp", { scope: "amber:scoreboard", key: "data" }); if(d){ for(const o of JSON.parse(d)){ const obj = new ScoreboardObjective(this, o.id, o.name); obj.scores = o.scores; this._objectives.set(o.id, obj); } } }
-	_save(){ post("sdp", { scope: "amber:scoreboard", key: "data", v: JSON.stringify([...this._objectives.values()].map(o => ({ id: o.id, name: o.displayName, scores: o.scores }))) }); this._pushDisplay(); }
-	_identityFor(k){ return k.startsWith("entity:") ? new ScoreboardIdentity(this, k, "Entity", k, k.slice(7)) : new ScoreboardIdentity(this, k, "Player", k); }
-	_identity(e){ return e instanceof Player ? new ScoreboardIdentity(this, e.name, "Player", e.name, e.id) : new ScoreboardIdentity(this, "entity:" + e.id, "Entity", e.id, e.id); }
-	addObjective(id, displayName){ this._load(); if(this._objectives.has(id)) throw new Error(`Objective ${id} already exists`); const o = new ScoreboardObjective(this, id, displayName); this._objectives.set(id, o); this._save(); return o; }
-	removeObjective(o){ this._load(); const id = typeof o === "string" ? o : o.id; const had = this._objectives.delete(id); this._save(); return had; }
-	getObjective(id){ this._load(); return this._objectives.get(id); }
-	getObjectives(){ this._load(); return [...this._objectives.values()]; }
-	getParticipants(){ this._load(); const keys = new Set(); for(const o of this._objectives.values()) Object.keys(o.scores).forEach(k => keys.add(k)); return [...keys].map(k => this._identityFor(k)); }
-	setObjectiveAtDisplaySlot(slot, options){ this._display[slot] = options; this._pushDisplay(); return undefined; }
-	clearObjectiveAtDisplaySlot(slot){ const had = this._display[slot]; delete this._display[slot]; post("sbclear", { slot }); return had?.objective; }
-	getObjectiveAtDisplaySlot(slot){ return this._display[slot]; }
-	_pushDisplay(){
-		for(const [slot, opt] of Object.entries(this._display)){
-			const o = opt.objective;
-			if(!o || !this._objectives.has(o.id)) continue;
-			post("sbshow", { slot, id: o.id, name: o.displayName, order: opt.sortOrder ?? 1, scores: o.scores });
-		}
-	}
+	_identity(e){ return e instanceof Player ? new ScoreboardIdentity(e.name, "Player", e.name, e.id) : new ScoreboardIdentity("entity:" + e.id, "Entity", e.id, e.id); }
+	addObjective(id, displayName){ if(!sb({ do: "add", obj: id, name: displayName ?? id })) throw new Error(`Objective ${id} already exists`); return new ScoreboardObjective(id, displayName ?? id); }
+	removeObjective(o){ return sb({ do: "remove", obj: typeof o === "string" ? o : o.id }); }
+	getObjective(id){ const all = sb({ do: "objectives" }) ?? {}; return id in all ? new ScoreboardObjective(id, all[id]) : undefined; }
+	getObjectives(){ return Object.entries(sb({ do: "objectives" }) ?? {}).map(([id, name]) => new ScoreboardObjective(id, name)); }
+	getParticipants(){ return (sb({ do: "participants" }) ?? []).map(identityFor); }
+	setObjectiveAtDisplaySlot(slot, options){ sb({ do: "display", slot: String(slot).toLowerCase(), obj: options?.objective?.id ?? "", order: options?.sortOrder ?? 1 }); return undefined; }
+	clearObjectiveAtDisplaySlot(slot){ const had = this.getObjectiveAtDisplaySlot(slot); sb({ do: "display", slot: String(slot).toLowerCase(), obj: "" }); return had?.objective; }
+	getObjectiveAtDisplaySlot(slot){ const d = sb({ do: "getdisplay", slot: String(slot).toLowerCase() }); return d ? { objective: this.getObjective(d.objective), sortOrder: d.order } : undefined; }
 }
+
+class Structure{
+	constructor(id, size){ this.id = id; this.size = { x: size[0], y: size[1], z: size[2] }; }
+	get isValid(){ return host.valid(true); }
+	getBlockPermutation(){ return undefined; }
+	getIsWaterlogged(){ return false; }
+	setBlockPermutation(){ throw new Error("Structures from packs are read-only on this server"); }
+	saveAs(){ throw new Error("Saving structures is not supported on this server"); }
+	saveToWorld(){ throw new Error("Saving structures is not supported on this server"); }
+}
+const structureManager = {
+	get(id){ const s = call("structget", { name: id }); return s ? new Structure(s.id, s.size) : undefined; },
+	getWorldStructureIds(){ return call("structids", {}) ?? []; },
+	getPackStructureIds(){ return call("structids", {}) ?? []; },
+	place(structure, dimension, location){ call("structplace", { name: typeof structure === "string" ? structure : structure.id, dim: dimension.id, x: location.x, y: location.y, z: location.z }); },
+	createEmpty(){ throw new Error("Creating structures is not supported on this server"); },
+	createFromWorld(){ throw new Error("Creating structures is not supported on this server"); },
+	delete(){ return false; },
+};
 
 // ---------------------------------------------------------------- world
 
-class GameRules{ constructor(){ return new Proxy(this, { get: (t, k) => (typeof k === "string" ? (call("gamerule", { name: k }) ?? undefined) : undefined), set: (t, k, v) => { post("setgamerule", { name: k, v }); return true; } }); } }
+class GameRules{ constructor(){ return new Proxy(this, { get: (t, k) => (typeof k === "string" ? (call("gamerule", { name: k.toLowerCase() }) ?? undefined) : undefined), set: (t, k, v) => { post("setgamerule", { name: String(k).toLowerCase(), v }); return true; } }); } }
 
 class World{
 	constructor(){
@@ -810,7 +822,7 @@ class World{
 	playMusic(){} queueMusic(){} stopMusic(){}
 	playSound(sound, location, options = {}){ post("sound", { dim: "minecraft:overworld", name: sound, x: location.x, y: location.y, z: location.z, vol: options.volume ?? 1, pitch: options.pitch ?? 1 }); }
 	getLootTableManager(){ return { generateLootFromEntity: () => undefined, generateLootFromTable: () => undefined }; }
-	get structureManager(){ return { get: () => undefined, getWorldStructureIds: () => [], place: () => {}, createEmpty: () => undefined }; }
+	get structureManager(){ return structureManager; }
 	getDifficulty(){ return call("time").difficulty ?? "Normal"; }
 	setDifficulty(){}
 }

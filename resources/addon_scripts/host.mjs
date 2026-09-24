@@ -65,6 +65,7 @@ const builders = {
 	effectAdd: d => ({ entity: E(d.entity), effect: new api.Effect(d.effect) }),
 	playerHotbarSelectedSlotChange: d => ({ player: P(d.player), previousSlotSelected: d.from, newSlotSelected: d.to, itemStack: item(d.item) }),
 	explosion: d => ({ source: d.source ? E(d.source) : undefined, dimension: dim(d.dim), getImpactedBlocks: () => (d.blocks ?? []).map(b => block({ ...b, dim: d.dim })) }),
+	weatherChange: d => ({ dimension: d.dim, previousWeather: d.previous, newWeather: d.new, lightning: d.new === "Thunder", raining: d.new !== "Clear" }),
 	worldLoad: () => ({}),
 	worldInitialize: () => ({}),
 };

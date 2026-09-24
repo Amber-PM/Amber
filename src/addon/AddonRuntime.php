@@ -31,6 +31,14 @@ use pocketmine\block\Block;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\block\BlockPlaceEvent;
+use pocketmine\event\block\BlockBurnEvent;
+use pocketmine\event\block\BlockSpreadEvent;
+use pocketmine\event\entity\EntityRegainHealthEvent;
+use pocketmine\event\player\PlayerDeathEvent;
+use pocketmine\event\world\WorldLoadEvent;
+use pocketmine\entity\object\PrimedTNT;
+use pocketmine\block\Fire;
+use pocketmine\addon\world\AddonWorldRules;
 use pocketmine\event\entity\EntityDamageByChildEntityEvent;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
@@ -157,6 +165,79 @@ final class AddonRuntime extends PluginBase{
 			$host->before("entityRemove", ["entity" => $entity->getId()]);
 			$host->queueEvent("entityRemove", ["entity" => $entity->getId(), "type" => ScriptHost::typeId($entity)]);
 			$host->queueEvent("__gone", ["entity" => $entity->getId()]);
+		}, $monitor, $this);
+
+		//game rules with an effect on the server
+		$rules = fn() : ?AddonWorldRules => $this->manager?->getWorldRules();
+		$pm->registerEvent(EntityDamageEvent::class, function(EntityDamageEvent $event) use ($rules) : void{
+			$r = $rules();
+			$entity = $event->getEntity();
+			if($r === null || !$entity instanceof Player){
+				return;
+			}
+			$off = match($event->getCause()){
+				EntityDamageEvent::CAUSE_FALL => !$r->isEnabled("falldamage"),
+				EntityDamageEvent::CAUSE_FIRE, EntityDamageEvent::CAUSE_FIRE_TICK, EntityDamageEvent::CAUSE_LAVA => !$r->isEnabled("firedamage"),
+				EntityDamageEvent::CAUSE_DROWNING => !$r->isEnabled("drowningdamage"),
+				default => false,
+			};
+			if($off || ($event instanceof EntityDamageByEntityEvent && $event->getDamager() instanceof Player && !$r->isEnabled("pvp"))){
+				$event->cancel();
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(PlayerDeathEvent::class, function(PlayerDeathEvent $event) use ($rules) : void{
+			$r = $rules();
+			if($r !== null && $r->isEnabled("keepinventory")){
+				$event->setKeepInventory(true);
+				$event->setKeepXp(true);
+			}
+			if($r !== null && !$r->isEnabled("showdeathmessages")){
+				$event->setDeathMessage("");
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(EntityDeathEvent::class, function(EntityDeathEvent $event) use ($rules) : void{
+			if(!$event->getEntity() instanceof Player && !($rules()?->isEnabled("domobloot") ?? true)){
+				$event->setDrops([]);
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(EntityRegainHealthEvent::class, function(EntityRegainHealthEvent $event) use ($rules) : void{
+			if($event->getRegainReason() === EntityRegainHealthEvent::CAUSE_SATURATION && !($rules()?->isEnabled("naturalregeneration") ?? true)){
+				$event->cancel();
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(EntityExplodeEvent::class, function(EntityExplodeEvent $event) use ($rules) : void{
+			$r = $rules();
+			if($r === null){
+				return;
+			}
+			if($event->getEntity() instanceof PrimedTNT && !$r->isEnabled("tntexplodes")){
+				$event->cancel();
+			}elseif($event->getEntity() instanceof AddonEntity && !$r->isEnabled("mobgriefing")){
+				$event->setBlockList([]);
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(BlockBreakEvent::class, function(BlockBreakEvent $event) use ($rules) : void{
+			if(!($rules()?->isEnabled("dotiledrops") ?? true)){
+				$event->setDrops([]);
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(BlockSpreadEvent::class, function(BlockSpreadEvent $event) use ($rules) : void{
+			if($event->getSource() instanceof Fire && !($rules()?->isEnabled("dofiretick") ?? true)){
+				$event->cancel();
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(BlockBurnEvent::class, function(BlockBurnEvent $event) use ($rules) : void{
+			if(!($rules()?->isEnabled("dofiretick") ?? true)){
+				$event->cancel();
+			}
+		}, EventPriority::NORMAL, $this);
+		$pm->registerEvent(WorldLoadEvent::class, function(WorldLoadEvent $event) : void{
+			$this->manager?->getWorldRules()->applyToWorld($event->getWorld());
+			$this->manager?->getTickingAreas()->applyToWorld($event->getWorld());
+		}, $monitor, $this);
+		$pm->registerEvent(PlayerJoinEvent::class, function(PlayerJoinEvent $event) : void{
+			$this->manager?->getWorldRules()->onJoin($event->getPlayer());
+			$this->manager?->getScoreboard()->sendTo($event->getPlayer());
 		}, $monitor, $this);
 
 		//onStepOn / onStepOff for players
