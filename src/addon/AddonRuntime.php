@@ -53,6 +53,7 @@ use pocketmine\event\player\PlayerItemUseEvent;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerQuitEvent;
+use pocketmine\event\player\PlayerToggleSneakEvent;
 use pocketmine\event\player\PlayerRespawnEvent;
 use pocketmine\event\world\ChunkLoadEvent;
 use pocketmine\item\Item;
@@ -114,11 +115,12 @@ final class AddonRuntime extends PluginBase{
 			$projectile = $event instanceof EntityDamageByChildEntityEvent ? $event->getChild() : null;
 			$host->queueEvent("entityHurt", [
 				"entity" => $entity->getId(),
+				"type" => ScriptHost::typeId($entity),
 				"damage" => $event->getFinalDamage(),
 				"src" => ["cause" => self::causeName($event->getCause()), "damager" => $damager?->getId(), "projectile" => $projectile?->getId()],
 			]);
 			if($damager !== null && $projectile === null){
-				$host->queueEvent("entityHitEntity", ["damager" => $damager->getId(), "entity" => $entity->getId()]);
+				$host->queueEvent("entityHitEntity", ["damager" => $damager->getId(), "damagerType" => ScriptHost::typeId($damager), "entity" => $entity->getId(), "type" => ScriptHost::typeId($entity)]);
 				if($damager instanceof Player){
 					$this->itemHook($damager, $damager->getInventory()->getItemInHand(), "onHitEntity", ["entity" => $entity->getId()]);
 				}
@@ -131,13 +133,14 @@ final class AddonRuntime extends PluginBase{
 			$damager = $cause instanceof EntityDamageByEntityEvent ? $cause->getDamager() : null;
 			$this->host()?->queueEvent("entityDie", [
 				"entity" => $entity->getId(),
+				"type" => ScriptHost::typeId($entity),
 				"src" => ["cause" => $cause === null ? "none" : self::causeName($cause->getCause()), "damager" => $damager?->getId(), "projectile" => $cause instanceof EntityDamageByChildEntityEvent ? $cause->getChild()?->getId() : null],
 			]);
 		}, $monitor, $this);
 
 		$pm->registerEvent(EntitySpawnEvent::class, function(EntitySpawnEvent $event) : void{
 			$entity = $event->getEntity();
-			$this->host()?->queueEvent("entitySpawn", ["entity" => $entity->getId(), "cause" => $entity instanceof AddonEntity ? "Spawned" : "Spawned"]);
+			$this->host()?->queueEvent("entitySpawn", ["entity" => $entity->getId(), "type" => ScriptHost::typeId($entity), "cause" => "Spawned"]);
 		}, $monitor, $this);
 
 		$pm->registerEvent(EntityDespawnEvent::class, function(EntityDespawnEvent $event) : void{
@@ -197,6 +200,16 @@ final class AddonRuntime extends PluginBase{
 		$pm->registerEvent(PlayerRespawnEvent::class, function(PlayerRespawnEvent $event) : void{
 			$this->host()?->queueEvent("playerSpawn", ["player" => $event->getPlayer()->getId(), "initial" => false]);
 		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerToggleSneakEvent::class, function(PlayerToggleSneakEvent $event) : void{
+			if($event->isSneaking()){
+				AddonEntity::getVehicleOf($event->getPlayer())?->removeRider($event->getPlayer());
+			}
+		}, $monitor, $this);
+
+		$pm->registerEvent(PlayerQuitEvent::class, function(PlayerQuitEvent $event) : void{
+			AddonEntity::getVehicleOf($event->getPlayer())?->removeRider($event->getPlayer());
+		}, EventPriority::LOWEST, $this);
 
 		$pm->registerEvent(PlayerQuitEvent::class, function(PlayerQuitEvent $event) : void{
 			$host = $this->host();

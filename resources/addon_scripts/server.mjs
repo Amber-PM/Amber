@@ -45,7 +45,7 @@ export const LiquidType = enumOf(["Water"]);
 export const ItemLockMode = enumOf(["inventory", "none", "slot"]);
 export const EntityComponentTypes = Object.freeze({
 	AddRider: "minecraft:addrider", Ageable: "minecraft:ageable", Breathable: "minecraft:breathable", CanClimb: "minecraft:can_climb", CanFly: "minecraft:can_fly",
-	Color: "minecraft:color", Equippable: "minecraft:equippable", FireImmune: "minecraft:fire_immune", Health: "minecraft:health", Inventory: "minecraft:inventory",
+	Color: "minecraft:color", Equippable: "minecraft:equippable", Rideable: "minecraft:rideable", Riding: "minecraft:riding", Leashable: "minecraft:leashable", FireImmune: "minecraft:fire_immune", Health: "minecraft:health", Inventory: "minecraft:inventory",
 	IsBaby: "minecraft:is_baby", IsTamed: "minecraft:is_tamed", Item: "minecraft:item", MarkVariant: "minecraft:mark_variant", Movement: "minecraft:movement",
 	OnFire: "minecraft:onfire", Projectile: "minecraft:projectile", Scale: "minecraft:scale", SkinId: "minecraft:skin_id", Tameable: "minecraft:tameable",
 	TypeFamily: "minecraft:type_family", Variant: "minecraft:variant",
@@ -338,6 +338,34 @@ class EntityTameableComponent extends EntityComponent{
 	tame(player){ post("tame", { id: this.entity.id, owner: player?.id }); this.entity._dirty(); return true; }
 }
 class EntityItemComponent extends EntityComponent{ get itemStack(){ return ItemStack._from(this.entity._s().item); } }
+class EntityRideableComponent extends EntityComponent{
+	get seatCount(){ return this._data?.seat_count ?? (Array.isArray(this._data?.seats) ? this._data.seats.length : 1); }
+	get controllingSeat(){ return this._data?.controlling_seat ?? 0; }
+	get crouchingSkipInteract(){ return this._data?.crouching_skip_interact ?? true; }
+	get interactText(){ return this._data?.interact_text ?? ""; }
+	get pullInEntities(){ return this._data?.pull_in_entities ?? false; }
+	get riderCanInteract(){ return this._data?.rider_can_interact ?? false; }
+	getFamilyTypes(){ return this._data?.family_types ?? []; }
+	getSeats(){ const s = this._data?.seats; return (Array.isArray(s) ? s : (s ? [s] : [])).map(x => ({ position: { x: x.position?.[0] ?? 0, y: x.position?.[1] ?? 0, z: x.position?.[2] ?? 0 }, minRiderCount: x.min_rider_count ?? 0, maxRiderCount: x.max_rider_count ?? 1, lockRiderRotation: x.lock_rider_rotation ?? 0 })); }
+	getRiders(){ return (this.entity._s().riders ?? []).map(id => entityFrom(id)).filter(Boolean); }
+	addRider(rider){ const r = call("rideadd", { id: this.entity.id, rider: rider.id }); this.entity._dirty(); return r; }
+	ejectRider(rider){ call("rideremove", { id: this.entity.id, rider: rider.id }); this.entity._dirty(); }
+	ejectRiders(){ call("rideeject", { id: this.entity.id }); this.entity._dirty(); }
+}
+class EntityRidingComponent extends EntityComponent{
+	get entityRidingOn(){ const v = this.entity._s().vehicle; return v ? entityFrom(v) : undefined; }
+}
+class EntityLeashableComponent extends EntityComponent{
+	get isLeashed(){ return !!this.entity._s().leashHolder; }
+	get leashHolder(){ const h = this.entity._s().leashHolder; return h ? entityFrom(h) : undefined; }
+	get leashHolderEntityId(){ return this.entity._s().leashHolder ?? undefined; }
+	get softDistance(){ return this._data?.soft_distance ?? 4; }
+	get hardDistance(){ return this._data?.hard_distance ?? 6; }
+	get maxDistance(){ return this._data?.max_distance ?? 10; }
+	get canBeStolen(){ return this._data?.can_be_stolen ?? false; }
+	leashTo(entity){ call("leash", { id: this.entity.id, holder: entity.id }); this.entity._dirty(); }
+	unleash(){ call("leash", { id: this.entity.id }); this.entity._dirty(); }
+}
 
 const componentClasses = {
 	"minecraft:health": EntityAttributeComponent,
@@ -355,6 +383,9 @@ const componentClasses = {
 	"minecraft:projectile": EntityProjectileComponent,
 	"minecraft:tameable": EntityTameableComponent,
 	"minecraft:item": EntityItemComponent,
+	"minecraft:rideable": EntityRideableComponent,
+	"minecraft:riding": EntityRidingComponent,
+	"minecraft:leashable": EntityLeashableComponent,
 };
 const alwaysComponents = ["minecraft:health", "minecraft:type_family", "minecraft:movement"];
 
@@ -372,13 +403,20 @@ export class EffectTypes{ static get(id){ return new EffectType(ns(id)); } stati
 
 const entityCache = new Map();
 
-export function entityFrom(id, snapshot){
+export function entityFrom(id, snapshot, typeHint){
 	if(id === undefined || id === null) return undefined;
 	id = String(id);
 	let e = entityCache.get(id);
 	if(e === undefined){
 		const s = snapshot ?? call("ent", { id });
-		if(s === null) return undefined;
+		if(s === null){
+			//gone already (an event about it arrived after it despawned): as in the game, id and typeId still
+			//read, anything else throws InvalidEntityError
+			if(typeHint === undefined) return undefined;
+			const ghost = new Entity(id);
+			ghost._typeHint = typeHint;
+			return ghost;
+		}
 		e = s.player ? new Player(id) : new Entity(id);
 		entityCache.set(id, e);
 		e._snap = s; e._tick = host.stamp;
@@ -390,20 +428,23 @@ export function entityFrom(id, snapshot){
 export function forgetEntity(id){ entityCache.delete(String(id)); }
 
 export class Entity{
-	constructor(id){ this.id = String(id); this._snap = undefined; this._tick = -1; }
+	constructor(id){ this.id = String(id); this._snap = undefined; this._tick = -1; this._typeHint = undefined; }
 	_s(){
 		if(this._tick !== host.stamp || this._snap === undefined){
 			this._snap = call("ent", { id: this.id });
 			this._tick = host.stamp;
 		}
 		if(this._snap === null) throw new InvalidEntityError(`Entity ${this.id} is no longer valid`);
+		this._typeHint = this._snap.type;
 		return this._snap;
 	}
 	_dirty(){ this._tick = -1; }
 	_owner(){ const o = this._s().owner; return o ? entityFrom(o) : undefined; }
 	_valid(){ if(this._tick !== host.stamp || this._snap === undefined){ this._snap = call("ent", { id: this.id }); this._tick = host.stamp; } return this._snap !== null && this._snap.alive !== false; }
 	get isValid(){ return host.valid(this._valid()); }
-	get typeId(){ return this._s().type; }
+	get typeId(){
+		try{ return this._s().type; }catch(e){ if(this._typeHint !== undefined) return this._typeHint; throw e; }
+	}
 	get location(){ const s = this._s(); return { x: s.x, y: s.y, z: s.z }; }
 	get dimension(){ return world.getDimension(this._s().dim); }
 	get nameTag(){ return this._s().nameTag ?? ""; }
@@ -433,7 +474,7 @@ export class Entity{
 	getComponent(id){
 		id = ns(id);
 		const cls = componentClasses[id];
-		const has = alwaysComponents.includes(id) || (this._s().comps ?? []).includes(id) || (id === "minecraft:inventory" && this._s().player) || (id === "minecraft:equippable" && this._s().living) || (id === "minecraft:ender_chest_inventory" && this._s().player) || (id === "minecraft:onfire" && (this._s().fireTicks ?? 0) > 0) || (id === "minecraft:item" && this._s().item);
+		const has = alwaysComponents.includes(id) || (this._s().comps ?? []).includes(id) || (id === "minecraft:inventory" && this._s().player) || (id === "minecraft:equippable" && this._s().living) || (id === "minecraft:ender_chest_inventory" && this._s().player) || (id === "minecraft:onfire" && (this._s().fireTicks ?? 0) > 0) || (id === "minecraft:item" && this._s().item) || (id === "minecraft:riding" && this._s().vehicle);
 		if(!has) return undefined;
 		const data = (id in (this._s().compData ?? {})) ? this._s().compData[id] : (this._s().comps?.includes(id) ? call("comp", { id: this.id, name: id }) : undefined);
 		if(cls) return new cls(this, id, data);

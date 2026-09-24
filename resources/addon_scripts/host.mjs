@@ -21,7 +21,7 @@ function drain(){
 
 // ---------------------------------------------------------------- event objects
 
-const E = (id, snap) => api.entityFrom(id, snap);
+const E = (id, snap, type) => api.entityFrom(id, snap, type);
 const P = (id, snap) => api.entityFrom(id, snap);
 const item = (w) => api.ItemStack._from(w);
 const dim = (id) => { try{ return api.world.getDimension(id); }catch{ return undefined; } };
@@ -38,12 +38,12 @@ const builders = {
 	playerSpawn: d => ({ player: P(d.player, d.snap), initialSpawn: !!d.initial }),
 	playerJoin: d => ({ playerId: String(d.player), playerName: d.name }),
 	playerLeave: d => ({ playerId: String(d.player), playerName: d.name }),
-	entitySpawn: d => ({ entity: E(d.entity, d.snap), cause: d.cause ?? "Spawned" }),
+	entitySpawn: d => ({ entity: E(d.entity, d.snap, d.type), cause: d.cause ?? "Spawned" }),
 	entityLoad: d => ({ entity: E(d.entity, d.snap) }),
-	entityDie: d => ({ deadEntity: E(d.entity, d.snap), damageSource: source(d.src) }),
-	entityHurt: d => ({ hurtEntity: E(d.entity, d.snap), damage: d.damage, damageSource: source(d.src) }),
+	entityDie: d => ({ deadEntity: E(d.entity, d.snap, d.type), damageSource: source(d.src) }),
+	entityHurt: d => ({ hurtEntity: E(d.entity, d.snap, d.type), damage: d.damage, damageSource: source(d.src) }),
 	entityHealthChanged: d => ({ entity: E(d.entity), oldValue: d.old, newValue: d.new }),
-	entityHitEntity: d => ({ damagingEntity: E(d.damager), hitEntity: E(d.entity) }),
+	entityHitEntity: d => ({ damagingEntity: E(d.damager, undefined, d.damagerType), hitEntity: E(d.entity, undefined, d.type) }),
 	entityHitBlock: d => ({ damagingEntity: E(d.damager), hitBlock: block(d.block), blockFace: d.face ?? "Up" }),
 	entityRemove: d => ({ removedEntityId: String(d.entity), typeId: d.type }),
 	playerBreakBlock: d => ({ player: P(d.player), block: block(d.block), brokenBlockPermutation: perm(d.block), itemStackBeforeBreak: item(d.item), itemStackAfterBreak: item(d.itemAfter ?? d.item), dimension: dim(d.block.dim) }),
