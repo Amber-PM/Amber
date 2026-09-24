@@ -7,9 +7,10 @@
 import { call as ipcCall, post as ipcPost } from "./ipc.mjs";
 import { host } from "./state.mjs";
 import * as Names from "./server-names.mjs";
+import * as VanillaData from "./vanilla-data-names.mjs";
 
 // Reads keep the per-tick caches; anything else may change the world, so cached state is dropped after it.
-const READ_OPS = new Set(["ent", "ents", "comp", "block", "top", "light", "biome", "ray", "rayents", "inv", "equip", "dp", "dpids", "prop", "geff", "effs", "time", "spawnpoint", "pspawn", "phas", "plist", "gamerule"]);
+const READ_OPS = new Set(["ent", "ents", "comp", "block", "top", "light", "biome", "ray", "rayents", "inv", "equip", "dp", "dpids", "prop", "geff", "effs", "time", "spawnpoint", "pspawn", "phas", "plist", "gamerule", "blocks", "seed", "loot", "enttype", "enttypes", "tickingareas"]);
 function call(op, args){
 	const result = ipcCall(op, args);
 	if(!READ_OPS.has(op)) host.invalidate();
@@ -290,6 +291,7 @@ export class Container{
 	moveItem(from, to, other){ const x = this.getItem(from); this.setItem(from, undefined); other.setItem(to, x); }
 	contains(item){ return Object.values(this._d().items).some(w => w.id === item.typeId); }
 	find(item){ for(const [slot, w] of Object.entries(this._d().items)) if(w.id === item.typeId) return +slot; return undefined; }
+	findLast(item){ const d = this._d(); for(let i = d.size - 1; i >= 0; i--) if(d.items[i]?.id === item.typeId) return i; return undefined; }
 	firstEmptySlot(){ const d = this._d(); for(let i = 0; i < d.size; i++) if(d.items[i] === undefined) return i; return undefined; }
 	firstItem(){ const d = this._d(); for(let i = 0; i < d.size; i++) if(d.items[i] !== undefined) return i; return undefined; }
 }
@@ -537,6 +539,9 @@ export class Entity{
 	runCommandAsync(command){ return Promise.resolve(this.runCommand(command)); }
 	getDynamicProperty(key){ return call("dp", { scope: this.id, key }) ?? undefined; }
 	setDynamicProperty(key, value){ post("sdp", { scope: this.id, key, v: value === undefined ? null : (typeof value === "object" ? vec(value) : value) }); }
+	setDynamicProperties(values){ for(const [key, value] of Object.entries(values)) this.setDynamicProperty(key, value); }
+	getBlockStandingOn(options){ const l = this.location; const b = this.dimension.getBlock({ x: l.x, y: Math.floor(l.y - 0.01), z: l.z }); return b && !b.isAir ? b : undefined; }
+	getAllBlocksStandingOn(options){ const b = this.getBlockStandingOn(options); return b ? [b] : []; }
 	getDynamicPropertyIds(){ return call("dpids", { scope: this.id }); }
 	getDynamicPropertyTotalByteCount(){ return 0; }
 	clearDynamicProperties(){ post("dpclear", { scope: this.id }); }
@@ -562,9 +567,17 @@ export class ScreenDisplay{
 	}
 	updateSubtitle(subtitle){ post("title", { id: this._p.id, kind: "subtitle", text: flattenText(subtitle) }); }
 	setActionBar(text){ post("title", { id: this._p.id, kind: "actionbar", text: flattenText(text) }); }
-	setHudVisibility(visible, elements){ call("hud", { id: this._p.id, hide: visible === 0 || visible === false || visible === "Hide", elements }); }
-	hideAllExcept(elements){ const keep = new Set(elements ?? []); call("hud", { id: this._p.id, hide: true, elements: [...Array(13).keys()].filter(e => !keep.has(e)) }); }
-	resetHudElements(){ call("hud", { id: this._p.id, hide: false }); }
+	setHudVisibility(visible, elements){
+		const hide = visible === 0 || visible === false || visible === "Hide";
+		const list = elements ?? [...Array(13).keys()];
+		this._hidden ??= new Set();
+		for(const e of list){ if(hide) this._hidden.add(e); else this._hidden.delete(e); }
+		call("hud", { id: this._p.id, hide, elements });
+	}
+	getHiddenHudElements(){ return [...(this._hidden ?? [])].sort((a, b) => a - b); }
+	resetHudElementsVisibility(){ this.resetHudElements(); }
+	hideAllExcept(elements){ const keep = new Set(elements ?? []); this.setHudVisibility("Hide", [...Array(13).keys()].filter(e => !keep.has(e))); }
+	resetHudElements(){ this._hidden = new Set(); call("hud", { id: this._p.id, hide: false }); }
 	isForcedHidden(){ return false; }
 	get isValid(){ return host.valid(this._p._valid()); }
 }
@@ -589,6 +602,8 @@ export class Camera{
 	setDefaultCamera(preset, easeOptions){ this.setCamera(preset, { easeOptions }); }
 	setFov(options){ call("camera", { id: this._p.id, action: "fov", o: options ?? {} }); }
 	clearFov(){ call("camera", { id: this._p.id, action: "clearfov" }); }
+	addShake(intensity, seconds, type){ post("shake", { id: this._p.id, intensity, seconds, type: String(type ?? "Positional").toLowerCase() }); }
+	stopShaking(){ post("shake", { id: this._p.id, stop: true }); }
 	get isValid(){ return host.valid(true); }
 }
 
@@ -704,6 +719,16 @@ export class Dimension{
 		if(!(p instanceof BlockPermutation)) throw new TypeError("fillBlocks needs a block type or permutation");
 		return call("fill", { dim: this.id, x1: from.x, y1: from.y, z1: from.z, x2: to.x, y2: to.y, z2: to.z, type: p._type, states: p._states });
 	}
+	getBlocks(volume, filter = {}, allowUnloadedChunks = false){
+		const a = volume.getMin(), b = volume.getMax();
+		const found = call("blocks", { dim: this.id, x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, filter: blockFilterWire(filter) }) ?? [];
+		return new ListBlockVolume(found.map(([x, y, z]) => ({ x, y, z })).filter(l => volume.isInside(l)));
+	}
+	containsBlock(volume, filter = {}, allowUnloadedChunks = false){
+		if(volume instanceof ListBlockVolume) return this.getBlocks(volume, filter, allowUnloadedChunks).getCapacity() > 0;
+		const a = volume.getMin(), b = volume.getMax();
+		return call("blocks", { dim: this.id, x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, filter: blockFilterWire(filter), any: true }) === true;
+	}
 	getWeather(){ return call("weather", { dim: this.id }); }
 	setWeather(type, duration){ post("setweather", { dim: this.id, type: String(type).toLowerCase(), ticks: duration }); }
 	isChunkLoaded(location){ return call("block", { dim: this.id, x: Math.floor(location.x), y: 0, z: Math.floor(location.z) }) !== null; }
@@ -711,6 +736,113 @@ export class Dimension{
 	getSkyLightLevel(location){ return call("light", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z), sky: true }) ?? 0; }
 	getBiome(location){ return { id: call("biome", { dim: this.id, x: Math.floor(location.x), y: Math.floor(location.y), z: Math.floor(location.z) }) }; }
 }
+
+// ---------------------------------------------------------------- block volumes
+
+export class BlockVolumeBase{
+	getBlockLocationIterator(){ return new BlockLocationIterator(this._locations()); }
+	getBoundingBox(){ return { min: this.getMin(), max: this.getMax() }; }
+	getSpan(){ const a = this.getMin(), b = this.getMax(); return { x: b.x - a.x + 1, y: b.y - a.y + 1, z: b.z - a.z + 1 }; }
+	get isValid(){ return host.valid(true); }
+}
+export class BlockLocationIterator{
+	constructor(generator){ this._it = generator; }
+	[Symbol.iterator](){ return this; }
+	next(){ return this._it.next(); }
+	get isValid(){ return host.valid(true); }
+}
+const floorVec = (v) => ({ x: Math.floor(v.x), y: Math.floor(v.y), z: Math.floor(v.z) });
+export class BlockVolume extends BlockVolumeBase{
+	constructor(from, to){ super(); this.from = vec(from); this.to = vec(to); }
+	getMin(){ return floorVec({ x: Math.min(this.from.x, this.to.x), y: Math.min(this.from.y, this.to.y), z: Math.min(this.from.z, this.to.z) }); }
+	getMax(){ return floorVec({ x: Math.max(this.from.x, this.to.x), y: Math.max(this.from.y, this.to.y), z: Math.max(this.from.z, this.to.z) }); }
+	getCapacity(){ const s = this.getSpan(); return s.x * s.y * s.z; }
+	isInside(l){ const a = this.getMin(), b = this.getMax(), p = floorVec(l); return p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y && p.z >= a.z && p.z <= b.z; }
+	translate(d){ this.from = { x: this.from.x + d.x, y: this.from.y + d.y, z: this.from.z + d.z }; this.to = { x: this.to.x + d.x, y: this.to.y + d.y, z: this.to.z + d.z }; }
+	doesLocationTouchFaces(l){ if(!this.isInside(l)) return false; const a = this.getMin(), b = this.getMax(), p = floorVec(l); return p.x === a.x || p.x === b.x || p.y === a.y || p.y === b.y || p.z === a.z || p.z === b.z; }
+	doesVolumeTouchFaces(other){ return this.intersects(other) !== Names.BlockVolumeIntersection.Disjoint; }
+	intersects(other){
+		const a = this.getMin(), b = this.getMax(), c = other.getMin(), d = other.getMax();
+		if(c.x > b.x || d.x < a.x || c.y > b.y || d.y < a.y || c.z > b.z || d.z < a.z) return Names.BlockVolumeIntersection.Disjoint;
+		if(c.x >= a.x && d.x <= b.x && c.y >= a.y && d.y <= b.y && c.z >= a.z && d.z <= b.z) return Names.BlockVolumeIntersection.Contains;
+		return Names.BlockVolumeIntersection.Intersects;
+	}
+	*_locations(){
+		const a = this.getMin(), b = this.getMax();
+		for(let x = a.x; x <= b.x; x++) for(let y = a.y; y <= b.y; y++) for(let z = a.z; z <= b.z; z++) yield { x, y, z };
+	}
+}
+export class ListBlockVolume extends BlockVolumeBase{
+	constructor(locations){ super(); this._list = new Map(); this.add(locations ?? []); }
+	add(locations){ for(const l of locations){ const p = floorVec(l); this._list.set(`${p.x},${p.y},${p.z}`, p); } }
+	remove(locations){ for(const l of locations){ const p = floorVec(l); this._list.delete(`${p.x},${p.y},${p.z}`); } }
+	getCapacity(){ return this._list.size; }
+	getMin(){ const v = [...this._list.values()]; return v.length ? { x: Math.min(...v.map(p => p.x)), y: Math.min(...v.map(p => p.y)), z: Math.min(...v.map(p => p.z)) } : { x: 0, y: 0, z: 0 }; }
+	getMax(){ const v = [...this._list.values()]; return v.length ? { x: Math.max(...v.map(p => p.x)), y: Math.max(...v.map(p => p.y)), z: Math.max(...v.map(p => p.z)) } : { x: 0, y: 0, z: 0 }; }
+	isInside(l){ const p = floorVec(l); return this._list.has(`${p.x},${p.y},${p.z}`); }
+	translate(d){ const moved = [...this._list.values()].map(p => ({ x: p.x + d.x, y: p.y + d.y, z: p.z + d.z })); this._list.clear(); this.add(moved); }
+	*_locations(){ for(const p of this._list.values()) yield { ...p }; }
+}
+const blockFilterWire = (f = {}) => ({
+	include: (f.includeTypes ?? []).map(t => ns(typeof t === "string" ? t : t.id)),
+	exclude: (f.excludeTypes ?? []).map(t => ns(typeof t === "string" ? t : t.id)),
+	includeP: (f.includePermutations ?? []).map(p => ({ type: p._type, states: p._states })),
+	excludeP: (f.excludePermutations ?? []).map(p => ({ type: p._type, states: p._states })),
+});
+
+// ---------------------------------------------------------------- type registries (vanilla ids from the game's data)
+
+const ENCHANT_MAX = { aqua_affinity: 1, bane_of_arthropods: 5, binding: 1, blast_protection: 4, breach: 4, channeling: 1, density: 5, depth_strider: 3, efficiency: 5, feather_falling: 4, fire_aspect: 2, fire_protection: 4, flame: 1, fortune: 3, frost_walker: 2, impaling: 5, infinity: 1, knockback: 2, looting: 3, loyalty: 3, luck_of_the_sea: 3, lunge: 3, lure: 3, mending: 1, multishot: 1, piercing: 4, power: 5, projectile_protection: 4, protection: 4, punch: 2, quick_charge: 3, respiration: 3, riptide: 3, sharpness: 5, silk_touch: 1, smite: 5, soul_speed: 3, swift_sneak: 3, thorns: 3, unbreaking: 3, vanishing: 1, wind_burst: 3 };
+export class EnchantmentType{ constructor(id, maxLevel){ this.id = id; this.maxLevel = maxLevel; } }
+export class EnchantmentTypes{
+	static get(id){ const key = String(id).replace(/^minecraft:/, ""); return Object.values(VanillaData.MinecraftEnchantmentTypes).includes("minecraft:" + key) ? new EnchantmentType(key, ENCHANT_MAX[key] ?? 1) : undefined; }
+	static getAll(){ return Object.values(VanillaData.MinecraftEnchantmentTypes).map(id => EnchantmentTypes.get(id)); }
+}
+export class EntityType{ constructor(id){ this.id = id; } get localizationKey(){ return "entity." + this.id.replace(/^minecraft:/, "") + ".name"; } }
+export class EntityTypes{
+	static get(id){ const key = ns(id); return (Object.values(VanillaData.MinecraftEntityTypes).includes(key) || (call("enttype", { id: key }) ?? false)) ? new EntityType(key) : undefined; }
+	static getAll(){ return [...new Set([...Object.values(VanillaData.MinecraftEntityTypes), ...(call("enttypes", {}) ?? [])])].map(id => new EntityType(id)); }
+}
+export class DimensionType{ constructor(typeId){ this.typeId = typeId; } }
+export class DimensionTypes{
+	static get(id){ const key = ns(id); return Object.values(VanillaData.MinecraftDimensionTypes).includes(key) ? new DimensionType(key) : undefined; }
+	static getAll(){ return Object.values(VanillaData.MinecraftDimensionTypes).map(id => new DimensionType(id)); }
+}
+export class BiomeType{ constructor(id){ this.id = id; } }
+export class BiomeTypes{
+	static get(id){ const key = ns(id); return Object.values(VanillaData.MinecraftBiomeTypes).includes(key) ? new BiomeType(key) : undefined; }
+	static getAll(){ return Object.values(VanillaData.MinecraftBiomeTypes).map(id => new BiomeType(id)); }
+}
+
+// ---------------------------------------------------------------- loot and ticking areas
+
+export class LootTable{ constructor(path){ this.path = path; } }
+export class LootTableManager{
+	getLootTable(path){ return call("loot", { path, check: true }) ? new LootTable(path) : undefined; }
+	generateLootFromTable(table, tool){ const r = call("loot", { path: typeof table === "string" ? table : table.path }); return r === null ? undefined : r.map(w => ItemStack._from(w)).filter(Boolean); }
+	generateLootFromEntity(entity, tool){ const r = call("loot", { entity: entity.id }); return r === null ? undefined : r.map(w => ItemStack._from(w)).filter(Boolean); }
+	generateLootFromEntityType(type, tool){ return undefined; }
+	generateLootFromBlock(block, tool){ return undefined; }
+	generateLootFromBlockPermutation(permutation, tool){ return undefined; }
+	generateLootFromBlockType(type, tool){ return undefined; }
+}
+const lootTableManager = new LootTableManager();
+export class TickingAreaManager{
+	get maxChunkCount(){ return 1000; }
+	get chunkCount(){ return this.getAllTickingAreas().reduce((n, a) => n + (a.chunkCount ?? 0), 0); }
+	createTickingArea(identifier, options){
+		const a = options.from, b = options.to ?? options.from;
+		const r = call("cmd", { cmd: `tickingarea add ${Math.floor(a.x)} 0 ${Math.floor(a.z)} ${Math.floor(b.x)} 0 ${Math.floor(b.z)} ${identifier}`, dim: options.dimension?.id ?? "minecraft:overworld" });
+		return r?.successCount ? Promise.resolve(this.getTickingArea(identifier)) : Promise.reject(new Names.TickingAreaError(`Cannot create ticking area ${identifier}`));
+	}
+	removeTickingArea(identifier){ return (call("cmd", { cmd: `tickingarea remove ${typeof identifier === "string" ? identifier : identifier.identifier}` })?.successCount ?? 0) > 0; }
+	removeAllTickingAreas(){ for(const a of this.getAllTickingAreas()) this.removeTickingArea(a.identifier); }
+	getAllTickingAreas(){ return (call("tickingareas", {}) ?? []).map(a => ({ identifier: a.name, dimension: world.getDimension(a.dim ?? "minecraft:overworld"), boundingBox: { min: { x: a.minX * 16, y: -64, z: a.minZ * 16 }, max: { x: a.maxX * 16 + 15, y: 319, z: a.maxZ * 16 + 15 } }, chunkCount: (a.maxX - a.minX + 1) * (a.maxZ - a.minZ + 1), isFullyLoaded: true })); }
+	getTickingArea(identifier){ return this.getAllTickingAreas().find(a => a.identifier === identifier); }
+	hasTickingArea(identifier){ return this.getTickingArea(identifier) !== undefined; }
+	hasCapacity(options){ return this.getAllTickingAreas().length < 10; }
+}
+const tickingAreaManager = new TickingAreaManager();
 
 // ---------------------------------------------------------------- events
 
@@ -840,7 +972,10 @@ export class World{
 	clearDynamicProperties(){ post("dpclear", { scope: "world" }); }
 	playMusic(){} queueMusic(){} stopMusic(){}
 	playSound(sound, location, options = {}){ post("sound", { dim: "minecraft:overworld", name: sound, x: location.x, y: location.y, z: location.z, vol: options.volume ?? 1, pitch: options.pitch ?? 1 }); }
-	getLootTableManager(){ return { generateLootFromEntity: () => undefined, generateLootFromTable: () => undefined }; }
+	getLootTableManager(){ return lootTableManager; }
+	get tickingAreaManager(){ return tickingAreaManager; }
+	get seed(){ return call("seed", {}); }
+	setDynamicProperties(values){ for(const [key, value] of Object.entries(values)) this.setDynamicProperty(key, value); }
 	get structureManager(){ return structureManager; }
 	getDifficulty(){ return call("time").difficulty ?? "Normal"; }
 	setDifficulty(){}

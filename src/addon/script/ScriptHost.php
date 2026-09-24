@@ -29,6 +29,7 @@ use pocketmine\addon\block\AddonBlock;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\EntityFilter;
 use pocketmine\addon\event\AddonScriptEvent;
+use pocketmine\addon\loot\LootContext;
 use pocketmine\block\Block;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\camera\options\CameraEaseType;
@@ -64,6 +65,7 @@ use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
+use pocketmine\network\mcpe\protocol\CameraShakePacket;
 use pocketmine\network\mcpe\protocol\PlaySoundPacket;
 use pocketmine\network\mcpe\protocol\RemoveObjectivePacket;
 use pocketmine\network\mcpe\protocol\SetDisplayObjectivePacket;
@@ -115,6 +117,7 @@ use function is_resource;
 use function is_string;
 use function json_decode;
 use function json_encode;
+use function ltrim;
 use function max;
 use function min;
 use function mkdir;
@@ -129,6 +132,7 @@ use function round;
 use function spl_object_id;
 use function sqrt;
 use function str_contains;
+use function str_ends_with;
 use function str_replace;
 use function str_starts_with;
 use function stream_get_contents;
@@ -166,7 +170,7 @@ use const M_PI;
 final class ScriptHost{
 	private const SCRIPT_FILES = ["host.mjs", "ipc.mjs", "loader.mjs", "state.mjs", "server.mjs", "server-ui.mjs", "common.mjs", "math.mjs", "vanilla-data.mjs", "admin.mjs", "unsupported.mjs", "bridge.mjs",
 		//every name the game's modules export (generated from its script API metadata)
-		"server-names.mjs", "server-ui-names.mjs", "common-names.mjs", "server-admin-names.mjs", "server-net-names.mjs", "server-gametest-names.mjs", "debug-utilities-names.mjs", "diagnostics-names.mjs", "server-graphics-names.mjs",
+		"server-names.mjs", "server-ui-names.mjs", "common-names.mjs", "server-admin-names.mjs", "server-net-names.mjs", "server-gametest-names.mjs", "debug-utilities-names.mjs", "diagnostics-names.mjs", "server-graphics-names.mjs", "vanilla-data-names.mjs",
 	];
 	private const DEFAULT_SCOPE = "world";
 
@@ -1200,6 +1204,32 @@ final class ScriptHost{
 			case "setgamerule":
 				$this->manager->getWorldRules()->setRule(strtolower((string) ($a["name"] ?? "")), is_bool($a["v"] ?? null) || is_int($a["v"] ?? null) ? $a["v"] : (string) ($a["v"] ?? ""));
 				return null;
+			case "blocks":
+				$world = $this->worldFor((string) ($a["dim"] ?? ""));
+				return $world === null ? [] : $this->findBlocks($world, $a);
+			case "seed":
+				return (string) ($this->server->getWorldManager()->getDefaultWorld()?->getSeed() ?? 0);
+			case "enttype":
+				return $this->manager->getEntityDefinition(strtolower((string) ($a["id"] ?? ""))) !== null;
+			case "enttypes":
+				return array_keys($this->manager->getEntityDefinitions());
+			case "tickingareas":
+				$areas = [];
+				foreach($this->manager->getTickingAreas()->getAreas() as $name => $area){
+					$world = $this->server->getWorldManager()->getWorldByName($area["world"]);
+					$areas[] = ["name" => $name, "dim" => $world === null ? "minecraft:overworld" : $this->dimensionId($world), "minX" => $area["x1"], "minZ" => $area["z1"], "maxX" => $area["x2"], "maxZ" => $area["z2"]];
+				}
+				return $areas;
+			case "loot":
+				return $this->loot($a);
+			case "shake":
+				$player = $this->entity($a["id"] ?? null);
+				if($player instanceof Player){
+					$player->getNetworkSession()->sendDataPacket((bool) ($a["stop"] ?? false)
+						? CameraShakePacket::create(0, 0, CameraShakePacket::TYPE_POSITIONAL, CameraShakePacket::ACTION_STOP)
+						: CameraShakePacket::create(max(0.0, min(4.0, (float) ($a["intensity"] ?? 0.5))), (float) ($a["seconds"] ?? 1), ($a["type"] ?? "") === "rotational" ? CameraShakePacket::TYPE_ROTATIONAL : CameraShakePacket::TYPE_POSITIONAL, CameraShakePacket::ACTION_ADD));
+				}
+				return null;
 			case "weather":
 				$world = $this->worldFor((string) ($a["dim"] ?? ""));
 				return $world === null ? "Clear" : ucfirst($this->manager->getWorldRules()->getWeather($world));
@@ -1595,6 +1625,110 @@ final class ScriptHost{
 			};
 		}
 		return ["type" => $data->getName(), "states" => $states, "solid" => $block->isSolid()];
+	}
+
+	/** The most blocks one getBlocks / containsBlock call looks at. */
+	private const MAX_BLOCK_QUERY = 1048576;
+
+	/**
+	 * Blocks in a box that pass a script BlockFilter (types and permutations): their positions for getBlocks, or
+	 * whether there is one for containsBlock.
+	 *
+	 * @param array<string, mixed> $a
+	 * @return list<array{int, int, int}>|bool
+	 */
+	private function findBlocks(World $world, array $a) : array|bool{
+		$minX = (int) floor(min((float) $a["x1"], (float) $a["x2"]));
+		$minY = max($world->getMinY(), (int) floor(min((float) $a["y1"], (float) $a["y2"])));
+		$minZ = (int) floor(min((float) $a["z1"], (float) $a["z2"]));
+		$maxX = (int) floor(max((float) $a["x1"], (float) $a["x2"]));
+		$maxY = min($world->getMaxY() - 1, (int) floor(max((float) $a["y1"], (float) $a["y2"])));
+		$maxZ = (int) floor(max((float) $a["z1"], (float) $a["z2"]));
+		if(($maxX - $minX + 1) * max(0, $maxY - $minY + 1) * ($maxZ - $minZ + 1) > self::MAX_BLOCK_QUERY){
+			throw new \InvalidArgumentException("The volume has more than " . self::MAX_BLOCK_QUERY . " blocks");
+		}
+		$filter = is_array($a["filter"] ?? null) ? $a["filter"] : [];
+		$list = static fn(string $key) : array => is_array($filter[$key] ?? null) ? $filter[$key] : [];
+		[$include, $exclude, $includeP, $excludeP] = [$list("include"), $list("exclude"), $list("includeP"), $list("excludeP")];
+		$any = (bool) ($a["any"] ?? false);
+		/** @var array<int, bool> $verdict by block state id */
+		$verdict = [];
+		$found = [];
+		for($x = $minX; $x <= $maxX; $x++){
+			for($z = $minZ; $z <= $maxZ; $z++){
+				for($y = $minY; $y <= $maxY; $y++){
+					$block = $world->getBlockAt($x, $y, $z);
+					$ok = $verdict[$block->getStateId()] ??= self::blockPasses($block, $include, $exclude, $includeP, $excludeP);
+					if($ok){
+						if($any){
+							return true;
+						}
+						$found[] = [$x, $y, $z];
+					}
+				}
+			}
+		}
+		return $any ? false : $found;
+	}
+
+	/**
+	 * @param mixed[] $include type ids
+	 * @param mixed[] $exclude type ids
+	 * @param mixed[] $includeP permutations: [type, states]
+	 * @param mixed[] $excludeP permutations: [type, states]
+	 */
+	private static function blockPasses(Block $block, array $include, array $exclude, array $includeP, array $excludeP) : bool{
+		$wire = self::blockWire($block);
+		$matches = static function(array $permutations) use ($wire) : bool{
+			foreach($permutations as $p){
+				if(!is_array($p) || ($p["type"] ?? null) !== $wire["type"]){
+					continue;
+				}
+				foreach(is_array($p["states"] ?? null) ? $p["states"] : [] as $name => $value){
+					if(($wire["states"][$name] ?? null) !== $value){
+						continue 2;
+					}
+				}
+				return true;
+			}
+			return false;
+		};
+		if(in_array($wire["type"], $exclude, true) || $matches($excludeP)){
+			return false;
+		}
+		return ($include === [] && $includeP === []) || in_array($wire["type"], $include, true) || $matches($includeP);
+	}
+
+	/**
+	 * Rolls a loot table for LootTableManager: by path, or an add-on entity's own table. Null when the table does
+	 * not exist; with "check" only whether it exists.
+	 *
+	 * @param array<string, mixed> $a
+	 * @return list<array<string, mixed>>|bool|null
+	 */
+	private function loot(array $a) : array|bool|null{
+		$tables = $this->manager->getLootTables();
+		if($tables === null){
+			return null;
+		}
+		$entity = isset($a["entity"]) ? $this->entity($a["entity"]) : null;
+		$path = (string) ($a["path"] ?? "");
+		if($entity !== null){
+			$component = $entity instanceof AddonEntity ? $entity->getComponent("minecraft:loot") : null;
+			$path = is_array($component) && is_string($component["table"] ?? null) ? $component["table"] : "";
+			if($path === ""){
+				return $entity instanceof Living ? array_map(static fn(Item $item) : array => self::itemWire($item), $entity->getDrops()) : [];
+			}
+		}
+		$path = str_starts_with($path, "loot_tables/") ? $path : "loot_tables/" . ltrim($path, "/");
+		$path = str_ends_with($path, ".json") ? $path : "$path.json";
+		if(!$tables->exists($path)){
+			return (bool) ($a["check"] ?? false) ? false : null;
+		}
+		if((bool) ($a["check"] ?? false)){
+			return true;
+		}
+		return array_map(static fn(Item $item) : array => self::itemWire($item), $tables->roll($path, new LootContext($entity, null)));
 	}
 
 	public static function blockTypeId(Block $block) : string{
