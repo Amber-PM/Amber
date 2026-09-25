@@ -32,13 +32,13 @@ use pocketmine\player\Player;
  */
 final class ScriptForm implements Form{
 	/** @param mixed[] $data the form JSON as the client expects it */
-	public function __construct(private array $data, private int $formId, private ScriptHost $host){}
+	public function __construct(private array $data, private int $formId, private int $epoch, private ScriptHost $host){}
 
 	public function jsonSerialize() : array{
 		return $this->data;
 	}
 
 	public function handleResponse(Player $player, mixed $data) : void{
-		$this->host->formResponse($this->formId, $data);
+		$this->host->formResponse($this->formId, $data, $this->epoch);
 	}
 }

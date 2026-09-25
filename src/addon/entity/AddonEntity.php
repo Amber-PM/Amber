@@ -138,6 +138,7 @@ class AddonEntity extends Living{
 	private const TAG_MAINHAND = "AddonMainHand";
 	private const TAG_OFFHAND = "AddonOffHand";
 	private const TAG_TRADES = "AddonTrades";
+	private const TAG_DYNAMIC_PROPERTIES = "AddonDynamicProperties";
 
 	/** Deepest chain of events triggering events before the chain is cut (packs can loop). */
 	private const MAX_EVENT_DEPTH = 16;
@@ -275,6 +276,18 @@ class AddonEntity extends Living{
 				}
 			}
 		}
+
+		$dyn = $nbt->getString(self::TAG_DYNAMIC_PROPERTIES, "");
+		if($dyn !== ""){
+			$host = AddonManager::getInstance()?->getScriptHost();
+			if($host !== null){
+				$decoded = json_decode($dyn, true);
+				if(is_array($decoded)){
+					$host->setEntityDynamic($this, $decoded);
+				}
+			}
+		}
+
 		$state = $nbt->getCompoundTag(self::TAG_STATE);
 		if($state !== null){
 			$this->spawned = $state->getByte("Spawned", 0) === 1;
@@ -352,6 +365,15 @@ class AddonEntity extends Living{
 			});
 		}
 		$nbt->setTag(self::TAG_PROPERTIES, $properties);
+
+		$host = AddonManager::getInstance()?->getScriptHost();
+		if($host !== null){
+			$dynamic = $host->getEntityDynamic($this);
+			if($dynamic !== []){
+				$nbt->setString(self::TAG_DYNAMIC_PROPERTIES, json_encode($dynamic));
+			}
+		}
+
 		$nbt->setTag(self::TAG_STATE, CompoundTag::create()
 			->setByte("Spawned", 1)
 			->setByte("Tamed", $this->tamed ? 1 : 0)
@@ -379,8 +401,6 @@ class AddonEntity extends Living{
 		$nbt->setTag(self::TAG_TAGS, new ListTag(array_map(static fn(string $t) : StringTag => new StringTag($t), array_keys($this->tags)), NBT::TAG_String));
 		return $nbt;
 	}
-
-	// ------------------------------------------------------------------ component groups
 
 	/** @return list<string> */
 	public function getActiveComponentGroups() : array{ return $this->activeGroups; }
@@ -531,8 +551,6 @@ class AddonEntity extends Living{
 		return is_numeric($value) ? (int) $value : 0;
 	}
 
-	// ------------------------------------------------------------------ events
-
 	/**
 	 * Runs one of the definition's events (or a built-in minecraft:* one). Returns false when the event does not
 	 * exist, was cancelled by a plugin, or the chain was too deep.
@@ -676,8 +694,6 @@ class AddonEntity extends Living{
 		return (AddonManager::getInstance()?->getCommandBridge()->run($command, $this) ?? 0) > 0;
 	}
 
-	// ------------------------------------------------------------------ properties
-
 	public function hasProperty(string $name) : bool{ return isset($this->properties[$name]); }
 
 	public function getProperty(string $name) : int|float|bool|string|null{ return $this->properties[$name] ?? null; }
@@ -749,8 +765,6 @@ class AddonEntity extends Living{
 		}
 	}
 
-	// ------------------------------------------------------------------ state for filters, scripts and plugins
-
 	/** @return list<string> */
 	public function getFamilies() : array{ return $this->families; }
 
@@ -819,8 +833,6 @@ class AddonEntity extends Living{
 		$this->setOwner($owner);
 		$this->networkPropertiesDirty = true;
 	}
-
-	// ------------------------------------------------------------------ ticking
 
 	private function now() : int{
 		return $this->server->getTick();
@@ -1074,8 +1086,6 @@ class AddonEntity extends Living{
 		return array_values(array_filter(array_is_list($value) ? $value : [$value], static fn($v) : bool => is_array($v)));
 	}
 
-	// ------------------------------------------------------------------ movement
-
 	public function hasMovementUpdate() : bool{
 		return parent::hasMovementUpdate() || ($this->brain !== null && $this->brain->isNavigating());
 	}
@@ -1149,8 +1159,6 @@ class AddonEntity extends Living{
 	public function isFireProof() : bool{
 		return isset($this->components["minecraft:fire_immune"]);
 	}
-
-	// ------------------------------------------------------------------ damage and death
 
 	public function attack(EntityDamageEvent $source) : void{
 		$damager = $source instanceof EntityDamageByEntityEvent ? $source->getDamager() : null;
@@ -1247,8 +1255,6 @@ class AddonEntity extends Living{
 		}
 		return $drops;
 	}
-
-	// ------------------------------------------------------------------ inventory and equipment
 
 	/** The entity's container (minecraft:inventory), created on first use; null without the component. */
 	public function getInventory() : ?AddonEntityInventory{
@@ -1470,8 +1476,6 @@ class AddonEntity extends Living{
 		$this->flagForDespawn();
 	}
 
-	// ------------------------------------------------------------------ projectiles
-
 	/**
 	 * Fires this mob's minecraft:shooter projectile at the target.
 	 */
@@ -1598,8 +1602,6 @@ class AddonEntity extends Living{
 		AddonManager::getInstance()?->getScriptHost()?->onProjectileHit($this, $hit);
 	}
 
-	// ------------------------------------------------------------------ interaction
-
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$now = $this->now();
 		if($now < $this->interactCooldownUntil){
@@ -1693,8 +1695,6 @@ class AddonEntity extends Living{
 		}
 		return false;
 	}
-
-	// ------------------------------------------------------------------ riding
 
 	/** The add-on entity this entity rides, if any. */
 	public static function getVehicleOf(Entity $rider) : ?AddonEntity{
@@ -1880,8 +1880,6 @@ class AddonEntity extends Living{
 		$this->brain?->getNavigator()->stop();
 	}
 
-	// ------------------------------------------------------------------ trading
-
 	/** @return array<string, mixed>|null the trade_table or economy_trade_table component */
 	private function tradeComponent() : ?array{
 		$component = $this->components["minecraft:trade_table"] ?? $this->components["minecraft:economy_trade_table"] ?? null;
@@ -1959,8 +1957,6 @@ class AddonEntity extends Living{
 		}
 	}
 
-	// ------------------------------------------------------------------ leashing
-
 	public function getLeashHolder() : ?Entity{
 		$holder = $this->leashHolder?->get();
 		return $holder !== null && !$holder->isClosed() ? $holder : null;
@@ -2013,8 +2009,6 @@ class AddonEntity extends Living{
 			$this->setMotion($this->motion->addVector($delta->divide($distance)->multiply($pull)));
 		}
 	}
-
-	// ------------------------------------------------------------------ boss bar
 
 	/** minecraft:boss: shows the bar to players within hud_range, hides it from the rest. */
 	private function updateBossBar() : void{
@@ -2200,8 +2194,6 @@ class AddonEntity extends Living{
 		$this->getWorld()->dropExperience($this->location, mt_rand(1, 7));
 	}
 
-	// ------------------------------------------------------------------ network
-
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
 		$properties->setInt(EntityMetadataProperties::VARIANT, $this->variant);
@@ -2270,8 +2262,6 @@ class AddonEntity extends Living{
 		$this->lastDamager = null;
 		parent::destroyCycles();
 	}
-
-	// ------------------------------------------------------------------ reporting
 
 	/** A callback that logs a problem with this entity's definition once. @return \Closure(string) : void */
 	public function reporter() : \Closure{

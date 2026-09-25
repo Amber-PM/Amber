@@ -537,14 +537,14 @@ export class Entity{
 	resetProperty(name){ return call("rprop", { id: this.id, name }); }
 	runCommand(command){ return call("cmd", { cmd: command, as: this.id }); }
 	runCommandAsync(command){ return Promise.resolve(this.runCommand(command)); }
-	getDynamicProperty(key){ return call("dp", { scope: this.id, key }) ?? undefined; }
-	setDynamicProperty(key, value){ post("sdp", { scope: this.id, key, v: value === undefined ? null : (typeof value === "object" ? vec(value) : value) }); }
+	getDynamicProperty(key){ return call("dp", { scope: this.id, key, pack: host.currentPack }) ?? undefined; }
+	setDynamicProperty(key, value){ post("sdp", { scope: this.id, key, pack: host.currentPack, v: value === undefined ? null : (typeof value === "object" ? vec(value) : value) }); }
 	setDynamicProperties(values){ for(const [key, value] of Object.entries(values)) this.setDynamicProperty(key, value); }
 	getBlockStandingOn(options){ const l = this.location; const b = this.dimension.getBlock({ x: l.x, y: Math.floor(l.y - 0.01), z: l.z }); return b && !b.isAir ? b : undefined; }
 	getAllBlocksStandingOn(options){ const b = this.getBlockStandingOn(options); return b ? [b] : []; }
-	getDynamicPropertyIds(){ return call("dpids", { scope: this.id }); }
+	getDynamicPropertyIds(){ return call("dpids", { scope: this.id, pack: host.currentPack }); }
 	getDynamicPropertyTotalByteCount(){ return 0; }
-	clearDynamicProperties(){ post("dpclear", { scope: this.id }); }
+	clearDynamicProperties(){ post("dpclear", { scope: this.id, pack: host.currentPack }); }
 	getBlockFromViewDirection(options = {}){
 		const head = this.getHeadLocation();
 		return this.dimension.getBlockFromRay(head, this.getViewDirection(), options);
@@ -627,7 +627,6 @@ export class Player extends Entity{
 	getGameMode(){ return _gameModeName(this._s().gm); }
 	setGameMode(mode){ post("gm", { id: this.id, mode: mode === undefined ? world._defaultGameMode : String(mode).toLowerCase() }); this._dirty(); }
 	isOp(){ return this._s().op ?? false; }
-	setOp(v){ post("op", { id: this.id, v: !!v }); this._dirty(); }
 	playSound(sound, options = {}){ const l = options.location ?? this.location; post("sound", { dim: this._s().dim, name: sound, x: l.x, y: l.y, z: l.z, vol: options.volume ?? 1, pitch: options.pitch ?? 1, ids: [this.id] }); }
 	stopSound(sound){ post("stopsound", { id: this.id, name: sound ?? "" }); }
 	stopAllSounds(){ post("stopsound", { id: this.id, name: "" }); }
@@ -965,11 +964,11 @@ export class World{
 	setAbsoluteTime(t){ post("settime", { v: t, abs: true }); }
 	getDefaultSpawnLocation(){ return call("spawnpoint"); }
 	setDefaultSpawnLocation(l){ post("setspawn", { x: l.x, y: l.y, z: l.z }); }
-	getDynamicProperty(key){ const v = call("dp", { scope: "world", key }); return v === null ? undefined : v; }
-	setDynamicProperty(key, value){ post("sdp", { scope: "world", key, v: value === undefined ? null : (typeof value === "object" ? vec(value) : value) }); }
-	getDynamicPropertyIds(){ return call("dpids", { scope: "world" }); }
+	getDynamicProperty(key){ const v = call("dp", { scope: "world", key, pack: host.currentPack }); return v === null ? undefined : v; }
+	setDynamicProperty(key, value){ post("sdp", { scope: "world", key, pack: host.currentPack, v: value === undefined ? null : (typeof value === "object" ? vec(value) : value) }); }
+	getDynamicPropertyIds(){ return call("dpids", { scope: "world", pack: host.currentPack }); }
 	getDynamicPropertyTotalByteCount(){ return 0; }
-	clearDynamicProperties(){ post("dpclear", { scope: "world" }); }
+	clearDynamicProperties(){ post("dpclear", { scope: "world", pack: host.currentPack }); }
 	playMusic(){} queueMusic(){} stopMusic(){}
 	playSound(sound, location, options = {}){ post("sound", { dim: "minecraft:overworld", name: sound, x: location.x, y: location.y, z: location.z, vol: options.volume ?? 1, pitch: options.pitch ?? 1 }); }
 	getLootTableManager(){ return lootTableManager; }

@@ -102,12 +102,7 @@ the game's values, errors, constants), generated from Mojang's script API metada
 `tools/generate-addon-script-names.php`. A pack that imports something this server does not implement still
 loads; only using that one thing throws.
 
-**Safe by design.** Scripts run with Node's permission model: they can read their own pack and nothing else,
-cannot write files, start processes, load native code or open network connections, and can only import
-`@minecraft/*` modules and their own files. An error in one pack is logged against that pack and does not
-affect the others. Each tick scripts get a time budget (30 ms by default): scripts that run longer are left
-to finish in the background, delaying script callbacks but never the server, and a script host stuck for
-10 seconds is restarted.
+**Defense in depth.** Behavior packs are treated as trusted server code, similar to PHP plugins. The runtime uses a Worker thread, restricted module resolution, a sanitized environment, and Node's permission model to reduce accidental filesystem, process, native-code, and IPC access. These mechanisms are defense in depth only and are not a security boundary against intentionally malicious behavior-pack code. An error in one pack is logged against that pack and does not affect the others. Each tick scripts get a time budget (30 ms by default): scripts that run longer are left to finish in the background, delaying script callbacks but never the server, and a script host stuck for 10 seconds is restarted.
 
 `console.log`/`warn`/`error` go to the server console, tagged with the pack name.
 

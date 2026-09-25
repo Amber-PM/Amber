@@ -1,50 +1,26 @@
-// Amber add-on script host: the pipe to the server.
-//
-// Messages are JSON, one per line. The server drives everything: it sends "init", then one "tick" per server
-// tick, "before" for cancellable events and "hook" for custom components. While handling one, scripts call into
-// the server synchronously (call) - the host writes the request and blocks on stdin until the reply arrives, so
-// script API calls behave exactly like the game's: synchronous, inside the tick. post() sends without waiting.
+import { parentPort, receiveMessageOnPort, workerData } from "node:worker_threads";
 
-import fs from "node:fs";
+export const runId = workerData.runId;
+const signalBuffer = new Int32Array(workerData.sab);
 
-const out = 1;
-const inp = 0;
-let buffer = Buffer.alloc(0);
-const chunk = Buffer.alloc(1 << 16);
 
 function writeLine(obj){
-	const line = JSON.stringify(obj) + "\n";
-	let data = Buffer.from(line, "utf8");
-	let offset = 0;
-	while(offset < data.length){
-		try{
-			offset += fs.writeSync(out, data, offset);
-		}catch(e){
-			if(e.code !== "EAGAIN") throw e;
-		}
-	}
+	parentPort.postMessage(obj);
 }
 
-/** Blocks until one full line arrives from the server. */
+/** Blocks until one full message arrives from the main thread. */
 export function readMessage(){
 	for(;;){
-		const nl = buffer.indexOf(10);
-		if(nl !== -1){
-			const line = buffer.subarray(0, nl).toString("utf8");
-			buffer = buffer.subarray(nl + 1);
-			if(line.length === 0) continue;
-			return JSON.parse(line);
+		const current = Atomics.load(signalBuffer, 0);
+		if(current === 0) {
+			Atomics.wait(signalBuffer, 0, 0);
 		}
-		let n;
-		try{
-			n = fs.readSync(inp, chunk, 0, chunk.length, null);
-		}catch(e){
-			if(e.code === "EAGAIN"){ continue; }
-			if(e.code === "EOF"){ process.exit(0); }
-			throw e;
+
+		const msg = receiveMessageOnPort(parentPort);
+		if(msg !== undefined){
+			Atomics.sub(signalBuffer, 0, 1);
+			return msg.message;
 		}
-		if(n === 0){ process.exit(0); }
-		buffer = Buffer.concat([buffer, chunk.subarray(0, n)]);
 	}
 }
 

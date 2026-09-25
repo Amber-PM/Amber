@@ -31,8 +31,18 @@ function insideHost(url){
 	try{ return fileURLToPath(url).startsWith(here + path.sep); }catch{ return false; }
 }
 
+function isInside(root, file){
+	const relative = path.relative(root, file);
+	return relative === "" ||
+		(
+			relative !== ".." &&
+			!relative.startsWith(".." + path.sep) &&
+			!path.isAbsolute(relative)
+		);
+}
+
 export function makeHooks(roots){
-	const packRoots = roots.map(r => path.resolve(r) + path.sep);
+	const packRoots = roots.map(r => path.resolve(r));
 	return {
 		resolve(specifier, context, next){
 			if(modules[specifier] !== undefined){
@@ -45,7 +55,11 @@ export function makeHooks(roots){
 			if(specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("/")){
 				let file = fileURLToPath(new URL(specifier, parent));
 				if(!/\.m?js$/.test(file)) file += ".js";
-				if(!packRoots.some(root => file.startsWith(root))){
+
+				const parentFile = fileURLToPath(parent);
+				const parentRoot = packRoots.find(root => isInside(root, parentFile));
+
+				if(!parentRoot || !isInside(parentRoot, file)){
 					throw new Error(`Script import ${specifier} leaves its behavior pack`);
 				}
 				return { url: pathToFileURL(file).href, shortCircuit: true, format: "module" };
