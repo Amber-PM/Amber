@@ -168,7 +168,7 @@ use const M_PI;
  *  - dynamic properties are shared: getDynamicProperty()/setDynamicProperty() see what scripts store.
  */
 final class ScriptHost{
-	private const SCRIPT_FILES = ["host.mjs", "ipc.mjs", "loader.mjs", "state.mjs", "server.mjs", "server-ui.mjs", "common.mjs", "math.mjs", "vanilla-data.mjs", "admin.mjs", "unsupported.mjs", "bridge.mjs",
+	private const SCRIPT_FILES = ["host.mjs", "worker.mjs", "ipc.mjs", "loader.mjs", "state.mjs", "server.mjs", "server-ui.mjs", "common.mjs", "math.mjs", "vanilla-data.mjs", "admin.mjs", "unsupported.mjs", "bridge.mjs",
 		//every name the game's modules export (generated from its script API metadata)
 		"server-names.mjs", "server-ui-names.mjs", "common-names.mjs", "server-admin-names.mjs", "server-net-names.mjs", "server-gametest-names.mjs", "debug-utilities-names.mjs", "diagnostics-names.mjs", "server-graphics-names.mjs", "vanilla-data-names.mjs",
 	];
@@ -200,10 +200,17 @@ final class ScriptHost{
 
 	private bool $busy = false;
 	private int $busySince = 0;
-	private bool $servicing = false;
+	private string $servicing = "";
 	private int $restarts = 0;
 	private bool $running = false;
 	private int $lastTick = 0;
+	private int $epoch = 0;
+	private int $nestedDepth = 0;
+	private const MAX_NESTED_DEPTH = 5;
+	private int $asyncWorkBudget = 100;
+
+	private string $writeBuffer = "";
+	private const MAX_WRITE_BUFFER = 16 * 1024 * 1024; // 16MB limit
 
 	/** @var array<string, array<string, mixed>> scope => key => value */
 	private array $dynamic = [];
@@ -243,8 +250,6 @@ final class ScriptHost{
 
 	public function isRunning() : bool{ return $this->running; }
 
-	// ---------------------------------------------------------------- process
-
 	/** Starts the Node.js host and runs the packs' startup code. Returns false when scripts cannot run. */
 	public function start() : bool{
 		if($this->packs === [] || $this->running){
@@ -264,7 +269,7 @@ final class ScriptHost{
 			return false;
 		}
 
-		$command = [$this->nodeBinary, "--permission", "--allow-fs-read=" . $hostDir . "/*"];
+		$command = [$this->nodeBinary, "--permission", "--allow-worker", "--allow-fs-read=" . $hostDir . "/*"];
 		foreach($this->packs as $pack){
 			$command[] = "--allow-fs-read=" . Path::canonicalize($pack->getPath()) . "/*";
 		}
@@ -277,11 +282,14 @@ final class ScriptHost{
 		}
 		$this->process = $process;
 		[$this->stdin, $this->stdout, $this->stderr] = [$pipes[0], $pipes[1], $pipes[2]];
+		stream_set_blocking($this->stdin, false);
 		stream_set_blocking($this->stdout, false);
 		stream_set_blocking($this->stderr, false);
 		$this->buffer = "";
+		$this->writeBuffer = "";
 		$this->running = true;
 		$this->busy = false;
+		$this->epoch++;
 
 		$packs = [];
 		foreach($this->packs as $pack){
@@ -289,7 +297,13 @@ final class ScriptHost{
 			if($entry === null){
 				continue;
 			}
-			$packs[] = ["name" => $pack->getName(), "root" => Path::canonicalize($pack->getPath()), "entry" => Path::canonicalize(Path::join($pack->getPath(), $entry)), "api" => $pack->getScriptApiMajor()];
+			$packs[] = [
+				"id" => $pack->getUuid(),
+				"name" => $pack->getName(),
+				"root" => Path::canonicalize($pack->getPath()),
+				"entry" => Path::canonicalize(Path::join($pack->getPath(), $entry)),
+				"api" => $pack->getScriptApiMajor(),
+			];
 		}
 		$this->write(["t" => "init", "packs" => $packs, "dims" => $this->dimensionList(), "tick" => $this->server->getTick()]);
 		//pack startup code may take a while (big packs import hundreds of modules)
@@ -334,9 +348,16 @@ final class ScriptHost{
 		$this->drainStderr();
 		$this->logger->error("Add-on scripts: the script host stopped ($why)");
 		$this->stop();
+		$this->subscriptions = [];
+		$this->queue = [];
+		$this->customComponents = [];
+		$this->scriptFunctions = [];
+		$this->customCommands = [];
+		$this->busy = false;
+		$this->nestedDepth = 0;
+		$this->servicing = "";
 		if(++$this->restarts <= 3){
 			$this->logger->info("Add-on scripts: restarting the script host (attempt {$this->restarts} of 3)");
-			$this->subscriptions = [];
 			$this->start();
 		}else{
 			$this->logger->error("Add-on scripts: giving up after 3 restarts; scripts are off until the server restarts");
@@ -386,23 +407,29 @@ final class ScriptHost{
 		return true;
 	}
 
-	// ---------------------------------------------------------------- pipe
+	private function flushWriteBuffer() : void{
+		if($this->stdin === null || $this->writeBuffer === ""){
+			return;
+		}
+		$n = @fwrite($this->stdin, $this->writeBuffer);
+		if($n === false){
+			throw new \RuntimeException("script host pipe closed");
+		}
+		if($n > 0){
+			$this->writeBuffer = substr($this->writeBuffer, $n);
+		}
+	}
 
-	/** @param mixed[] $message */
 	private function write(array $message) : void{
 		if($this->stdin === null){
 			return;
 		}
 		$line = json_encode($message, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-		$written = 0;
-		$length = strlen($line);
-		while($written < $length){
-			$n = @fwrite($this->stdin, substr($line, $written));
-			if($n === false || $n === 0){
-				throw new \RuntimeException("script host pipe closed");
-			}
-			$written += $n;
+		$this->writeBuffer .= $line;
+		if(strlen($this->writeBuffer) > self::MAX_WRITE_BUFFER){
+			throw new \RuntimeException("script host write buffer exceeded (script hang?)");
 		}
+		$this->flushWriteBuffer();
 	}
 
 	/**
@@ -411,19 +438,33 @@ final class ScriptHost{
 	 * @param list<string> $types
 	 * @return mixed[]|null the message, or null on timeout
 	 */
-	private function pumpUntil(array $types, int $timeoutMs) : ?array{
+	private function pumpUntil(array $types, int $timeoutMs, ?int $reqId = null) : ?array{
 		$deadline = hrtime(true) + $timeoutMs * 1_000_000;
+		$asyncOps = 0;
 		while(true){
+			if(hrtime(true) >= $deadline){
+				return null;
+			}
 			$message = $this->readMessage($deadline);
 			if($message === null){
 				return null;
 			}
 			$type = $message["t"] ?? "";
+			if($type === "done"){
+				$this->busy = false;
+			}
+			if(in_array($type, $types, true)){
+				if($reqId !== null && isset($message["reqId"]) && $message["reqId"] !== $reqId){
+					$this->logger->debug("[Scripts] Ignoring late response for reqId " . $message["reqId"]);
+					continue;
+				}
+				return $message;
+			}
 			if($type === "c" || $type === "p"){
 				$op = (string) ($message["op"] ?? "");
 				$args = is_array($message["a"] ?? null) ? $message["a"] : [];
 				$wasServicing = $this->servicing;
-				$this->servicing = true;
+				$this->servicing = $type;
 				try{
 					$value = $this->handle($op, $args);
 					if($type === "c"){
@@ -438,13 +479,13 @@ final class ScriptHost{
 				}finally{
 					$this->servicing = $wasServicing;
 				}
+				if($type === "p"){
+					$asyncOps++;
+					if(hrtime(true) >= $deadline || $asyncOps >= $this->asyncWorkBudget){
+						return null;
+					}
+				}
 				continue;
-			}
-			if($type === "done"){
-				$this->busy = false;
-			}
-			if(in_array($type, $types, true)){
-				return $message;
 			}
 		}
 	}
@@ -452,6 +493,9 @@ final class ScriptHost{
 	/** @return mixed[]|null */
 	private function readMessage(int $deadline) : ?array{
 		while(true){
+			if(hrtime(true) >= $deadline){
+				return null;
+			}
 			$nl = strpos($this->buffer, "\n");
 			if($nl !== false){
 				$line = substr($this->buffer, 0, $nl);
@@ -474,12 +518,16 @@ final class ScriptHost{
 				return null;
 			}
 			$read = [$this->stdout];
-			$write = $except = null;
+			$write = $this->writeBuffer !== "" && $this->stdin !== null ? [$this->stdin] : null;
+			$except = null;
 			$ready = @stream_select($read, $write, $except, 0, (int) min(1_000_000, max(0, $remaining / 1000)));
 			if($ready === false){
 				throw new \RuntimeException("script host pipe failed");
 			}
-			if($ready > 0){
+			if($write !== null && count($write) > 0){
+				$this->flushWriteBuffer();
+			}
+			if($read !== null && count($read) > 0){
 				$chunk = fread($this->stdout, 1 << 16);
 				if($chunk === false || ($chunk === "" && feof($this->stdout))){
 					throw new \RuntimeException("script host exited");
@@ -505,8 +553,6 @@ final class ScriptHost{
 			}
 		}
 	}
-
-	// ---------------------------------------------------------------- server side entry points
 
 	public function tick(int $currentTick) : void{
 		if(!$this->running){
@@ -606,10 +652,15 @@ final class ScriptHost{
 	 * @return mixed[] {"cancel": bool, ...changes}
 	 */
 	public function before(string $name, array $data) : array{
-		if(!$this->running || !isset($this->subscriptions["before:$name"]) || $this->servicing){
+		if(!$this->running || !isset($this->subscriptions["before:$name"]) || $this->nestedDepth >= self::MAX_NESTED_DEPTH){
 			return ["cancel" => false];
 		}
-		return $this->syncRequest(["t" => "before", "name" => $name, "d" => $data]) ?? ["cancel" => false];
+		$this->nestedDepth++;
+		try{
+			return $this->syncRequest(["t" => "before", "name" => $name, "d" => $data]) ?? ["cancel" => false];
+		}finally{
+			$this->nestedDepth--;
+		}
 	}
 
 	/**
@@ -619,7 +670,7 @@ final class ScriptHost{
 	 * @param mixed[]      $data
 	 */
 	public function hook(string $kind, array $names, string $hook, array $data) : bool{
-		if(!$this->running || $this->servicing){
+		if(!$this->running || $this->nestedDepth >= self::MAX_NESTED_DEPTH){
 			return false;
 		}
 		$registered = [];
@@ -633,35 +684,37 @@ final class ScriptHost{
 		if($registered === []){
 			return false;
 		}
-		$reply = $this->syncRequest(["t" => "hook", "kind" => $kind, "names" => $registered, "hook" => $hook, "d" => $data]);
-		return (bool) ($reply["cancel"] ?? false);
+		$this->nestedDepth++;
+		try{
+			$reply = $this->syncRequest(["t" => "hook", "kind" => $kind, "names" => $registered, "hook" => $hook, "d" => $data]);
+			return (bool) ($reply["cancel"] ?? false);
+		}finally{
+			$this->nestedDepth--;
+		}
 	}
 
 	/**
 	 * @param mixed[] $message
 	 * @return mixed[]|null
 	 */
+	private int $nextReqId = 1;
+
 	private function syncRequest(array $message) : ?array{
 		try{
 			//while serving a script's call (a command it ran, say), the script is blocked waiting for us: the request
 			//goes straight in and the script handles it as a nested message. Otherwise let an overrunning tick end first.
-			if(!$this->servicing && $this->busy && $this->pumpUntil(["done"], $this->tickBudgetMs) === null){
+			if($this->servicing === "" && $this->busy && $this->pumpUntil(["done"], $this->tickBudgetMs) === null){
 				return null;
 			}
+			$reqId = $this->nextReqId++;
+			$message["reqId"] = $reqId;
 			$this->write($message);
-			$reply = $this->pumpUntil(["bres"], max(50, $this->tickBudgetMs * 2));
-			if($reply === null){
-				$this->busy = true;
-				$this->busySince = $this->server->getTick();
-			}
-			return $reply;
+			return $this->pumpUntil(["bres"], max(50, $this->tickBudgetMs * 2), $reqId);
 		}catch(\RuntimeException $e){
 			$this->crashed($e->getMessage());
 			return null;
 		}
 	}
-
-	// ---------------------------------------------------------------- plugin API
 
 	/**
 	 * Makes a PHP function callable from scripts: plugins.call(name, ...args) in @amber/plugins.
@@ -716,8 +769,6 @@ final class ScriptHost{
 		$reply = $this->syncRequest(["t" => "command", "name" => $name, "player" => $player?->getId(), "args" => $args]);
 		return is_array($reply["v"] ?? null) ? ($reply["v"]["message"] ?? null) : null;
 	}
-
-	// ---------------------------------------------------------------- operations
 
 	/** @param mixed[] $a */
 	private function handle(string $op, array $a) : mixed{
@@ -941,12 +992,6 @@ final class ScriptHost{
 					$e->setGamemode($mode);
 				}
 				return null;
-			case "op":
-				$e = $this->entity($a["id"] ?? null);
-				if($e instanceof Player){
-					(bool) $a["v"] ? $this->server->addOp($e->getName()) : $this->server->removeOp($e->getName());
-				}
-				return null;
 			case "xp":
 				$e = $this->entity($a["id"] ?? null);
 				if($e instanceof Human){
@@ -1033,14 +1078,14 @@ final class ScriptHost{
 				$this->setEquipment($this->entity($a["id"] ?? null), (string) ($a["slot"] ?? "Mainhand"), is_array($a["item"] ?? null) ? $this->wireToItem($a["item"]) : null);
 				return null;
 			case "dp":
-				return $this->readDynamic((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["key"] ?? ""));
+				return $this->readDynamic((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["key"] ?? ""), (string) ($a["pack"] ?? ""));
 			case "sdp":
-				$this->writeDynamic((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["key"] ?? ""), $a["v"] ?? null);
+				$this->writeDynamic((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["key"] ?? ""), $a["v"] ?? null, (string) ($a["pack"] ?? ""));
 				return null;
 			case "dpids":
-				return array_keys($this->scope((string) ($a["scope"] ?? self::DEFAULT_SCOPE)));
+				return $this->dynamicPropertyIds((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["pack"] ?? ""));
 			case "dpclear":
-				$this->clearScope((string) ($a["scope"] ?? self::DEFAULT_SCOPE));
+				$this->clearScope((string) ($a["scope"] ?? self::DEFAULT_SCOPE), (string) ($a["pack"] ?? ""));
 				return null;
 			case "time":
 				$world = $this->server->getWorldManager()->getDefaultWorld();
@@ -1151,7 +1196,7 @@ final class ScriptHost{
 			case "form":
 				$player = $this->entity($a["id"] ?? null);
 				if($player instanceof Player && is_array($a["form"] ?? null)){
-					$player->sendForm(new ScriptForm($a["form"], (int) $a["fid"], $this));
+					$player->sendForm(new ScriptForm($a["form"], (int) $a["fid"], $this->epoch, $this));
 				}else{
 					$this->queueEvent("__form", ["fid" => (int) ($a["fid"] ?? 0), "data" => null, "reason" => "UserBusy"]);
 				}
@@ -1310,8 +1355,6 @@ final class ScriptHost{
 		}
 		throw new \InvalidArgumentException("unknown operation $op");
 	}
-
-	// ---------------------------------------------------------------- entities
 
 	private function entity(mixed $id) : ?Entity{
 		if(!is_numeric($id)){
@@ -1607,8 +1650,6 @@ final class ScriptHost{
 		return $entity;
 	}
 
-	// ---------------------------------------------------------------- blocks
-
 	/** @return array{type: string, states: array<string, mixed>, solid: bool} */
 	public static function blockWire(Block $block) : array{
 		try{
@@ -1903,8 +1944,6 @@ final class ScriptHost{
 		return $hits;
 	}
 
-	// ---------------------------------------------------------------- effects, sounds, particles
-
 	/**
 	 * @param list<mixed[]>|null $vars MolangVariableMap entries
 	 * @param list<mixed>|null   $ids  players to show it to (all players in the world when null)
@@ -2020,8 +2059,6 @@ final class ScriptHost{
 		}
 		return "";
 	}
-
-	// ---------------------------------------------------------------- items and inventories
 
 	/** @return array<string, mixed> */
 	public static function itemWire(Item $item) : array{
@@ -2140,8 +2177,6 @@ final class ScriptHost{
 		};
 	}
 
-	// ---------------------------------------------------------------- dimensions
-
 	/** @return list<array{id: string, min: int, max: int}> */
 	private function dimensionList() : array{
 		$list = [];
@@ -2207,8 +2242,6 @@ final class ScriptHost{
 		};
 	}
 
-	// ---------------------------------------------------------------- dynamic properties
-
 	private function dynamicFile() : string{
 		return Path::join($this->runtimeDir, "dynamic_properties.json");
 	}
@@ -2254,17 +2287,35 @@ final class ScriptHost{
 		return $e === null ? [] : ($this->entityDynamic[$e] ?? []);
 	}
 
-	private function readDynamic(string $scope, string $key) : mixed{
-		return $this->scope($scope)[$key] ?? null;
+	public function getEntityDynamic(Entity $entity) : array{
+		return $this->entityDynamic[$entity] ?? [];
 	}
 
-	private function writeDynamic(string $scope, string $key, mixed $value) : void{
+	public function setEntityDynamic(Entity $entity, array $values) : void{
+		if($values !== []){
+			$this->entityDynamic[$entity] = $values;
+		}else{
+			unset($this->entityDynamic[$entity]);
+		}
+	}
+
+	private function dynamicStorageKey(string $key, string $pack) : string{
+		return $pack !== "" ? "$pack:$key" : $key;
+	}
+
+	private function readDynamic(string $scope, string $key, string $pack = "") : mixed{
+		$storageKey = $this->dynamicStorageKey($key, $pack);
+		return $this->scope($scope)[$storageKey] ?? null;
+	}
+
+	private function writeDynamic(string $scope, string $key, mixed $value, string $pack = "") : void{
+		$storageKey = $this->dynamicStorageKey($key, $pack);
 		$scopeKey = $this->scopeKey($scope);
 		if($scopeKey !== null){
 			if($value === null){
-				unset($this->dynamic[$scopeKey][$key]);
+				unset($this->dynamic[$scopeKey][$storageKey]);
 			}else{
-				$this->dynamic[$scopeKey][$key] = $value;
+				$this->dynamic[$scopeKey][$storageKey] = $value;
 			}
 			$this->dynamicDirty = true;
 			return;
@@ -2273,25 +2324,62 @@ final class ScriptHost{
 		if($e !== null){
 			$values = $this->entityDynamic[$e] ?? [];
 			if($value === null){
-				unset($values[$key]);
+				unset($values[$storageKey]);
 			}else{
-				$values[$key] = $value;
+				$values[$storageKey] = $value;
 			}
 			$this->entityDynamic[$e] = $values;
 		}
 	}
 
-	private function clearScope(string $scope) : void{
+	/** @return list<string> */
+	private function dynamicPropertyIds(string $scope, string $pack = "") : array{
+		$all = array_keys($this->scope($scope));
+		if($pack === ""){
+			return $all;
+		}
+		$prefix = "$pack:";
+		$prefixLen = strlen($prefix);
+		$ids = [];
+		foreach($all as $key){
+			if(str_starts_with($key, $prefix)){
+				$ids[] = substr($key, $prefixLen);
+			}
+		}
+		return $ids;
+	}
+
+	private function clearScope(string $scope, string $pack = "") : void{
 		$scopeKey = $this->scopeKey($scope);
 		if($scopeKey !== null){
-			$tags = $this->dynamic[$scopeKey]["__tags"] ?? null;
-			$this->dynamic[$scopeKey] = $tags === null ? [] : ["__tags" => $tags];
+			if($pack === ""){
+				$tags = $this->dynamic[$scopeKey]["__tags"] ?? null;
+				$this->dynamic[$scopeKey] = $tags === null ? [] : ["__tags" => $tags];
+			}else{
+				$prefix = "$pack:";
+				foreach(array_keys($this->dynamic[$scopeKey] ?? []) as $k){
+					if(str_starts_with($k, $prefix)){
+						unset($this->dynamic[$scopeKey][$k]);
+					}
+				}
+			}
 			$this->dynamicDirty = true;
 			return;
 		}
 		$e = $this->entity($scope);
 		if($e !== null){
-			$this->entityDynamic[$e] = [];
+			if($pack === ""){
+				$this->entityDynamic[$e] = [];
+			}else{
+				$prefix = "$pack:";
+				$values = $this->entityDynamic[$e] ?? [];
+				foreach(array_keys($values) as $k){
+					if(str_starts_with($k, $prefix)){
+						unset($values[$k]);
+					}
+				}
+				$this->entityDynamic[$e] = $values;
+			}
 		}
 	}
 
@@ -2320,8 +2408,10 @@ final class ScriptHost{
 	}
 
 	/** @internal answers from ScriptForm */
-	public function formResponse(int $formId, mixed $data) : void{
-		$this->queueEvent("__form", ["fid" => $formId, "data" => $data]);
+	public function formResponse(int $formId, mixed $data, int $epoch) : void{
+		if($this->epoch === $epoch){
+			$this->queueEvent("__form", ["fid" => $formId, "data" => $data]);
+		}
 	}
 
 	private static function bare(string $id) : string{
