@@ -20,7 +20,8 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 ### Key Features
 * 🌐 **Dynamic Multi-Version Support** - Concurrently supports Minecraft: Bedrock protocols from **589 to 2193** (v1.20.0 to v1.26.50) out of the box.
 * ⚙️ **Protocol-Isolated Dictionaries & Registries** - Utilizes version-aware mappings for block state NBTs, crafting recipes, and creative inventories using isolated instances to prevent memory cross-contamination.
-* 📦 **Bedrock Add-on Loader** - Loads `.mcaddon` / `.mcpack` add-ons from the `addons/` folder: resource packs, custom items, blocks, entities and recipes, sent to every client from v1.21.0 in the format that version reads. See [ADDONS.md](ADDONS.md).
+* 📦 **Bedrock Add-ons, fully run** - Drop `.mcaddon` / `.mcpack` add-ons in `addons/`: custom items, blocks and entities, mob AI with pathfinding, behavior pack **scripts** (`@minecraft/server` and `server-ui`), loot tables, spawn rules, recipes including brewing, and functions. Every client from v1.21.0 gets the content in the format its version reads. See [ADDONS.md](ADDONS.md).
+* 🔗 **Add-ons + Plugins together** - Add-ons and PHP plugins run side by side and talk to each other: plugins see add-on events as normal events and drive add-on mobs, scripts call plugin functions and commands, plugins call script functions, and both share script events and dynamic properties.
 * 🛠️ **Native Anvil & Repair System** - Provides built-in support for anvil transactions (`AnvilTransaction`), item renaming, item repairing, and enchantment combining (using customizable cost calculations).
 * 🎯 **Custom Event Dispatchers** - Exposes developer-focused events such as `PlayerPressurePlateTriggerEvent`, `SessionDisconnectEvent`, and `ItemEntityDropEvent` for granular event manipulation.
 * 🧩 **Extensible Plugin API** - Keeps full compatibility with the official PocketMine-MP v5 plugin API, enabling most standard plugins to run without modifications.
@@ -101,7 +102,36 @@ The system automatically infers parsers based on the parameter types of your clo
 | `#[DynamicEnum(ProviderClass::class)]` | Dynamically calculated option enums | `DynamicEnumArgumentParser` |
 
 ## Bedrock Add-ons
-Drop a Bedrock add-on (`.mcaddon`, `.mcpack`, `.zip` or an unpacked pack folder) into the server's `addons/` folder and restart. Its resource pack is sent to players, and its custom items, blocks, entities and recipes become real server content, usable from `/addons` and from plugins through `Server::getAddonManager()`. Add-ons written for Minecraft 1.21.0 or later are supported. Behavior-pack scripts are not run. The full guide, including what is supported and the plugin API, is in [ADDONS.md](ADDONS.md).
+AmberPM runs Minecraft: Bedrock Edition add-ons, not just their content. Put an add-on in the server's `addons/` folder and restart:
+
+| What the add-on has | What happens |
+|---|---|
+| Resource pack | Sent to players when they join |
+| Items, blocks, entities | Real server content: creative inventory, `/give`, placed and saved with the world |
+| Entity behavior | Component groups, events, properties, sensors, timers, taming, breeding, projectiles... |
+| Mob AI | Wandering, following, fleeing, fighting, shooting, with A* pathfinding |
+| Scripts (`@minecraft/server`) | Run in a sandboxed Node.js host, in step with the server tick |
+| Loot tables, spawn rules | Drops, and natural spawning around players |
+| Recipes, functions | Crafting, furnaces, stonecutter, brewing; `.mcfunction` files |
+| Riding, trading, inventories | Steerable mounts, leads, trade screens, mob inventories and equipment, boss bars |
+| World | Game rules, weather, scoreboards, ticking areas, structures, camera presets and fog |
+
+**Requirements:** nothing for most add-ons. Add-ons with scripts need [Node.js](https://nodejs.org) 22.15 or newer on the server machine; without it, everything except the scripts still works.
+
+**Plugins and add-ons work together.** A plugin can listen to an add-on's entity events, trigger them, add mob behaviors, and expose PHP functions that scripts call with `plugins.call()`. Scripts can run plugin commands. Both sides share script events and dynamic properties:
+
+```php
+$addons = $this->getServer()->getAddonManager();
+$addons->getScriptHost()->exposeFunction("economy:balance", fn(string $player) : int => $this->balances[$player] ?? 0);
+$addons->createEntity("example:wisp", $player->getLocation())?->spawnToAll();
+```
+
+```js
+import { plugins } from "@amber/plugins";
+const coins = plugins.call("economy:balance", player.name);
+```
+
+It's built for live servers: mobs far from players think once a second, pathfinding is budgeted per tick, and `/timings` shows an **Add-ons** section. The full guide covers what's supported, configuration (`addons/config.yml`), the plugin API, performance and troubleshooting: **[ADDONS.md](ADDONS.md)**.
 
 ## Developing Plugins
 AmberPM maintains compatibility with the PocketMine-MP v5 API. Refer to the following resources:

@@ -27,24 +27,41 @@ use pocketmine\addon\block\AddonBlock;
 use pocketmine\addon\block\AddonBlockDefinition;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\AddonEntityDefinition;
+use pocketmine\addon\entity\ai\MobBrain;
+use pocketmine\addon\entity\trade\TradeTable;
 use pocketmine\addon\item\AddonArmorItem;
 use pocketmine\addon\item\AddonDurableItem;
 use pocketmine\addon\item\AddonFoodItem;
 use pocketmine\addon\item\AddonItem;
 use pocketmine\addon\item\AddonItemDefinition;
+use pocketmine\addon\loot\LootTables;
+use pocketmine\addon\script\BridgeCommand;
+use pocketmine\addon\script\CommandBridge;
+use pocketmine\addon\script\ScriptHost;
+use pocketmine\addon\spawn\AddonSpawner;
+use pocketmine\addon\spawn\SpawnRule;
+use pocketmine\addon\world\AddonScoreboard;
+use pocketmine\addon\world\AddonStructures;
+use pocketmine\addon\world\AddonTickingAreas;
+use pocketmine\addon\world\AddonWorldRules;
 use pocketmine\block\Block;
-use pocketmine\crafting\CraftingManager;
 use pocketmine\block\BlockBreakInfo;
 use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockToolType;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\camera\preset\CameraPresetBuilder;
+use pocketmine\camera\preset\CameraPresetRegistry;
+use pocketmine\command\Command;
+use pocketmine\command\CommandSender;
+use pocketmine\crafting\CraftingManager;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\convert\BlockStateReader;
 use pocketmine\data\bedrock\block\convert\BlockStateWriter;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
+use pocketmine\entity\Entity;
 use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\Location;
@@ -55,22 +72,34 @@ use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
+use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
+use pocketmine\network\mcpe\protocol\SyncActorPropertyPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPaletteEntry;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\network\mcpe\protocol\types\ItemTypeEntry;
 use pocketmine\player\Player;
+use pocketmine\plugin\DiskResourceProvider;
+use pocketmine\plugin\PharPluginLoader;
+use pocketmine\plugin\PluginDescription;
 use pocketmine\resourcepacks\ResourcePackManager;
 use pocketmine\resourcepacks\ZippedResourcePack;
 use pocketmine\Server;
+use pocketmine\utils\Config;
 use pocketmine\utils\Filesystem;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
 use pocketmine\world\World;
 use Symfony\Component\Filesystem\Path;
+use function array_filter;
+use function array_key_exists;
+use function array_keys;
+use function array_map;
+use function array_search;
 use function array_values;
 use function basename;
 use function count;
@@ -80,19 +109,31 @@ use function hash_file;
 use function hash_final;
 use function hash_init;
 use function hash_update;
+use function implode;
 use function in_array;
+use function is_array;
 use function is_bool;
 use function is_dir;
 use function is_file;
 use function is_int;
+use function is_string;
 use function ksort;
+use function max;
 use function mkdir;
+use function pathinfo;
 use function scandir;
 use function sha1_file;
 use function sort;
+use function str_contains;
+use function str_ends_with;
 use function str_replace;
+use function str_starts_with;
+use function strcmp;
 use function strtolower;
+use function trim;
+use function ucfirst;
 use function usort;
+use const PATHINFO_EXTENSION;
 
 /**
  * Loads Bedrock add-ons (.mcaddon, .mcpack, .zip or unpacked folders) from the server's addons/ directory.
@@ -102,8 +143,12 @@ use function usort;
  *    learns about them through the item registry, the StartGamePacket block palette and the actor identifier
  *    list - for every protocol the server accepts.
  *
- * What a behavior pack describes but the server does not run (scripts, entity AI, loot tables, recipes,
- * spawn rules) is reported when the add-on loads. Plugins can act on add-on content through the API below.
+ * The rest of a behavior pack runs too: entity component groups, events and AI (AddonEntity, MobBrain), loot
+ * tables, spawn rules (AddonSpawner), recipes, functions, and scripts (ScriptHost, on Node.js). What cannot
+ * run is reported when the add-on loads.
+ *
+ * Add-ons and plugins share one server: plugins see add-on events as normal server events, drive add-on
+ * entities and scripts through this API, and scripts can call plugin functions and commands.
  */
 final class AddonManager{
 	/** First runtime ID for custom items. Kept well clear of vanilla IDs (~2100 as of 1.26). */
@@ -150,6 +195,27 @@ final class AddonManager{
 	/** @var array<string, list<\Closure>> */
 	private array $blockInteractHandlers = [];
 
+	/** @var array<string, list<\Closure>> */
+	private array $entityInteractHandlers = [];
+	/** @var list<string> behavior pack roots, for loot tables and functions */
+	private array $behaviorRoots = [];
+	/** @var list<AddonPack> behavior packs with a script module */
+	private array $scriptPacks = [];
+	/** @var list<SpawnRule> */
+	private array $spawnRules = [];
+	private ?LootTables $lootTables = null;
+	private ?ScriptHost $scriptHost = null;
+	private ?CommandBridge $commandBridge = null;
+	private ?AddonWorldRules $worldRules = null;
+	private ?AddonTickingAreas $tickingAreas = null;
+	private ?AddonScoreboard $scoreboard = null;
+	private ?AddonStructures $structures = null;
+	private ?AddonSpawner $spawner = null;
+	private ?AddonRuntime $runtime = null;
+	private ?Config $config = null;
+	/** @var array<int, true>|null */
+	private ?array $tickingStates = null;
+
 	/** @var list<ItemTypeEntry>|null */
 	private ?array $itemTypeEntries = null;
 	/** @var list<BlockStateData>|null */
@@ -174,6 +240,7 @@ final class AddonManager{
 	 * TypeConverter is created, so the item and block tables include add-on content.
 	 */
 	public function load() : void{
+		AddonTimings::init();
 		if(!is_dir($this->path)){
 			@mkdir($this->path, 0777, true);
 			Filesystem::safeFilePutContents(Path::join($this->path, "README.txt"),
@@ -217,6 +284,29 @@ final class AddonManager{
 		$this->assignBlockIds();
 		$this->registerEntities();
 		$this->reportUnsentComponents();
+		$this->reportEntityFeatures();
+		$this->lootTables = new LootTables($this->behaviorRoots, $this->logger);
+
+		$runtimeDir = Path::join($this->path, ".runtime");
+		@mkdir($runtimeDir, 0777, true);
+		$this->worldRules = new AddonWorldRules($this->server, Path::join($runtimeDir, "gamerules.json"));
+		$this->tickingAreas = new AddonTickingAreas($this->server, Path::join($runtimeDir, "tickingareas.json"));
+		$this->scoreboard = new AddonScoreboard($this->server, Path::join($runtimeDir, "scoreboard.json"));
+		$this->structures = new AddonStructures($this->behaviorRoots, $this->logger);
+		$this->registerCameraPresets();
+
+		//created now, so plugins can expose functions to scripts from onEnable(); Node.js starts in start()
+		$scripting = (array) $this->config()->get("scripting", []);
+		$this->scriptHost = new ScriptHost(
+			$this->server,
+			$this,
+			(bool) ($scripting["enabled"] ?? true) ? $this->scriptPacks : [],
+			Path::join($this->path, ".runtime"),
+			(string) ($scripting["node"] ?? "node"),
+			max(5, (int) ($scripting["tick-budget-ms"] ?? 30)),
+			max(64, (int) ($scripting["memory-mb"] ?? 256)),
+			$this->logger
+		);
 
 		$resourcePacks = count(array_filter($this->packs, fn(AddonPack $p) => $p->isResourcePack()));
 		if($this->packs !== []){
@@ -456,14 +546,17 @@ final class AddonManager{
 	}
 
 	private function readBehaviorPack(AddonPack $pack) : void{
-		$unsupported = [];
-		foreach(["scripts" => "scripts", "loot_tables" => "loot tables", "spawn_rules" => "spawn rules", "trading" => "trades", "functions" => "functions"] as $dir => $label){
-			if(is_dir(Path::join($pack->getPath(), $dir))){
-				$unsupported[] = $label;
-			}
+		$this->behaviorRoots[] = $pack->getPath();
+		if($pack->getScriptEntry() !== null){
+			$this->scriptPacks[] = $pack;
 		}
-		if($unsupported !== []){
-			$this->logger->warning("Add-on " . $pack->getName() . ": " . implode(", ", $unsupported) . " are not run by the server (items, blocks and entities are)");
+		foreach($this->jsonFiles(Path::join($pack->getPath(), "spawn_rules")) as $file){
+			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
+			try{
+				$this->spawnRules[] = SpawnRule::fromJson(AddonJson::decode((string) file_get_contents($file), $relative), $relative);
+			}catch(AddonException $e){
+				$this->logger->error("Skipped spawn rules " . $e->getMessage());
+			}
 		}
 
 		$vanillaOverrides = [];
@@ -729,7 +822,7 @@ final class AddonManager{
 		}
 		$this->recipeCount = $recipes->getRegisteredCount();
 		$this->logger->info("Registered " . $recipes->getRegisteredCount() . " add-on recipe(s)" . ($recipes->getUnsupportedCount() > 0
-			? ", skipped " . $recipes->getUnsupportedCount() . " of a type the server does not support (brewing, smithing transforms, other stations)" : ""));
+			? ", skipped " . $recipes->getUnsupportedCount() . " of a type the server does not support (smithing transforms, custom potion types, other stations)" : ""));
 	}
 
 	public function getRecipeCount() : int{ return $this->recipeCount; }
@@ -796,6 +889,344 @@ final class AddonManager{
 		return $entries;
 	}
 
+	// ---------------------------------------------------------------- runtime
+
+	/** addons/config.yml, created with defaults on first run. */
+	private function config() : Config{
+		if($this->config === null){
+			@mkdir($this->path, 0777, true);
+			$this->config = new Config(Path::join($this->path, "config.yml"), Config::YAML, [
+				"scripting" => ["enabled" => true, "node" => "node", "tick-budget-ms" => 30, "memory-mb" => 256],
+				"spawning" => ["enabled" => true, "interval-ticks" => 40, "worlds" => [], "caps" => ["monster" => 10, "animal" => 6, "water_animal" => 4, "ambient" => 3, "default" => 5]],
+			]);
+		}
+		return $this->config;
+	}
+
+	/**
+	 * Starts what runs alongside the world: the event bridge, natural spawning and scripts. Called by the server
+	 * once worlds are loaded and plugins are enabled, so scripts see the finished world.
+	 */
+	public function start() : void{
+		if($this->entityDefinitions === [] && $this->scriptPacks === [] && $this->blocks === [] && $this->items === []){
+			return;
+		}
+		$runtimeDir = Path::join($this->path, ".runtime");
+		@mkdir($runtimeDir, 0777, true);
+		try{
+			$this->runtime = new AddonRuntime(
+				new PharPluginLoader($this->server->getLoader()),
+				$this->server,
+				//plugin descriptions may not name a class in the pocketmine namespace; this one is never loaded by name
+				new PluginDescription(["name" => "AmberAddons", "version" => "1.0.0", "main" => "amber\\addons\\AddonRuntime", "api" => "5.0.0"]),
+				$runtimeDir,
+				$this->path,
+				new DiskResourceProvider($runtimeDir)
+			);
+			$this->runtime->attach($this);
+			$this->runtime->onEnableStateChange(true);
+		}catch(\Throwable $e){
+			$this->logger->error("Add-on runtime events could not be registered: " . $e->getMessage());
+			$this->logger->logException($e);
+		}
+
+		$config = $this->config();
+		$spawning = (array) $config->get("spawning", []);
+		if((bool) ($spawning["enabled"] ?? true) && $this->spawnRules !== []){
+			$caps = [];
+			foreach((array) ($spawning["caps"] ?? []) as $category => $cap){
+				$caps[(string) $category] = (int) $cap;
+			}
+			$this->spawner = new AddonSpawner($this->server, $this, $this->spawnRules, max(1, (int) ($spawning["interval-ticks"] ?? 40)), $caps, array_map("strval", (array) ($spawning["worlds"] ?? [])));
+			if($this->spawner->hasRules()){
+				$this->logger->info("Natural spawning on for " . count($this->spawnRules) . " add-on spawn rule(s)");
+			}
+		}
+
+		//the vanilla commands add-ons use, for players and operators too (names nobody else has)
+		$map = $this->server->getCommandMap();
+		foreach(CommandBridge::PROVIDED as $name => $description){
+			if($map->getCommand($name) === null){
+				$map->register("addons", new BridgeCommand($name, $description, $this->getCommandBridge()));
+			}
+		}
+		foreach($this->server->getWorldManager()->getWorlds() as $world){
+			$this->getWorldRules()->applyToWorld($world);
+			$this->getTickingAreas()->applyToWorld($world);
+		}
+		$this->getWorldRules()->beforeWeatherChange(function(World $world, string $old, string $new, int $ticks) : bool{
+			$host = $this->scriptHost;
+			return $host !== null && ($host->before("weatherChange", ["dim" => $host->dimensionId($world), "previous" => ucfirst($old), "new" => ucfirst($new), "duration" => $ticks])["cancel"] ?? false) === true;
+		});
+		$this->getWorldRules()->onRuleChange(function(string $rule, bool|int $value) : void{
+			$this->scriptHost?->queueEvent("gameRuleChange", ["rule" => $rule, "value" => $value]);
+		});
+		$this->getWorldRules()->onWeatherChange(function(World $world, string $old, string $new) : void{
+			$host = $this->scriptHost;
+			if($host !== null && $host->isRunning()){
+				$host->queueEvent("weatherChange", ["dim" => $host->dimensionId($world), "previous" => ucfirst($old), "new" => ucfirst($new)]);
+			}
+		});
+
+		$this->scriptHost?->start();
+	}
+
+	/**
+	 * Custom camera presets from behavior packs (cameras/presets/*.json), registered before the preset registry is
+	 * frozen at startup so /camera and scripts can use them.
+	 */
+	private function registerCameraPresets() : void{
+		$registry = CameraPresetRegistry::getInstance();
+		foreach($this->behaviorRoots as $root){
+			foreach($this->jsonFiles(Path::join($root, "cameras", "presets")) as $file){
+				try{
+					$json = AddonJson::decode((string) file_get_contents($file), $file);
+					$preset = $json["minecraft:camera_preset"] ?? null;
+					if(!is_array($preset) || !is_string($preset["identifier"] ?? null) || $registry->isRegistered($preset["identifier"]) || $registry->isFrozen()){
+						continue;
+					}
+					$builder = CameraPresetBuilder::create($preset["identifier"], is_string($preset["inherit_from"] ?? null) ? $preset["inherit_from"] : "minecraft:free");
+					if(isset($preset["pos_x"]) || isset($preset["pos_y"]) || isset($preset["pos_z"])){
+						$builder->setPosition(new Vector3((float) ($preset["pos_x"] ?? 0), (float) ($preset["pos_y"] ?? 0), (float) ($preset["pos_z"] ?? 0)));
+					}
+					if(isset($preset["rot_x"]) || isset($preset["rot_y"])){
+						$builder->setRotation(isset($preset["rot_x"]) ? (float) $preset["rot_x"] : null, isset($preset["rot_y"]) ? (float) $preset["rot_y"] : null);
+					}
+					if(isset($preset["player_effects"])){
+						$builder->setPlayerEffects((bool) $preset["player_effects"]);
+					}
+					$registry->register($builder->build());
+				}catch(\Throwable $e){
+					$this->logger->warning("Add-on camera preset $file could not be registered: " . $e->getMessage());
+				}
+			}
+		}
+	}
+
+	public function getWorldRules() : AddonWorldRules{
+		return $this->worldRules ??= new AddonWorldRules($this->server, Path::join($this->path, ".runtime", "gamerules.json"));
+	}
+
+	public function getTickingAreas() : AddonTickingAreas{
+		return $this->tickingAreas ??= new AddonTickingAreas($this->server, Path::join($this->path, ".runtime", "tickingareas.json"));
+	}
+
+	/** The scoreboard add-on scripts and /scoreboard share (plugins can use it too). */
+	public function getScoreboard() : AddonScoreboard{
+		return $this->scoreboard ??= new AddonScoreboard($this->server, Path::join($this->path, ".runtime", "scoreboard.json"));
+	}
+
+	/** @var array<string, TradeTable|null> */
+	private array $tradeTables = [];
+
+	/** A trade table from any behavior pack, parsed once. */
+	public function getTradeTable(string $path) : ?TradeTable{
+		if(!array_key_exists($path, $this->tradeTables)){
+			try{
+				$this->tradeTables[$path] = TradeTable::load($path, $this->behaviorRoots);
+			}catch(AddonException $e){
+				$this->logger->warning("Add-on trade table $path could not be read: " . $e->getMessage());
+				$this->tradeTables[$path] = null;
+			}
+		}
+		return $this->tradeTables[$path];
+	}
+
+	public function getStructures() : AddonStructures{
+		return $this->structures ??= new AddonStructures($this->behaviorRoots, $this->logger);
+	}
+
+	/** @internal once per server tick */
+	public function tick(int $currentTick) : void{
+		$this->worldRules?->tick(1);
+		$this->scoreboard?->tick($currentTick);
+		if($this->spawner !== null && ($this->worldRules?->isEnabled("domobspawning") ?? true)){
+			AddonTimings::$spawner->startTiming();
+			$this->spawner->tick($currentTick);
+			AddonTimings::$spawner->stopTiming();
+		}
+		if($this->scriptHost !== null && $this->scriptHost->isRunning()){
+			AddonTimings::$scripts->startTiming();
+			$this->scriptHost->tickItemUse($currentTick);
+			$this->scriptHost->tick($currentTick);
+			AddonTimings::$scripts->stopTiming();
+		}
+		$this->commandBridge?->tick($currentTick);
+		$this->runtime?->getScheduler()->mainThreadHeartbeat($currentTick);
+	}
+
+	/** @internal */
+	public function shutdown() : void{
+		$this->scoreboard?->save();
+		$this->scriptHost?->stop();
+		if($this->runtime !== null && $this->runtime->isEnabled()){
+			$this->runtime->onEnableStateChange(false);
+		}
+	}
+
+	/** Warns once per entity about behaviors and gameplay components that are not implemented. */
+	private function reportEntityFeatures() : void{
+		$skipped = ["minecraft:npc", "minecraft:dash", "minecraft:trusting", "minecraft:peek", "minecraft:shooter_old"];
+		foreach($this->entityDefinitions as $id => $definition){
+			$all = $definition->getComponents();
+			foreach($definition->getComponentGroups() as $group){
+				$all += $group;
+			}
+			$missing = [];
+			foreach($all as $name => $value){
+				$name = (string) $name;
+				if((str_starts_with($name, "minecraft:behavior.") && !MobBrain::isSupported($name)) || in_array($name, $skipped, true)){
+					$missing[] = $name;
+				}
+			}
+			if($missing !== []){
+				$this->logger->notice("Add-on entity $id: not implemented (plugins can add them): " . implode(", ", $missing));
+			}
+		}
+	}
+
+	public function getLootTables() : ?LootTables{ return $this->lootTables; }
+
+	/**
+	 * The bridge to add-on scripts (and the world operations they and commands use). Null only before load().
+	 * Use isRunning() to know whether scripts are actually running.
+	 */
+	public function getScriptHost() : ?ScriptHost{ return $this->scriptHost; }
+
+	/** Runs Bedrock commands with selectors for add-ons and plugins alike. */
+	public function getCommandBridge() : CommandBridge{
+		return $this->commandBridge ??= new CommandBridge($this->server, $this);
+	}
+
+	/** Sends a script event to add-on scripts (system.afterEvents.scriptEventReceive). */
+	public function sendScriptEvent(string $id, string $message = "") : void{
+		$this->scriptHost?->sendScriptEvent($id, $message);
+	}
+
+	/** An mcfunction file from any behavior pack ("folder/name" without the extension). */
+	public function findFunction(string $name) : ?string{
+		$name = trim(str_replace("\\", "/", $name), "/");
+		if($name === "" || str_contains($name, "..")){
+			return null;
+		}
+		foreach($this->behaviorRoots as $root){
+			$file = Path::join($root, "functions", $name . ".mcfunction");
+			if(is_file($file)){
+				return $file;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Custom component names (and their parameters) on an add-on item: "minecraft:custom_components" (1.21.0 to
+	 * 1.21.80) and namespaced component keys (1.21.90 and later).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function getItemCustomComponents(Item $item) : array{
+		if(!($item instanceof AddonItem || $item instanceof AddonDurableItem || $item instanceof AddonFoodItem || $item instanceof AddonArmorItem)){
+			return [];
+		}
+		return self::customComponentNames($item->getAddonDefinition()->getComponents());
+	}
+
+	/** @return array<string, mixed> */
+	public function getBlockCustomComponents(AddonBlock $block) : array{
+		return self::customComponentNames($block->getAddonDefinition()->getComponents());
+	}
+
+	/**
+	 * @param mixed[] $components
+	 * @return array<string, mixed>
+	 */
+	private static function customComponentNames(array $components) : array{
+		$names = [];
+		foreach(is_array($components["minecraft:custom_components"] ?? null) ? $components["minecraft:custom_components"] : [] as $name){
+			if(is_string($name)){
+				$names[$name] = null;
+			}
+		}
+		foreach($components as $key => $value){
+			$key = (string) $key;
+			if(str_contains($key, ":") && !str_starts_with($key, "minecraft:")){
+				$names[$key] = $value;
+			}
+		}
+		return $names;
+	}
+
+	/**
+	 * SyncActorPropertyPacket for every add-on entity that declares properties: the client needs them before an
+	 * entity with properties spawns, or its render controllers read defaults.
+	 *
+	 * @return list<SyncActorPropertyPacket>
+	 */
+	public function getActorPropertyPackets() : array{
+		$packets = [];
+		foreach($this->entityDefinitions as $id => $definition){
+			if($definition->getProperties() === []){
+				continue;
+			}
+			$list = [];
+			foreach($definition->getProperties() as $name => $property){
+				$type = (string) ($property["type"] ?? "int");
+				$tag = CompoundTag::create()->setString("name", $name);
+				$range = is_array($property["range"] ?? null) ? $property["range"] : [0, 0];
+				switch($type){
+					case "float":
+						$tag->setInt("type", 1)->setFloat("min", (float) ($range[0] ?? 0))->setFloat("max", (float) ($range[1] ?? $range[0] ?? 0));
+						break;
+					case "bool":
+						$tag->setInt("type", 2);
+						break;
+					case "enum":
+						$values = array_map(static fn($v) : StringTag => new StringTag((string) $v), is_array($property["values"] ?? null) ? array_values($property["values"]) : []);
+						$tag->setInt("type", 3)->setTag("enum", new ListTag($values));
+						break;
+					default:
+						$tag->setInt("type", 0)->setInt("min", (int) ($range[0] ?? 0))->setInt("max", (int) ($range[1] ?? $range[0] ?? 0));
+				}
+				$list[] = $tag;
+			}
+			$packets[] = SyncActorPropertyPacket::create(new CacheableNbt(CompoundTag::create()
+				->setString("type", $id)
+				->setTag("properties", new ListTag($list))));
+		}
+		return $packets;
+	}
+
+	/**
+	 * Registers a slash command a script defined (system.beforeEvents.startup customCommandRegistry), so players
+	 * and plugins run it like any other command.
+	 *
+	 * @internal
+	 */
+	public function registerScriptCommand(string $name, string $description, int $permission) : void{
+		$label = str_contains($name, ":") ? explode(":", $name, 2)[1] : $name;
+		if($this->server->getCommandMap()->getCommand($label) !== null){
+			return;
+		}
+		$manager = $this;
+		$command = new class($label, $description, $name, $permission, $manager) extends Command{
+			public function __construct(string $label, string $description, private string $scriptName, int $level, private AddonManager $manager){
+				parent::__construct($label, $description);
+				$this->setPermission($level > 0 ? "pocketmine.group.operator" : "pocketmine.group.user");
+			}
+
+			public function execute(CommandSender $sender, string $commandLabel, array $args) : bool{
+				$message = $this->manager->getScriptHost()?->runCustomCommand($this->scriptName, $sender instanceof Player ? $sender : null, $args);
+				if($message !== null){
+					$sender->sendMessage($message);
+				}
+				return true;
+			}
+		};
+		$this->server->getCommandMap()->register("addons", $command);
+	}
+
+	// ---------------------------------------------------------------- plugin API
+
 	/** @return AddonPack[] */
 	public function getPacks() : array{ return $this->packs; }
 
@@ -807,6 +1238,8 @@ final class AddonManager{
 
 	/** @return array<string, AddonEntityDefinition> */
 	public function getEntityDefinitions() : array{ return $this->entityDefinitions; }
+
+	public function getEntityDefinition(string $identifier) : ?AddonEntityDefinition{ return $this->entityDefinitions[$identifier] ?? null; }
 
 	/** A new stack of an add-on item or add-on block, or null if there is no such identifier. */
 	public function getItem(string $identifier, int $count = 1) : ?Item{
@@ -844,12 +1277,32 @@ final class AddonManager{
 		$this->blockInteractHandlers[$identifier][] = $handler;
 	}
 
+	/**
+	 * Runs $handler when a player right-clicks an add-on entity, before the entity's own interactions.
+	 * Return true to cancel them.
+	 *
+	 * @phpstan-param \Closure(Player $player, AddonEntity $entity, Item $heldItem) : bool $handler
+	 */
+	public function onEntityInteract(string $identifier, \Closure $handler) : void{
+		$this->entityInteractHandlers[$identifier][] = $handler;
+	}
+
 	/** @internal */
 	public function dispatchItemUse(Player $player, Item $item, ?Block $clickedBlock) : bool{
 		$identifier = $item instanceof AddonItem || $item instanceof AddonDurableItem || $item instanceof AddonFoodItem || $item instanceof AddonArmorItem ? $item->getAddonIdentifier() : null;
 		$handled = false;
 		foreach($identifier === null ? [] : ($this->itemUseHandlers[$identifier] ?? []) as $handler){
 			$handled = (bool) $handler($player, $item, $clickedBlock) || $handled;
+		}
+		$components = $this->getItemCustomComponents($item);
+		if($components !== [] && $this->scriptHost !== null){
+			$data = ["player" => $player->getId(), "item" => ScriptHost::itemWire($item), "params" => $components];
+			if($clickedBlock !== null){
+				$position = $clickedBlock->getPosition();
+				$wire = ScriptHost::blockWire($clickedBlock);
+				$data["block"] = ["dim" => $this->scriptHost->dimensionId($position->getWorld()), "x" => $position->getFloorX(), "y" => $position->getFloorY(), "z" => $position->getFloorZ()] + $wire;
+			}
+			$handled = $this->scriptHost->hook("item", array_keys($components), $clickedBlock === null ? "onUse" : "onUseOn", $data) || $handled;
 		}
 		return $handled;
 	}
@@ -859,6 +1312,102 @@ final class AddonManager{
 		$handled = false;
 		foreach($this->blockInteractHandlers[$block->getAddonIdentifier()] ?? [] as $handler){
 			$handled = (bool) $handler($player, $block, $item) || $handled;
+		}
+		$components = $this->getBlockCustomComponents($block);
+		if($components !== [] && $this->scriptHost !== null){
+			$position = $block->getPosition();
+			$wire = ScriptHost::blockWire($block);
+			$handled = $this->scriptHost->hook("block", array_keys($components), "onPlayerInteract", [
+				"player" => $player->getId(),
+				"block" => ["dim" => $this->scriptHost->dimensionId($position->getWorld()), "x" => $position->getFloorX(), "y" => $position->getFloorY(), "z" => $position->getFloorZ()] + $wire,
+				"params" => $components,
+			]) || $handled;
+		}
+		return $handled;
+	}
+
+	/** Whether scripts registered the hook (onTick, onStepOn...) on one of the block's custom components. */
+	public function blockHasHook(AddonBlock $block, string $hook) : bool{
+		$host = $this->scriptHost;
+		if($host === null || !$host->isRunning()){
+			return false;
+		}
+		$components = $this->getBlockCustomComponents($block);
+		return $components !== [] && $host->hasHook("block", array_keys($components), $hook);
+	}
+
+	/**
+	 * Runs a block custom component hook in scripts. Returns true when a script cancelled the action.
+	 *
+	 * @param array<string, mixed> $data
+	 */
+	public function dispatchBlockHook(AddonBlock $block, string $hook, array $data) : bool{
+		$host = $this->scriptHost;
+		$components = $this->getBlockCustomComponents($block);
+		if($host === null || $components === [] || !$host->isRunning()){
+			return false;
+		}
+		$position = $block->getPosition();
+		if(!$position->isValid()){
+			return false;
+		}
+		$wire = ScriptHost::blockWire($block);
+		return $host->hook("block", array_keys($components), $hook, $data + [
+			"block" => ["dim" => $host->dimensionId($position->getWorld()), "x" => $position->getFloorX(), "y" => $position->getFloorY(), "z" => $position->getFloorZ()] + $wire,
+			"params" => $components,
+		]);
+	}
+
+	/**
+	 * Fires onStepOn / onStepOff when the block under an entity's feet changes.
+	 *
+	 * @internal
+	 */
+	public function checkStep(Entity $entity, Vector3 $from, Vector3 $to) : void{
+		$old = $from->subtract(0, 0.01, 0)->floor();
+		$new = $to->subtract(0, 0.01, 0)->floor();
+		if($old->equals($new) || $this->scriptHost === null || !$this->scriptHost->isRunning()){
+			return;
+		}
+		$world = $entity->getWorld();
+		$old = $world->getBlock($old);
+		$new = $world->getBlock($new);
+		if($old instanceof AddonBlock && $this->blockHasHook($old, "onStepOff")){
+			$this->dispatchBlockHook($old, "onStepOff", ["entity" => $entity->getId()]);
+		}
+		if($new instanceof AddonBlock && $entity->isOnGround() && $this->blockHasHook($new, "onStepOn")){
+			$this->dispatchBlockHook($new, "onStepOn", ["entity" => $entity->getId()]);
+		}
+	}
+
+	/**
+	 * State IDs of add-on blocks with minecraft:tick, to re-arm their ticks when their chunk loads
+	 * (scheduled block updates are not saved with the world).
+	 *
+	 * @return array<int, true>
+	 */
+	public function getTickingBlockStates() : array{
+		if($this->tickingStates !== null){
+			return $this->tickingStates;
+		}
+		$this->tickingStates = [];
+		foreach($this->blocks as $block){
+			if($block->getTickSettings() === null){
+				continue;
+			}
+			foreach($block->generateStatePermutations() as $state){
+				$this->tickingStates[$state->getStateId()] = true;
+			}
+		}
+		return $this->tickingStates;
+	}
+
+	/** @internal */
+	public function dispatchEntityInteract(Player $player, AddonEntity $entity) : bool{
+		$handled = false;
+		$item = $player->getInventory()->getItemInHand();
+		foreach($this->entityInteractHandlers[$entity->getAddonIdentifier()] ?? [] as $handler){
+			$handled = (bool) $handler($player, $entity, $item) || $handled;
 		}
 		return $handled;
 	}

@@ -219,6 +219,8 @@ class InGamePacketHandler extends PacketHandler{
 		}
 
 		$inputFlags = $packet->getInputFlags();
+		//steering an add-on mount (a no-op unless the player rides one)
+		\pocketmine\addon\entity\AddonEntity::setRiderInput($this->player, $packet->getMoveVecX(), $packet->getMoveVecZ(), $inputFlags->get(PlayerAuthInputFlags::JUMPING));
 		if($this->lastPlayerAuthInputFlags === null || !$inputFlags->equals($this->lastPlayerAuthInputFlags)){
 			$this->lastPlayerAuthInputFlags = $inputFlags;
 
@@ -650,6 +652,10 @@ class InGamePacketHandler extends PacketHandler{
 			//TODO: implement handling for this where it matters
 			return true;
 		}
+		if($packet->action === InteractPacket::ACTION_LEAVE_VEHICLE){
+			\pocketmine\addon\entity\AddonEntity::getVehicleOf($this->player)?->removeRider($this->player);
+			return true;
+		}
 		$target = $this->player->getWorld()->getEntity($packet->targetActorRuntimeId);
 		if($target === null){
 			return false;
@@ -657,6 +663,9 @@ class InGamePacketHandler extends PacketHandler{
 		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target === $this->player){
 			$this->inventoryManager->onClientOpenMainInventory();
 			return true;
+		}
+		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target instanceof \pocketmine\addon\entity\AddonEntity){
+			return $target->openInventoryFor($this->player);
 		}
 		return false; //TODO
 	}
