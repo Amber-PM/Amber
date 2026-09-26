@@ -1,4 +1,5 @@
 import { parentPort, receiveMessageOnPort, workerData } from "node:worker_threads";
+import { ArgumentOutOfBoundsError, InvalidArgumentError } from "./common.mjs";
 
 export const runId = workerData.runId;
 const signalBuffer = new Int32Array(workerData.sab);
@@ -33,7 +34,11 @@ export function call(op, args = {}){
 	for(;;){
 		const msg = readMessage();
 		if(msg.t === "r"){
-			if(msg.e !== undefined) throw new Error(msg.e);
+			if(msg.e !== undefined){
+				if(msg.errorType === "InvalidArgumentError") throw new InvalidArgumentError(msg.e);
+				if(msg.errorType === "ArgumentOutOfBoundsError") throw new ArgumentOutOfBoundsError(msg.e);
+				throw new Error(msg.e);
+			}
 			return msg.v;
 		}
 		//the server may run a cancellable event (triggered by this call) before replying
