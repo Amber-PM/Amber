@@ -138,7 +138,6 @@ class AddonEntity extends Living{
 	private const TAG_MAINHAND = "AddonMainHand";
 	private const TAG_OFFHAND = "AddonOffHand";
 	private const TAG_TRADES = "AddonTrades";
-	private const TAG_DYNAMIC_PROPERTIES = "AddonDynamicProperties";
 
 	/** Deepest chain of events triggering events before the chain is cut (packs can loop). */
 	private const MAX_EVENT_DEPTH = 16;
@@ -173,8 +172,10 @@ class AddonEntity extends Living{
 	private ?string $ownerName = null;
 
 	private bool $spawned = false;
-	private string $spawnEvent = "minecraft:entity_spawned";
+	private ?string $spawnEvent = "minecraft:entity_spawned";
 	private int $eventDepth = 0;
+	/** @var list<array{string, mixed, mixed}> data-driven and script property changes awaiting the next entity update */
+	private array $pendingMutations = [];
 
 	private string $timerKey = "";
 	private ?int $timerDeadline = null;
@@ -277,17 +278,6 @@ class AddonEntity extends Living{
 			}
 		}
 
-		$dyn = $nbt->getString(self::TAG_DYNAMIC_PROPERTIES, "");
-		if($dyn !== ""){
-			$host = AddonManager::getInstance()?->getScriptHost();
-			if($host !== null){
-				$decoded = json_decode($dyn, true);
-				if(is_array($decoded)){
-					$host->setEntityDynamic($this, $decoded);
-				}
-			}
-		}
-
 		$state = $nbt->getCompoundTag(self::TAG_STATE);
 		if($state !== null){
 			$this->spawned = $state->getByte("Spawned", 0) === 1;
@@ -365,14 +355,6 @@ class AddonEntity extends Living{
 			});
 		}
 		$nbt->setTag(self::TAG_PROPERTIES, $properties);
-
-		$host = AddonManager::getInstance()?->getScriptHost();
-		if($host !== null){
-			$dynamic = $host->getEntityDynamic($this);
-			if($dynamic !== []){
-				$nbt->setString(self::TAG_DYNAMIC_PROPERTIES, json_encode($dynamic));
-			}
-		}
 
 		$nbt->setTag(self::TAG_STATE, CompoundTag::create()
 			->setByte("Spawned", 1)
@@ -616,7 +598,7 @@ class AddonEntity extends Living{
 		$add = self::groupList($node["add"] ?? null);
 		$remove = self::groupList($node["remove"] ?? null);
 		if($add !== [] || $remove !== []){
-			$this->changeGroups($add, $remove);
+			$this->pendingMutations[] = ["groups", $add, $remove];
 		}
 		if(is_array($node["set_property"] ?? null)){
 			foreach($node["set_property"] as $property => $value){
@@ -624,7 +606,7 @@ class AddonEntity extends Living{
 				$definition = $this->addonDefinition->getProperties()[$property] ?? [];
 				//an enum value is written as its plain name ("angry"); anything else is a Molang expression
 				$literal = ($definition["type"] ?? null) === "enum" && is_string($value) && in_array($value, (array) ($definition["values"] ?? []), true);
-				$this->setProperty($property, $literal ? $value : Molang::evaluate($value, $this, $context));
+				$this->pendingMutations[] = ["property", $property, $literal ? $value : Molang::evaluate($value, $this, $context)];
 			}
 		}
 		if(isset($node["reset_target"])){
@@ -713,6 +695,41 @@ class AddonEntity extends Living{
 		}
 	}
 
+	/** validates a script api assignment now and applies it at the next entity update */
+	public function setScriptProperty(string $name, mixed $value) : void{
+		$definition = $this->addonDefinition->getProperties()[$name] ?? null;
+		if(!is_array($definition) || !array_key_exists($name, $this->properties)){
+			throw new \InvalidArgumentException("entity property \"$name\" is not declared");
+		}
+		$type = (string) ($definition["type"] ?? "int");
+		$valid = match($type){
+			"bool" => is_bool($value),
+			"int" => is_int($value),
+			"float" => is_float($value) || is_int($value),
+			"enum" => is_string($value) && in_array($value, $definition["values"] ?? [], true),
+			default => false,
+		};
+		if(!$valid){
+			throw new \InvalidArgumentException("invalid value for entity property \"$name\"");
+		}
+		$range = $definition["range"] ?? null;
+		if(($type === "int" || $type === "float") && (!is_finite((float) $value) || (is_array($range) && ($value < $range[0] || $value > ($range[1] ?? $range[0]))))){
+			throw new \OutOfRangeException("entity property \"$name\" is outside its range");
+		}
+		$this->pendingMutations[] = ["property", $name, $value];
+	}
+
+	/** returns the configured default now and applies the reset at the next entity update */
+	public function resetScriptProperty(string $name) : int|float|bool|string{
+		$defaults = $this->addonDefinition->getDefaultProperties();
+		if(!array_key_exists($name, $defaults) || !array_key_exists($name, $this->properties)){
+			throw new \InvalidArgumentException("entity property \"$name\" is not declared");
+		}
+		$default = $defaults[$name];
+		$this->pendingMutations[] = ["property", $name, $default];
+		return $default;
+	}
+
 	private function coerceProperty(string $name, mixed $value) : int|float|bool|string{
 		$definition = $this->addonDefinition->getProperties()[$name] ?? [];
 		$type = (string) ($definition["type"] ?? "int");
@@ -798,6 +815,10 @@ class AddonEntity extends Living{
 
 	public function isInLove() : bool{ return $this->loveTicks > 0; }
 
+	private function canEnterLoveMode(int $now) : bool{
+		return !$this->isBaby() && !$this->isInLove() && $now >= $this->breedCooldownUntil;
+	}
+
 	public function getTicksLived() : int{ return $this->ticksLived; }
 
 	public function getLastHurtTick() : int{ return $this->lastHurtTick; }
@@ -820,7 +841,7 @@ class AddonEntity extends Living{
 	}
 
 	/** Makes the entity fire this event instead of minecraft:entity_spawned when it first ticks. */
-	public function setSpawnEvent(string $event) : void{ $this->spawnEvent = $event; }
+	public function setSpawnEvent(?string $event) : void{ $this->spawnEvent = $event; }
 
 	public function setOwner(?Player $owner) : void{
 		$this->setOwningEntity($owner);
@@ -842,7 +863,9 @@ class AddonEntity extends Living{
 		parent::onFirstUpdate($currentTick);
 		if(!$this->spawned){
 			$this->spawned = true;
-			$this->triggerEvent($this->spawnEvent);
+			if($this->spawnEvent !== null){
+				$this->triggerEvent($this->spawnEvent);
+			}
 		}
 		if(!$this->equipped){
 			$this->equipped = true;
@@ -851,6 +874,7 @@ class AddonEntity extends Living{
 	}
 
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$this->commitPendingMutations();
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 		if(!$this->isAlive() || $this->closed){
 			return $hasUpdate;
@@ -860,6 +884,23 @@ class AddonEntity extends Living{
 			return $this->runtimeTick($tickDiff);
 		}finally{
 			AddonTimings::$entities->stopTiming();
+		}
+	}
+
+	private function commitPendingMutations() : void{
+		$pending = $this->pendingMutations;
+		$this->pendingMutations = [];
+		foreach($pending as $index => [$kind, $first, $second]){
+			try{
+				if($kind === "groups"){
+					$this->changeGroups($first, $second);
+				}else{
+					$this->setProperty($first, $second);
+				}
+			}catch(\Throwable $error){
+				$this->pendingMutations = array_merge(array_slice($pending, $index + 1), $this->pendingMutations);
+				throw $error;
+			}
 		}
 	}
 
@@ -1453,7 +1494,8 @@ class AddonEntity extends Living{
 
 	/** minecraft:transformation: replace this entity with another one. */
 	private function transform() : void{
-		$into = $this->components["minecraft:transformation"]["into"] ?? null;
+		$options = is_array($this->components["minecraft:transformation"] ?? null) ? $this->components["minecraft:transformation"] : [];
+		$into = $options["into"] ?? null;
 		if(!is_string($into)){
 			return;
 		}
@@ -1468,11 +1510,68 @@ class AddonEntity extends Living{
 		$replacement->setHealth(min((float) $replacement->getMaxHealth(), $this->getHealth() / max(1, $this->getMaxHealth()) * $replacement->getMaxHealth()));
 		$replacement->setNameTag($this->getNameTag());
 		$replacement->setMotion($this->getMotion());
-		if($this->isTamed()){
-			$replacement->tamed = true;
+		if((bool) ($options["keep_owner"] ?? false)){
+			$replacement->tamed = $this->tamed;
 			$replacement->ownerName = $this->ownerName;
+			$replacement->setOwningEntity($this->getOwningEntity());
+		}
+		$dropItems = [];
+		$sourceInventory = $this->getInventory();
+		if($sourceInventory !== null){
+			$contents = $sourceInventory->getContents();
+			if((bool) ($options["drop_inventory"] ?? false)){
+				array_push($dropItems, ...array_values($contents));
+			}elseif(($targetInventory = $replacement->getInventory()) !== null){
+				foreach($contents as $slot => $item){
+					if($slot < $targetInventory->getSize()){
+						$targetInventory->setItem($slot, $item);
+					}else{
+						$dropItems[] = $item;
+					}
+				}
+			}else{
+				array_push($dropItems, ...array_values($contents));
+			}
+		}
+		$armorItems = $this->getArmorInventory()->getContents();
+		$equipment = [$this->mainHand, $this->offHand, ...array_values($armorItems)];
+		if((bool) ($options["drop_equipment"] ?? false)){
+			foreach($equipment as $item){
+				if($item !== null && !$item->isNull()){
+					$dropItems[] = $item;
+				}
+			}
+		}elseif((bool) ($options["preserve_equipment"] ?? false)){
+			$replacement->mainHand = $this->mainHand === null ? null : clone $this->mainHand;
+			$replacement->offHand = $this->offHand === null ? null : clone $this->offHand;
+			$replacement->getArmorInventory()->setContents($armorItems);
+			$replacement->equipped = true;
+		}
+		$sourceTrades = $this->tradeComponent();
+		if($replacement->tradeComponent() !== null){
+			if((bool) ($sourceTrades["persist_trades"] ?? false) && $this->tradeOffers !== null){
+				$replacement->tradeOffers = array_map(static fn(TradeOffer $offer) : TradeOffer => clone $offer, $this->tradeOffers);
+			}
+			if((bool) ($options["keep_level"] ?? false)){
+				$replacement->tradeExp = $this->tradeExp;
+			}
+		}
+		$add = $options["add"]["component_groups"] ?? [];
+		if(is_array($add)){
+			$replacement->addComponentGroup(...array_values(array_filter($add, "is_string")));
 		}
 		$replacement->spawnToAll();
+		foreach($dropItems as $item){
+			$this->getWorld()->dropItem($this->location, $item);
+		}
+		if($sourceInventory !== null && $contents !== []){
+			$sourceInventory->clearAll();
+		}
+		$this->mainHand = null;
+		$this->offHand = null;
+		if($armorItems !== []){
+			$this->getArmorInventory()->clearAll();
+		}
 		$this->flagForDespawn();
 	}
 
@@ -1648,7 +1747,7 @@ class AddonEntity extends Living{
 				}
 			}
 		}
-		if(is_array($c["minecraft:breedable"] ?? null) && !$this->isBaby() && !$this->isInLove() && $now >= $this->breedCooldownUntil
+		if(is_array($c["minecraft:breedable"] ?? null) && $this->canEnterLoveMode($now)
 			&& (!(bool) ($c["minecraft:breedable"]["require_tame"] ?? false) || $this->isTamed())
 			&& $this->matchesAny($held, $c["minecraft:breedable"]["breed_items"] ?? [])){
 			$this->consume($player, $held);
@@ -2169,8 +2268,10 @@ class AddonEntity extends Living{
 			: (is_string($entry["baby_type"] ?? null) ? $entry["baby_type"] : $this->getAddonIdentifier());
 		$baby = AddonManager::getInstance()?->createEntity($babyType, $this->getLocation());
 		foreach([$this, $mate] as $parent){
+			$breedable = is_array($parent->components["minecraft:breedable"] ?? null) ? $parent->components["minecraft:breedable"] : [];
+			$cooldown = max(0.0, (float) ($breedable["breed_cooldown"] ?? 60.0));
 			$parent->loveTicks = 0;
-			$parent->breedCooldownUntil = $this->now() + 6000;
+			$parent->breedCooldownUntil = $this->now() + (int) ($cooldown * 20);
 			$parent->networkPropertiesDirty = true;
 		}
 		if($baby === null){

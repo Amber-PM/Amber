@@ -902,7 +902,7 @@ final class CommandBridge{
 		if(isset($rest[0]) && self::isCoord($rest[0])){
 			$rest = array_slice($rest, 2);
 		}
-		$entity = $this->manager->getScriptHost()?->spawnEntity($type, Location::fromObject($pos, $ctx->world, $yaw, 0.0), $rest[0] ?? null);
+		$entity = $this->manager->getScriptHost()?->spawnEntity($type, Location::fromObject($pos, $ctx->world, $yaw, 0.0), $rest[0] ?? null, true);
 		if($entity === null){
 			return 0;
 		}

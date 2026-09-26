@@ -217,8 +217,6 @@ final class ScriptHost{
 	private bool $dynamicDirty = false;
 	/** @var \WeakMap<Entity, array<string, true>> tags of non-add-on entities */
 	private \WeakMap $entityTags;
-	/** @var \WeakMap<Entity, array<string, mixed>> dynamic properties of non-player, non-add-on entities */
-	private \WeakMap $entityDynamic;
 	/** @var array<string, int> world folder => dimension slot, built lazily */
 	private array $dimensionIds = [];
 
@@ -240,7 +238,6 @@ final class ScriptHost{
 		private \Logger $logger
 	){
 		$this->entityTags = new \WeakMap();
-		$this->entityDynamic = new \WeakMap();
 		$this->itemUse = new \WeakMap();
 		$this->commands = $manager->getCommandBridge();
 		$this->loadDynamic();
@@ -472,7 +469,12 @@ final class ScriptHost{
 					}
 				}catch(\Throwable $e){
 					if($type === "c"){
-						$this->write(["t" => "r", "e" => $e->getMessage()]);
+						$response = ["t" => "r", "e" => $e->getMessage()];
+						$errorType = self::propertyErrorType($op, $e);
+						if($errorType !== null){
+							$response["errorType"] = $errorType;
+						}
+						$this->write($response);
 					}else{
 						$this->logger->debug("[Scripts] $op failed: " . $e->getMessage());
 					}
@@ -770,6 +772,17 @@ final class ScriptHost{
 		return is_array($reply["v"] ?? null) ? ($reply["v"]["message"] ?? null) : null;
 	}
 
+	private static function propertyErrorType(string $op, \Throwable $error) : ?string{
+		if($op !== "sprop" && $op !== "rprop"){
+			return null;
+		}
+		return match(true){
+			$error instanceof \OutOfRangeException => "ArgumentOutOfBoundsError",
+			$error instanceof \InvalidArgumentException => "InvalidArgumentError",
+			default => null,
+		};
+	}
+
 	/** @param mixed[] $a */
 	private function handle(string $op, array $a) : mixed{
 		switch($op){
@@ -960,18 +973,17 @@ final class ScriptHost{
 				return $e instanceof AddonEntity ? $e->getProperty((string) $a["name"]) : null;
 			case "sprop":
 				$e = $this->entity($a["id"] ?? null);
-				if($e instanceof AddonEntity){
-					$e->setProperty((string) $a["name"], $a["v"] ?? null);
+				if(!$e instanceof AddonEntity){
+					throw new \InvalidArgumentException("entity does not declare add-on properties");
 				}
+				$e->setScriptProperty((string) ($a["name"] ?? ""), $a["v"] ?? null);
 				return null;
 			case "rprop":
 				$e = $this->entity($a["id"] ?? null);
-				if($e instanceof AddonEntity){
-					$default = $e->getAddonDefinition()->getDefaultProperties()[(string) $a["name"]] ?? null;
-					$e->setProperty((string) $a["name"], $default);
-					return $default;
+				if(!$e instanceof AddonEntity){
+					throw new \InvalidArgumentException("entity does not declare add-on properties");
 				}
-				return null;
+				return $e->resetScriptProperty((string) ($a["name"] ?? ""));
 			case "hp":
 				$e = $this->entity($a["id"] ?? null);
 				if($e !== null){
@@ -1622,11 +1634,11 @@ final class ScriptHost{
 	}
 
 	/** Spawns an add-on entity or a vanilla one the server implements. */
-	public function spawnEntity(string $type, Location $location, ?string $event) : ?Entity{
+	public function spawnEntity(string $type, Location $location, ?string $event, bool $manualSummon = false) : ?Entity{
 		$type = str_contains($type, ":") ? strtolower($type) : "minecraft:" . strtolower($type);
 		$addon = $this->manager->createEntity($type, $location);
 		if($addon !== null){
-			if($event !== null){
+			if($manualSummon || $event !== null){
 				$addon->setSpawnEvent($event);
 			}
 			$addon->spawnToAll();
@@ -2284,19 +2296,15 @@ final class ScriptHost{
 			return $values;
 		}
 		$e = $this->entity($scope);
-		return $e === null ? [] : ($this->entityDynamic[$e] ?? []);
+		return $e?->getAddonDynamicProperties() ?? [];
 	}
 
 	public function getEntityDynamic(Entity $entity) : array{
-		return $this->entityDynamic[$entity] ?? [];
+		return $entity->getAddonDynamicProperties();
 	}
 
 	public function setEntityDynamic(Entity $entity, array $values) : void{
-		if($values !== []){
-			$this->entityDynamic[$entity] = $values;
-		}else{
-			unset($this->entityDynamic[$entity]);
-		}
+		$entity->setAddonDynamicProperties($values);
 	}
 
 	private function dynamicStorageKey(string $key, string $pack) : string{
@@ -2322,13 +2330,13 @@ final class ScriptHost{
 		}
 		$e = $this->entity($scope);
 		if($e !== null){
-			$values = $this->entityDynamic[$e] ?? [];
+			$values = $e->getAddonDynamicProperties();
 			if($value === null){
 				unset($values[$storageKey]);
 			}else{
 				$values[$storageKey] = $value;
 			}
-			$this->entityDynamic[$e] = $values;
+			$e->setAddonDynamicProperties($values);
 		}
 	}
 
@@ -2369,16 +2377,16 @@ final class ScriptHost{
 		$e = $this->entity($scope);
 		if($e !== null){
 			if($pack === ""){
-				$this->entityDynamic[$e] = [];
+				$e->setAddonDynamicProperties([]);
 			}else{
 				$prefix = "$pack:";
-				$values = $this->entityDynamic[$e] ?? [];
+				$values = $e->getAddonDynamicProperties();
 				foreach(array_keys($values) as $k){
 					if(str_starts_with($k, $prefix)){
 						unset($values[$k]);
 					}
 				}
-				$this->entityDynamic[$e] = $values;
+				$e->setAddonDynamicProperties($values);
 			}
 		}
 	}

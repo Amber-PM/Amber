@@ -533,7 +533,7 @@ export class Entity{
 	extinguishFire(){ post("fire", { id: this.id, sec: 0 }); this._dirty(); return true; }
 	triggerEvent(event){ post("trig", { id: this.id, event }); this._dirty(); }
 	getProperty(name){ return call("prop", { id: this.id, name }); }
-	setProperty(name, value){ post("sprop", { id: this.id, name, v: value }); }
+	setProperty(name, value){ call("sprop", { id: this.id, name, v: value }); }
 	resetProperty(name){ return call("rprop", { id: this.id, name }); }
 	runCommand(command){ return call("cmd", { cmd: command, as: this.id }); }
 	runCommandAsync(command){ return Promise.resolve(this.runCommand(command)); }
