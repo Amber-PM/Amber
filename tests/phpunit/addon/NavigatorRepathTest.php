@@ -11,6 +11,7 @@ use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
 use pocketmine\world\Position;
+use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 use ReflectionProperty;
 
@@ -19,7 +20,7 @@ final class NavigatorRepathTest extends TestCase{
 		AddonTimings::init();
 		$queries = 0;
 		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods(["getChunk", "getMinY", "getMaxY"])->getMock();
-		$world->method("getChunk")->willReturnCallback(static function() use (&$queries) : null{ ++$queries; return null; });
+		$world->method("getChunk")->willReturnCallback(static function(int $x, int $z) use (&$queries) : ?Chunk{ ++$queries; return null; });
 		$world->method("getMinY")->willReturn(-64);
 		$world->method("getMaxY")->willReturn(320);
 		$entity = $this->getMockBuilder(AddonEntity::class)->disableOriginalConstructor()->onlyMethods(["getWorld", "getPosition", "getSize", "getId", "__destruct"])->getMock();
