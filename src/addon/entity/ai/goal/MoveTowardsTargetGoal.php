@@ -33,7 +33,7 @@ final class MoveTowardsTargetGoal extends Goal{
 
 	public function canStart() : bool{
 		$target = $this->mob->getTargetEntity();
-		return self::isValidTarget($target) && $target->getPosition()->distanceSquared($this->mob->getPosition()) <= $this->float("within_radius", 16.0) ** 2;
+		return self::isValidTarget($target) && $target->getPosition()->distanceSquared($this->mob->getPosition()) > $this->float("within_radius", 0.0) ** 2;
 	}
 
 	public function tick() : void{

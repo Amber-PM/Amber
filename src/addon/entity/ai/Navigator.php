@@ -47,7 +47,10 @@ final class Navigator{
 	/** @var list<Vector3> */
 	private array $path = [];
 	private int $index = 0;
+	/** Destination used to generate the current path. */
 	private ?Vector3 $goal = null;
+	/** Latest destination requested by a goal. */
+	private ?Vector3 $requestedGoal = null;
 	private float $speed = 0.0;
 	private int $lastPlan = -1000;
 	private int $stuckTicks = 0;
@@ -69,6 +72,7 @@ final class Navigator{
 	/** Walks towards the goal at speedMultiplier times the mob's movement speed. Returns false if there is no way. */
 	public function moveTo(Vector3 $goal, float $speedMultiplier, int $currentTick) : bool{
 		$this->speed = $this->profile->speed * $speedMultiplier;
+		$this->requestedGoal = $goal;
 		if($this->profile->direct){
 			$this->goal = $goal;
 			$this->path = [$goal];
@@ -78,9 +82,8 @@ final class Navigator{
 		}
 		$replan = $this->goal === null || $this->path === [] || $this->goal->distanceSquared($goal) > 2.25;
 		if($replan && $currentTick - $this->lastPlan >= self::REPATH_TICKS){
-			if(!Pathfinder::takeBudget($currentTick)){
+			if(!Pathfinder::takeBudget($currentTick, $this->entity->getId())){
 				//out of path searches this tick: keep any current path, otherwise try again next tick
-				$this->goal = $goal;
 				return $this->moving = $this->path !== [];
 			}
 			$this->lastPlan = $currentTick;
@@ -100,12 +103,12 @@ final class Navigator{
 				}
 			}else{
 				$this->path = $path;
+				$this->goal = $goal;
 				$this->index = 0;
 				$this->stuckTicks = 0;
 				$this->lastDistance = \PHP_FLOAT_MAX;
 			}
 		}
-		$this->goal = $goal;
 		$this->moving = $this->path !== [];
 		return $this->moving;
 	}
@@ -114,13 +117,14 @@ final class Navigator{
 		$this->path = [];
 		$this->index = 0;
 		$this->goal = null;
+		$this->requestedGoal = null;
 		$this->moving = false;
 		$this->wantX = $this->wantY = $this->wantZ = 0.0;
 	}
 
 	public function isMoving() : bool{ return $this->moving; }
 
-	public function getGoal() : ?Vector3{ return $this->goal; }
+	public function getGoal() : ?Vector3{ return $this->requestedGoal; }
 
 	/** Advances along the path and sets the wanted velocity for this tick. */
 	public function tick() : void{

@@ -1168,7 +1168,10 @@ class AddonEntity extends Living{
 		if($navigator->isDirect()){
 			$this->motion = new Vector3($navigator->getWantedX(), $navigator->getWantedY(), $navigator->getWantedZ());
 		}elseif($this->onGround || $this->getWorld()->getBlock($this->location) instanceof Water){
-			$this->motion = new Vector3($navigator->getWantedX(), $this->motion->y, $navigator->getWantedZ());
+			$friction = $this->onGround
+				? (1 - $this->drag) * $this->getWorld()->getBlockAt((int) floor($this->location->x), (int) floor($this->location->y - 1), (int) floor($this->location->z))->getFrictionFactor()
+				: 1.0;
+			$this->motion = new Vector3($navigator->getWantedX() * $friction, $this->motion->y, $navigator->getWantedZ() * $friction);
 		}else{
 			//a little air control, as mobs have
 			$this->motion = new Vector3(

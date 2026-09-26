@@ -65,17 +65,43 @@ final class Pathfinder{
 
 	private static int $budgetTick = -1;
 	private static int $budgetUsed = 0;
+	/** @var array<int, true> requesters waiting for admission */
+	private static array $waiting = [];
+	/** @var \SplQueue<int>|null */
+	private static ?\SplQueue $waitQueue = null;
+	/** @var array<int, true> slots reserved for previously denied requesters */
+	private static array $reserved = [];
 
 	/** Takes one search from this tick's budget; false when it is used up. */
-	public static function takeBudget(int $currentTick) : bool{
+	public static function takeBudget(int $currentTick, int $requesterId) : bool{
 		if($currentTick !== self::$budgetTick){
 			self::$budgetTick = $currentTick;
 			self::$budgetUsed = 0;
+			self::$reserved = [];
+			$queue = self::$waitQueue ??= new \SplQueue();
+			for($i = 0; $i < self::SEARCHES_PER_TICK && !$queue->isEmpty(); ++$i){
+				$id = $queue->dequeue();
+				unset(self::$waiting[$id]);
+				self::$reserved[$id] = true;
+			}
 		}
-		return ++self::$budgetUsed <= self::SEARCHES_PER_TICK;
+		if(isset(self::$reserved[$requesterId])){
+			unset(self::$reserved[$requesterId]);
+			++self::$budgetUsed;
+			return true;
+		}
+		if(self::$budgetUsed + count(self::$reserved) < self::SEARCHES_PER_TICK){
+			++self::$budgetUsed;
+			return true;
+		}
+		if(!isset(self::$waiting[$requesterId])){
+			self::$waiting[$requesterId] = true;
+			(self::$waitQueue ??= new \SplQueue())->enqueue($requesterId);
+		}
+		return false;
 	}
 
-	/** @var array<int, int> block hash => 0 passable, 1 solid, 2 water, 3 danger */
+	/** @var array<int, int> block hash => 0 passable, 1 solid, 2 water, 3 danger, 4 unstepable */
 	private array $cache = [];
 
 	public function __construct(
@@ -150,7 +176,7 @@ final class Pathfinder{
 				if($dx !== 0 && $dz !== 0 && (!$this->isOpen($cx + $dx, $cy, $cz) || !$this->isOpen($cx, $cy, $cz + $dz))){
 					continue; //no corner cutting through walls
 				}
-				$ny = $this->stepTarget($nx, $cy, $nz);
+				$ny = $this->stepTarget($cx, $cz, $nx, $cy, $nz);
 				if($ny === null){
 					continue;
 				}
@@ -198,12 +224,12 @@ final class Pathfinder{
 	}
 
 	/** Where a mob moving into column (x, z) from feet level y ends up, or null if it cannot. */
-	private function stepTarget(int $x, int $y, int $z) : ?int{
+	private function stepTarget(int $sourceX, int $sourceZ, int $x, int $y, int $z) : ?int{
 		if($this->isStandable($x, $y, $z)){
 			return $y;
 		}
 		//step up one block, with head room at the old column too
-		if($this->block($x, $y, $z) === 1 && $this->isStandable($x, $y + 1, $z) && $this->fits($x, $y + 1, $z)){
+		if($this->block($x, $y, $z) === 1 && $this->fits($sourceX, $y + 1, $sourceZ) && $this->isStandable($x, $y + 1, $z)){
 			return $y + 1;
 		}
 		if(!$this->fits($x, $y, $z)){
@@ -247,7 +273,7 @@ final class Pathfinder{
 	private function fits(int $x, int $y, int $z) : bool{
 		for($i = 0; $i < $this->height; ++$i){
 			$type = $this->block($x, $y + $i, $z);
-			if($type === 1 || $type === 3 || ($type === 2 && !$this->canSwim && $i > 0)){
+			if($type === 1 || $type === 3 || $type === 4 || ($type === 2 && !$this->canSwim && $i > 0)){
 				return false;
 			}
 		}
@@ -255,7 +281,7 @@ final class Pathfinder{
 	}
 
 	private function isOpen(int $x, int $y, int $z) : bool{
-		return $this->block($x, $y, $z) !== 1 && $this->block($x, $y + 1, $z) !== 1;
+		return $this->block($x, $y, $z) !== 1 && $this->block($x, $y, $z) !== 4 && $this->block($x, $y + 1, $z) !== 1 && $this->block($x, $y + 1, $z) !== 4;
 	}
 
 	private function block(int $x, int $y, int $z) : int{
@@ -275,7 +301,7 @@ final class Pathfinder{
 		return $this->cache[$hash] = self::$stateClasses[$state] ??= self::classifyState($state);
 	}
 
-	/** @var array<int, int> block state id => 0 passable, 1 solid, 2 water, 3 danger */
+	/** @var array<int, int> block state id => 0 passable, 1 solid, 2 water, 3 danger, 4 unstepable */
 	private static array $stateClasses = [];
 
 	private static function classifyState(int $state) : int{
@@ -297,7 +323,7 @@ final class Pathfinder{
 			return 3;
 		}
 		if($block instanceof Fence || $block instanceof Wall || ($block instanceof FenceGate && !$block->isOpen())){
-			return 1; //1.5 blocks tall: cannot be stepped onto
+			return 4; //1.5 blocks tall: cannot be stepped onto
 		}
 		if($block instanceof Door){
 			return $block->isOpen() ? 0 : 1;
