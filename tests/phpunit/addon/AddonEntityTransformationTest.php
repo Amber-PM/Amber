@@ -25,7 +25,7 @@ final class AddonEntityTransformationTest extends TestCase{
 		$world->method("getServer")->willReturn($server);
 		$world->method("getViewersForPosition")->willReturn([]);
 		$world->method("addEntity")->willReturnCallback(static function(AddonEntity $entity) use (&$created) : void{ $created[] = $entity; });
-		$world->method("dropItem")->willReturnCallback(static function($position, Item $item) use (&$dropped) : null{ $dropped[] = $item; return null; });
+		$world->method("dropItem")->willReturnCallback(static function($position, Item $item) use (&$dropped){ $dropped[] = $item; return null; });
 		$sourceDefinition = AddonEntityDefinition::fromJson(["minecraft:entity" => [
 			"description" => ["identifier" => "test:source"],
 			"components" => ["minecraft:health" => ["value" => 10, "max" => 10], "minecraft:transformation" => ["into" => "test:target"] + $options, "minecraft:economy_trade_table" => ["persist_trades" => $persistTrades]] + ($withItems ? ["minecraft:inventory" => ["inventory_size" => 5]] : []),
