@@ -136,7 +136,7 @@ final class CommandBridge{
 	/** The most blocks /clone and /testforblocks work on, as in the game. */
 	private const MAX_REGION = 655360;
 
-	/** @var array<int, array{at: int, function: string, world: string, area: array{int, int, int, int}|null}> /schedule queue */
+	/** @var array<int, array{at: int, function: string, world: string, area: array{int, int, int, int}|null, tickingArea: ?string}> /schedule queue */
 	private array $scheduled = [];
 
 	/** @var \WeakMap<Player, list<array{string, string}>> active fog layers: [user id, fog id] */
@@ -166,7 +166,7 @@ final class CommandBridge{
 		if($command[0] === "/"){
 			$command = substr($command, 1);
 		}
-		if($this->depth > 16){
+		if(!$this->canDispatch()){
 			return 0;
 		}
 		$world ??= $executor?->getWorld() ?? $this->server->getWorldManager()->getDefaultWorld();
@@ -178,15 +178,29 @@ final class CommandBridge{
 		$pitch ??= $executor?->getLocation()->pitch ?? 0.0;
 		$context = new CommandContext($executor, $world, $origin, $yaw, $pitch, $output);
 
-		$this->depth++;
 		try{
-			return $this->dispatch($command, $context);
+			return $this->dispatchBounded($command, $context);
 		}catch(\Throwable $e){
 			$this->server->getLogger()->debug("[Addons] command \"$command\" failed: " . $e->getMessage());
 			return 0;
+		}
+	}
+
+	/** Every nested dispatch shares the same depth limit and cleanup. */
+	private function dispatchBounded(string $command, CommandContext $ctx) : int{
+		if(!$this->canDispatch()){
+			return 0;
+		}
+		$this->depth++;
+		try{
+			return $this->dispatch($command, $ctx);
 		}finally{
 			$this->depth--;
 		}
+	}
+
+	private function canDispatch() : bool{
+		return $this->depth <= 16;
 	}
 
 	private function dispatch(string $command, CommandContext $ctx) : int{
@@ -301,7 +315,7 @@ final class CommandBridge{
 			$success = 0;
 			foreach($this->select($selector, $ctx) as $entity){
 				$at = $ctx->as($entity)->at($entity);
-				$success += $this->dispatch(implode(" ", $args), $at->positioned($this->position($pos, $at)));
+				$success += $this->dispatchBounded(implode(" ", $args), $at->positioned($this->position($pos, $at)));
 			}
 			return $success;
 		}
@@ -386,7 +400,7 @@ final class CommandBridge{
 					$rest = implode(" ", $args);
 					$success = 0;
 					foreach($contexts as $c){
-						$success += $this->dispatch($rest, $c);
+						$success += $this->dispatchBounded($rest, $c);
 					}
 					return $success;
 				default:
@@ -416,7 +430,7 @@ final class CommandBridge{
 		foreach(file($file) ?: [] as $line){
 			$line = trim($line);
 			if($line !== "" && !str_starts_with($line, "#")){
-				$success += $this->dispatch($line, $ctx) > 0 ? 1 : 0;
+				$success += $this->dispatchBounded($line, $ctx) > 0 ? 1 : 0;
 			}
 		}
 		return $success;
@@ -439,13 +453,24 @@ final class CommandBridge{
 			if($entry["at"] > $currentTick){
 				continue;
 			}
-			if($entry["area"] !== null){
+			$chunkBounds = null;
+			if($entry["tickingArea"] !== null){
+				$namedArea = $this->manager->getTickingAreas()->getAreas()[$entry["tickingArea"]] ?? null;
+				if($namedArea === null || $namedArea["world"] !== $entry["world"]){
+					continue;
+				}
+				$chunkBounds = [$namedArea["x1"], $namedArea["z1"], $namedArea["x2"], $namedArea["z2"]];
+			}elseif($entry["area"] !== null){
+				[$minX, $minZ, $maxX, $maxZ] = $entry["area"];
+				$chunkBounds = [$minX >> 4, $minZ >> 4, $maxX >> 4, $maxZ >> 4];
+			}
+			if($chunkBounds !== null){
 				if($currentTick % 20 !== 0){
 					continue;
 				}
-				[$minX, $minZ, $maxX, $maxZ] = $entry["area"];
-				for($cx = $minX >> 4; $cx <= $maxX >> 4; $cx++){
-					for($cz = $minZ >> 4; $cz <= $maxZ >> 4; $cz++){
+				[$minX, $minZ, $maxX, $maxZ] = $chunkBounds;
+				for($cx = $minX; $cx <= $maxX; $cx++){
+					for($cz = $minZ; $cz <= $maxZ; $cz++){
 						if(!$world->isChunkLoaded($cx, $cz)){
 							continue 3;
 						}
@@ -462,6 +487,7 @@ final class CommandBridge{
 
 	/**
 	 * @param list<string> $args schedule delay add <function> <time>[t|s|d] [append|replace] | schedule delay clear <function>
+	 *                           | schedule clear <function>
 	 *                           | schedule on_area_loaded add <from> <to> <function> | add circle <center> <radius> <function>
 	 *                           | add tickingarea <name> <function> | on_area_loaded clear function <function>
 	 */
@@ -469,10 +495,30 @@ final class CommandBridge{
 		$kind = strtolower($args[0] ?? "");
 		$action = strtolower($args[1] ?? "");
 		$world = $ctx->world->getFolderName();
-		if($action === "clear"){
-			$function = $kind === "on_area_loaded" ? ($args[3] ?? $args[2] ?? "") : ($args[2] ?? "");
+		if($kind === "clear"){
+			$function = $args[1] ?? "";
+			if($function === ""){
+				return 0;
+			}
 			$before = count($this->scheduled);
 			$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function);
+			return $before - count($this->scheduled);
+		}
+		if($action === "clear"){
+			$before = count($this->scheduled);
+			if($kind === "delay"){
+				$function = $args[2] ?? "";
+				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function || $e["at"] === 0);
+			}elseif($kind === "on_area_loaded" && ($args[2] ?? "") === "tickingarea"){
+				$name = $args[3] ?? "";
+				$function = $args[4] ?? null;
+				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["tickingArea"] !== $name || ($function !== null && $e["function"] !== $function));
+			}elseif($kind === "on_area_loaded" && ($args[2] ?? "") === "function"){
+				$function = $args[3] ?? "";
+				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function || $e["at"] !== 0);
+			}else{
+				return 0;
+			}
 			return $before - count($this->scheduled);
 		}
 		if($action !== "add"){
@@ -485,16 +531,18 @@ final class CommandBridge{
 			}
 			$ticks = (int) ((float) $m[1] * match($m[2]){ "s" => 20, "d" => 24000, default => 1 });
 			if(strtolower($args[4] ?? "replace") === "replace"){
-				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function || $e["area"] !== null);
+				$this->scheduled = array_filter($this->scheduled, static fn(array $e) : bool => $e["function"] !== $function || $e["at"] === 0);
 			}
-			$this->scheduled[] = ["at" => $this->server->getTick() + max(1, $ticks), "function" => $function, "world" => $world, "area" => null];
+			$this->scheduled[] = ["at" => $this->server->getTick() + max(1, $ticks), "function" => $function, "world" => $world, "area" => null, "tickingArea" => null];
 			return 1;
 		}
 		if($kind !== "on_area_loaded"){
 			return 0;
 		}
 		$mode = strtolower($args[2] ?? "");
+		$tickingArea = null;
 		if($mode === "tickingarea"){
+			$tickingArea = $args[3] ?? "";
 			$function = $args[4] ?? "";
 			$area = null;
 		}elseif($mode === "circle"){
@@ -511,7 +559,7 @@ final class CommandBridge{
 		if($this->manager->findFunction($function) === null){
 			return 0;
 		}
-		$this->scheduled[] = ["at" => 0, "function" => $function, "world" => $world, "area" => $area];
+		$this->scheduled[] = ["at" => 0, "function" => $function, "world" => $world, "area" => $area, "tickingArea" => $tickingArea];
 		return 1;
 	}
 
@@ -1492,6 +1540,17 @@ final class CommandBridge{
 			foreach(self::splitArgs($m[1]) as [$key, $value]){
 				$args[strtolower($key)][] = $value;
 			}
+		}elseif(str_contains($selector, "[")){
+			return [];
+		}
+		foreach($args as $key => $_){
+			if(!in_array($key, ["r", "rm", "x", "y", "z", "dx", "dy", "dz", "type", "family", "tag", "name", "m", "c", "scores", "l", "lm", "rx", "rxm", "ry", "rym"], true)){
+				//unknown restrictions (including hasitem) must not broaden a target set
+				return [];
+			}
+			if(count($args[$key]) > 1 && in_array($key, ["r", "rm", "x", "y", "z", "dx", "dy", "dz", "c", "l", "lm", "rx", "rxm", "ry", "rym"], true)){
+				return [];
+			}
 		}
 		if($kind === "s"){
 			$pool = $ctx->executor === null ? [] : [$ctx->executor];
@@ -1546,6 +1605,44 @@ final class CommandBridge{
 			return false;
 		}
 		$d2 = $e->getPosition()->distanceSquared($center);
+		if(isset($args["scores"])){
+			$participant = $e instanceof Player ? $e->getName() : "entity:" . $e->getId();
+			$board = $this->manager->getScoreboard();
+			foreach($args["scores"] as $scores){
+				if(!str_starts_with($scores, "{") || !str_ends_with($scores, "}") || $scores === "{}"){
+					return false;
+				}
+				foreach(self::splitArgs(substr($scores, 1, -1)) as [$objective, $range]){
+					$score = $board->getScore($objective, $participant);
+					if($score === null || !self::matchesScoreRange($score, $range)){
+						return false;
+					}
+				}
+			}
+		}
+		if(isset($args["l"]) || isset($args["lm"])){
+			if(!$e instanceof Player){
+				return false;
+			}
+			$level = $e->getXpManager()->getXpLevel();
+			if(isset($args["l"]) && (!is_numeric($args["l"][0]) || $level > (int) $args["l"][0]) || isset($args["lm"]) && (!is_numeric($args["lm"][0]) || $level < (int) $args["lm"][0])){
+				return false;
+			}
+		}
+		if(isset($args["rx"]) || isset($args["rxm"]) || isset($args["ry"]) || isset($args["rym"])){
+			$location = $e->getLocation();
+			$yaw = fmod($location->yaw, 360.0);
+			if($yaw > 180.0){
+				$yaw -= 360.0;
+			}elseif($yaw < -180.0){
+				$yaw += 360.0;
+			}
+			foreach(["rx" => [$location->pitch, true], "rxm" => [$location->pitch, false], "ry" => [$yaw, true], "rym" => [$yaw, false]] as $key => [$actual, $maximum]){
+				if(isset($args[$key]) && (!is_numeric($args[$key][0]) || ($maximum ? $actual > (float) $args[$key][0] : $actual < (float) $args[$key][0]))){
+					return false;
+				}
+			}
+		}
 		if(isset($args["r"]) && $d2 > ((float) $args["r"][0]) ** 2){
 			return false;
 		}
@@ -1607,6 +1704,21 @@ final class CommandBridge{
 		return true;
 	}
 
+	private static function matchesScoreRange(int $score, string $range) : bool{
+		$negated = str_starts_with($range, "!");
+		if($negated){
+			$range = substr($range, 1);
+		}
+		if(preg_match('/^(-?\d+)?\.\.(-?\d+)?$/', $range, $m) === 1){
+			$matches = ($m[1] === "" || $score >= (int) $m[1]) && (($m[2] ?? "") === "" || $score <= (int) $m[2]);
+		}elseif(preg_match('/^-?\d+$/', $range) === 1){
+			$matches = $score === (int) $range;
+		}else{
+			return false;
+		}
+		return $negated ? !$matches : $matches;
+	}
+
 	/** @return list<array{string, string}> */
 	private static function splitArgs(string $raw) : array{
 		$out = [];
@@ -1637,6 +1749,8 @@ final class CommandBridge{
 			$kv = explode("=", $part, 2);
 			if(count($kv) === 2){
 				$pairs[] = [trim($kv[0]), trim($kv[1])];
+			}else{
+				$pairs[] = ["", ""];
 			}
 		}
 		return $pairs;

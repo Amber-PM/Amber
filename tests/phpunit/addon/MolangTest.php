@@ -78,4 +78,14 @@ final class MolangTest extends TestCase{
 			self::assertLessThanOrEqual(5.0, $value);
 		}
 	}
+
+	public function testDieRollCountIsBounded() : void{
+		foreach(["math.die_roll", "math.die_roll_integer"] as $function){
+			self::assertSame(3.0, Molang::evaluate("$function(3, 1, 1)"));
+			self::assertSame(1024.0, Molang::evaluate("$function(1024, 1, 1)"));
+			self::assertSame(0.0, Molang::evaluate("$function(1025, 1, 1)"));
+			self::assertSame(0.0, Molang::evaluate("$function(-1, 1, 1)"));
+			self::assertSame(0.0, Molang::evaluate("$function(math.pow(10, 1000), 1, 1)"));
+		}
+	}
 }

@@ -108,7 +108,7 @@ final class AddonSpawner{
 					continue;
 				}
 				$player = $players[array_rand($players)];
-				$counts[$category] = ($counts[$category] ?? 0) + $this->attempt($world, $player, $rules);
+				$counts[$category] = ($counts[$category] ?? 0) + $this->attempt($world, $player, $rules, $cap - ($counts[$category] ?? 0));
 			}
 		}
 	}
@@ -137,7 +137,7 @@ final class AddonSpawner{
 	 * @param list<SpawnRule> $rules
 	 * @return int how many entities were spawned
 	 */
-	private function attempt(World $world, Player $player, array $rules) : int{
+	private function attempt(World $world, Player $player, array $rules, int $remainingCategory) : int{
 		$origin = $player->getPosition();
 		$angle = AddonMath::randomFloat() * 2 * M_PI;
 		$radius = self::MIN_DISTANCE + AddonMath::randomFloat() * (self::MAX_DISTANCE - self::MIN_DISTANCE);
@@ -175,7 +175,7 @@ final class AddonSpawner{
 		foreach($choices as [$rule, $condition, $kind, $y, $weight]){
 			$roll -= $weight;
 			if($roll <= 0){
-				return $this->spawnHerd($world, $rule, $condition, $kind, $x, $y, $z);
+				return $this->spawnHerd($world, $rule, $condition, $kind, $x, $y, $z, $remainingCategory);
 			}
 		}
 		return 0;
@@ -226,8 +226,9 @@ final class AddonSpawner{
 	}
 
 	/** @param mixed[] $condition */
-	private function spawnHerd(World $world, SpawnRule $rule, array $condition, int $kind, int $x, int $y, int $z) : int{
+	private function spawnHerd(World $world, SpawnRule $rule, array $condition, int $kind, int $x, int $y, int $z, int $remainingCategory) : int{
 		$limit = SpawnRule::densityLimit($condition, $kind);
+		$remainingDensity = \PHP_INT_MAX;
 		if($limit !== null){
 			$existing = 0;
 			foreach($world->getEntities() as $entity){
@@ -235,13 +236,14 @@ final class AddonSpawner{
 					$existing++;
 				}
 			}
-			if($existing >= $limit){
+			$remainingDensity = max(0, $limit - $existing);
+			if($remainingDensity === 0){
 				return 0;
 			}
 		}
 		[$size, $herdEvent, $skip] = SpawnRule::herd($condition);
 		$spawned = 0;
-		for($i = 0; $i < $size; ++$i){
+		for($i = 0; $i < $size && $spawned < $remainingCategory && $spawned < $remainingDensity; ++$i){
 			$px = $x + ($i === 0 ? 0 : mt_rand(-3, 3));
 			$pz = $z + ($i === 0 ? 0 : mt_rand(-3, 3));
 			$py = $y;
