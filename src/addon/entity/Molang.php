@@ -57,6 +57,8 @@ use const M_PI;
  * Anything it does not know evaluates to 0, as in the game.
  */
 final class Molang{
+	/** Reject die rolls above this count instead of monopolizing one server tick. */
+	private const MAX_DIE_ROLLS = 1024;
 	/** Compiled expressions kept at most (packs use a few dozen distinct ones). */
 	private const CACHE_SIZE = 2048;
 
@@ -318,12 +320,18 @@ final class Molang{
 			case "math.random": return $a + AddonMath::randomFloat() * ($b - $a);
 			case "math.random_integer": return (float) mt_rand((int) min($a, $b), (int) max($a, $b));
 			case "math.die_roll":
+				if(!is_finite($a) || $a > self::MAX_DIE_ROLLS || $a <= 0){
+					return 0.0;
+				}
 				$sum = 0.0;
 				for($i = 0; $i < (int) $a; ++$i){
 					$sum += $b + AddonMath::randomFloat() * ((isset($args[2]) ? self::num($args[2]) : 0.0) - $b);
 				}
 				return $sum;
 			case "math.die_roll_integer":
+				if(!is_finite($a) || $a > self::MAX_DIE_ROLLS || $a <= 0){
+					return 0.0;
+				}
 				$sum = 0;
 				for($i = 0; $i < (int) $a; ++$i){
 					$sum += mt_rand((int) $b, (int) (isset($args[2]) ? self::num($args[2]) : $b));

@@ -37,6 +37,7 @@ use function file_get_contents;
 use function floor;
 use function is_array;
 use function is_file;
+use function is_finite;
 use function is_numeric;
 use function is_string;
 use function max;
@@ -64,6 +65,15 @@ use function substr_count;
  * features still drops its items.
  */
 final class LootTables{
+	/** Limits work and returned stacks for one top-level roll, including referenced tables. Oversized pools are skipped. */
+	private const MAX_POOL_ROLLS = 4096;
+	private const MAX_TOTAL_ROLLS = 4096;
+	private const MAX_STACKS = 4096;
+	private const MAX_TOTAL_POOLS = 4096;
+	private const MAX_TOTAL_ENTRIES = 16384;
+	/** Oversized effective weights or entries that exceed the pool total are skipped before integer conversion/addition. */
+	private const MAX_ENTRY_WEIGHT = 1000000;
+	private const MAX_POOL_WEIGHT = 16000000;
 	/** @var array<string, mixed[]|null> normalised path => decoded table (null when missing or broken) */
 	private array $tables = [];
 	/** @var array<string, true> */
@@ -87,23 +97,52 @@ final class LootTables{
 	 * @return list<Item>
 	 */
 	public function roll(string $path, LootContext $context, int $depth = 0) : array{
+		$remainingRolls = self::MAX_TOTAL_ROLLS;
+		$remainingStacks = self::MAX_STACKS;
+		$remainingPools = self::MAX_TOTAL_POOLS;
+		$remainingEntries = self::MAX_TOTAL_ENTRIES;
+		return $this->rollBounded($path, $context, $depth, $remainingRolls, $remainingStacks, $remainingPools, $remainingEntries);
+	}
+
+	/** @return list<Item> */
+	private function rollBounded(string $path, LootContext $context, int $depth, int &$remainingRolls, int &$remainingStacks, int &$remainingPools, int &$remainingEntries) : array{
 		$table = $this->load($path);
-		if($table === null || $depth > 8){
+		if($table === null || $depth > 8 || $remainingRolls <= 0 || $remainingStacks <= 0 || $remainingPools <= 0 || $remainingEntries <= 0){
 			return [];
 		}
 		$drops = [];
 		foreach(is_array($table["pools"] ?? null) ? $table["pools"] : [] as $pool){
+			if($remainingPools <= 0 || $remainingEntries <= 0){
+				break;
+			}
+			--$remainingPools;
 			if(!is_array($pool) || !$this->conditionsPass($pool["conditions"] ?? [], $context)){
 				continue;
 			}
 			$rolls = self::range($pool["rolls"] ?? 1) + (int) floor(self::number($pool["bonus_rolls"] ?? 0) * $context->lootingLevel());
+			if($rolls > self::MAX_POOL_ROLLS){
+				$this->reportOnce("rolls:$path", "Loot table $path requests more than " . self::MAX_POOL_ROLLS . " pool rolls; the pool is skipped");
+				continue;
+			}
 			$entries = [];
 			$totalWeight = 0;
 			foreach(is_array($pool["entries"] ?? null) ? $pool["entries"] : [] as $entry){
+				if($remainingEntries <= 0){
+					return $drops;
+				}
+				--$remainingEntries;
 				if(!is_array($entry) || !$this->conditionsPass($entry["conditions"] ?? [], $context)){
 					continue;
 				}
-				$weight = max(0, (int) self::number($entry["weight"] ?? 1) + (int) floor(self::number($entry["quality"] ?? 0) * $context->lootingLevel()));
+				$baseWeight = self::number($entry["weight"] ?? 1);
+				$qualityBonus = floor(self::number($entry["quality"] ?? 0) * $context->lootingLevel());
+				if(!is_finite($baseWeight) || !is_finite($qualityBonus) || $baseWeight > self::MAX_ENTRY_WEIGHT || $baseWeight < -self::MAX_ENTRY_WEIGHT || $qualityBonus > self::MAX_ENTRY_WEIGHT || $qualityBonus < -self::MAX_ENTRY_WEIGHT){
+					continue;
+				}
+				$weight = max(0, (int) $baseWeight + (int) $qualityBonus);
+				if($weight > self::MAX_ENTRY_WEIGHT || $totalWeight > self::MAX_POOL_WEIGHT - $weight){
+					continue;
+				}
 				if($weight > 0){
 					$entries[] = [$entry, $weight];
 					$totalWeight += $weight;
@@ -112,12 +151,17 @@ final class LootTables{
 			if($entries === []){
 				continue;
 			}
-			for($i = 0; $i < $rolls; ++$i){
+			for($i = 0; $i < $rolls && $remainingRolls > 0 && $remainingStacks > 0 && $remainingEntries > 0; ++$i){
+				--$remainingRolls;
 				$pick = mt_rand(1, $totalWeight);
 				foreach($entries as [$entry, $weight]){
+					if($remainingEntries <= 0){
+						return $drops;
+					}
+					--$remainingEntries;
 					$pick -= $weight;
 					if($pick <= 0){
-						foreach($this->entry($entry, $context, $depth) as $item){
+						foreach($this->entry($entry, $context, $depth, $remainingRolls, $remainingStacks, $remainingPools, $remainingEntries) as $item){
 							$drops[] = $item;
 						}
 						break;
@@ -132,13 +176,13 @@ final class LootTables{
 	 * @param mixed[] $entry
 	 * @return list<Item>
 	 */
-	private function entry(array $entry, LootContext $context, int $depth) : array{
+	private function entry(array $entry, LootContext $context, int $depth, int &$remainingRolls, int &$remainingStacks, int &$remainingPools, int &$remainingEntries) : array{
 		$type = is_string($entry["type"] ?? null) ? $entry["type"] : "item";
 		if($type === "empty"){
 			return [];
 		}
 		if($type === "loot_table"){
-			return is_string($entry["name"] ?? null) ? $this->roll($entry["name"], $context, $depth + 1) : [];
+			return is_string($entry["name"] ?? null) ? $this->rollBounded($entry["name"], $context, $depth + 1, $remainingRolls, $remainingStacks, $remainingPools, $remainingEntries) : [];
 		}
 		$name = $entry["name"] ?? null;
 		if(!is_string($name)){
@@ -161,10 +205,11 @@ final class LootTables{
 		//split into stacks the item allows
 		$stacks = [];
 		$remaining = $item->getCount();
-		while($remaining > 0){
+		while($remaining > 0 && $remainingStacks > 0){
 			$count = min($remaining, $item->getMaxStackSize());
 			$stacks[] = (clone $item)->setCount($count);
 			$remaining -= $count;
+			--$remainingStacks;
 		}
 		return $stacks;
 	}
