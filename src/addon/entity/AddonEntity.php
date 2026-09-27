@@ -257,9 +257,6 @@ class AddonEntity extends Living{
 	}
 
 	protected function initEntity(CompoundTag $nbt) : void{
-		parent::initEntity($nbt);
-		$this->getFeatures()->load($nbt);
-
 		$groups = $nbt->getListTag(self::TAG_GROUPS);
 		if($groups !== null){
 			foreach($groups->getValue() as $tag){
@@ -268,6 +265,11 @@ class AddonEntity extends Living{
 				}
 			}
 		}
+		$this->components = $this->addonDefinition->resolveComponents($this->activeGroups);
+		$this->setMaxHealth(AddonEntityDefinition::maxHealth($this->components));
+		parent::initEntity($nbt);
+		$this->getFeatures()->load($nbt);
+
 		$this->properties = $this->addonDefinition->getDefaultProperties();
 		$saved = $nbt->getCompoundTag(self::TAG_PROPERTIES);
 		if($saved !== null){
@@ -325,7 +327,11 @@ class AddonEntity extends Living{
 			}
 		}
 
-		$this->refreshComponents([]);
+		//Saved groups were already active; restore their structure without replaying component-added effects.
+		$this->refreshComponents($groups !== null ? $this->components : []);
+		if($groups !== null){
+			$this->getFeatures()->componentsChanged([], $this->components);
+		}
 		if($nbt->getTag("Health") === null){
 			$this->setHealth((float) AddonEntityDefinition::startHealth($this->components));
 		}
@@ -918,6 +924,9 @@ class AddonEntity extends Living{
 		}
 		if(isset($c["minecraft:projectile"])){
 			$this->tickProjectile();
+			if(!$this->isClosed() && !$this->isFlaggedForDespawn() && $this->isAlive()){
+				$this->flushProperties();
+			}
 			return true;
 		}
 		if($now % 5 === $slot % 5 && isset($c["minecraft:environment_sensor"])){
@@ -1403,9 +1412,6 @@ class AddonEntity extends Living{
 	 * @param Player[] $viewers
 	 */
 	private function sendHeldItems(array $viewers) : void{
-		if($this->mainHand === null && $this->offHand === null){
-			return;
-		}
 		foreach($viewers as $viewer){
 			$session = $viewer->getNetworkSession();
 			$converter = $session->getTypeConverter();
@@ -2348,7 +2354,9 @@ class AddonEntity extends Living{
 		));
 		$networkSession = $player->getNetworkSession();
 		$networkSession->getEntityEventBroadcaster()->onMobArmorChange([$networkSession], $this);
-		$this->sendHeldItems([$player]);
+		if($this->mainHand !== null || $this->offHand !== null){
+			$this->sendHeldItems([$player]);
+		}
 	}
 
 	protected function onDispose() : void{
