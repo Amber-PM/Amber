@@ -200,6 +200,7 @@ final class ScriptHost{
 
 	private bool $busy = false;
 	private int $busySince = 0;
+	private int $completionCount = 0;
 	private string $servicing = "";
 	private int $restarts = 0;
 	private bool $running = false;
@@ -437,6 +438,7 @@ final class ScriptHost{
 	 */
 	private function pumpUntil(array $types, int $timeoutMs, ?int $reqId = null) : ?array{
 		$deadline = hrtime(true) + $timeoutMs * 1_000_000;
+		$completionCount = $this->completionCount;
 		$asyncOps = 0;
 		while(true){
 			if(hrtime(true) >= $deadline){
@@ -448,6 +450,7 @@ final class ScriptHost{
 			}
 			$type = $message["t"] ?? "";
 			if($type === "done"){
+				++$this->completionCount;
 				$this->busy = false;
 			}
 			if(in_array($type, $types, true)){
@@ -480,6 +483,9 @@ final class ScriptHost{
 					}
 				}finally{
 					$this->servicing = $wasServicing;
+				}
+				if(in_array("done", $types, true) && $this->completionCount !== $completionCount){
+					return ["t" => "done"];
 				}
 				if($type === "p"){
 					$asyncOps++;
