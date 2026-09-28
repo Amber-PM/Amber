@@ -202,8 +202,14 @@ abstract class Goal{
 
 	/** A block-accurate line of sight from eye to eye. */
 	protected function canSee(Entity $target) : bool{
+		$start = $this->mob->getEyePos();
+		$end = $target->getEyePos();
 		$world = $this->mob->getWorld();
-		foreach(VoxelRayTrace::betweenPoints($this->mob->getEyePos(), $target->getEyePos()) as $vector){
+		if($start->distanceSquared($end) <= 1e-6){
+			$block = $world->getBlockAt($start->getFloorX(), $start->getFloorY(), $start->getFloorZ());
+			return !$block->isSolid() || $block->isTransparent();
+		}
+		foreach(VoxelRayTrace::betweenPoints($start, $end) as $vector){
 			$block = $world->getBlockAt((int) $vector->x, (int) $vector->y, (int) $vector->z);
 			if($block->isSolid() && !$block->isTransparent()){
 				return false;
