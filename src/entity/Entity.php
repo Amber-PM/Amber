@@ -83,6 +83,9 @@ use function floatval;
 use function floor;
 use function fmod;
 use function get_class;
+use function is_array;
+use function json_decode;
+use function json_encode;
 use function min;
 use function sin;
 use function spl_object_id;
@@ -98,6 +101,7 @@ abstract class Entity{
 	private const TAG_FALL_DISTANCE = "FallDistance"; //TAG_Float
 	private const TAG_CUSTOM_NAME = "CustomName"; //TAG_String
 	private const TAG_CUSTOM_NAME_VISIBLE = "CustomNameVisible"; //TAG_Byte
+	private const TAG_ADDON_DYNAMIC_PROPERTIES = "AddonDynamicProperties";
 	public const TAG_POS = "Pos"; //TAG_List<TAG_Double>|TAG_List<TAG_Float>
 	public const TAG_MOTION = "Motion"; //TAG_List<TAG_Double>|TAG_List<TAG_Float>
 	public const TAG_ROTATION = "Rotation"; //TAG_List<TAG_Float>
@@ -128,6 +132,8 @@ abstract class Entity{
 
 	protected Location $location;
 	protected Location $lastLocation;
+	/** @var array<string, mixed> behavior-pack UUID and property key => value */
+	private array $addonDynamicProperties = [];
 	protected Vector3 $motion;
 	protected Vector3 $lastMotion;
 	protected bool $forceMovementUpdate = false;
@@ -483,6 +489,16 @@ abstract class Entity{
 		$this->savedWithChunk = $value;
 	}
 
+	/** @return array<string, mixed> */
+	public function getAddonDynamicProperties() : array{
+		return $this->addonDynamicProperties;
+	}
+
+	/** @param array<string, mixed> $values */
+	public function setAddonDynamicProperties(array $values) : void{
+		$this->addonDynamicProperties = $values;
+	}
+
 	public function saveNBT() : CompoundTag{
 		$nbt = CompoundTag::create()
 			->setTag(self::TAG_POS, new ListTag([
@@ -514,11 +530,19 @@ abstract class Entity{
 		$nbt->setByte(self::TAG_ON_GROUND, $this->onGround ? 1 : 0);
 
 		$nbt->setLong(VersionInfo::TAG_WORLD_DATA_VERSION, VersionInfo::WORLD_DATA_VERSION);
+		if($this->addonDynamicProperties !== []){
+			$nbt->setString(self::TAG_ADDON_DYNAMIC_PROPERTIES, json_encode($this->addonDynamicProperties, JSON_THROW_ON_ERROR));
+		}
 
 		return $nbt;
 	}
 
 	protected function initEntity(CompoundTag $nbt) : void{
+		$dynamic = $nbt->getString(self::TAG_ADDON_DYNAMIC_PROPERTIES, "");
+		if($dynamic !== ""){
+			$decoded = json_decode($dynamic, true);
+			$this->addonDynamicProperties = is_array($decoded) ? $decoded : [];
+		}
 		$this->fireTicks = $nbt->getShort(self::TAG_FIRE, 0);
 
 		$this->onGround = $nbt->getByte(self::TAG_ON_GROUND, 0) !== 0;

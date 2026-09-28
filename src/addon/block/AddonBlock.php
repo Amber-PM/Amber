@@ -28,6 +28,7 @@ use pocketmine\block\Block;
 use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\utils\SupportType;
+use pocketmine\entity\Entity;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
@@ -36,6 +37,8 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use function array_search;
+use function is_array;
+use function mt_rand;
 use function count;
 use function max;
 
@@ -161,6 +164,85 @@ class AddonBlock extends Block{
 		}
 		$tx->addBlock($blockReplace->position, $block);
 		return true;
+	}
+
+	/**
+	 * minecraft:tick: [min, max] ticks between onTick calls and whether it repeats, or null.
+	 *
+	 * @return array{int, int, bool}|null
+	 */
+	public function getTickSettings() : ?array{
+		$tick = $this->addonDefinition->getComponents()["minecraft:tick"] ?? null;
+		if(!is_array($tick)){
+			return null;
+		}
+		$range = is_array($tick["interval_range"] ?? null) ? $tick["interval_range"] : [10, 10];
+		$min = max(1, (int) ($range[0] ?? 10));
+		$max = max($min, (int) ($range[1] ?? $min));
+		return [$min, $max, (bool) ($tick["looping"] ?? true)];
+	}
+
+	/** Schedules the next onTick, if the block has minecraft:tick. */
+	public function scheduleTick() : void{
+		$settings = $this->getTickSettings();
+		if($settings !== null && $this->position->isValid()){
+			$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, mt_rand($settings[0], $settings[1]));
+		}
+	}
+
+	public function onPostPlace() : void{
+		parent::onPostPlace();
+		$this->scheduleTick();
+	}
+
+	public function onScheduledUpdate() : void{
+		$settings = $this->getTickSettings();
+		if($settings === null){
+			return;
+		}
+		AddonManager::getInstance()?->dispatchBlockHook($this, "onTick", []);
+		if($settings[2] && $this->position->getWorld()->getBlock($this->position) instanceof self){
+			$this->scheduleTick();
+		}
+	}
+
+	public function ticksRandomly() : bool{
+		//minecraft:tick blocks also tick randomly, to re-arm their tick after being placed by a plugin or loaded
+		return $this->getTickSettings() !== null || (AddonManager::getInstance()?->blockHasHook($this, "onRandomTick") ?? false);
+	}
+
+	public function onRandomTick() : void{
+		if($this->getTickSettings() !== null){
+			$this->scheduleTick(); //the world ignores it when a tick is already queued
+		}
+		$manager = AddonManager::getInstance();
+		if($manager !== null && $manager->blockHasHook($this, "onRandomTick")){
+			$manager->dispatchBlockHook($this, "onRandomTick", []);
+		}
+	}
+
+	public function onEntityLand(Entity $entity) : ?float{
+		$manager = AddonManager::getInstance();
+		if($manager !== null && $manager->blockHasHook($this, "onEntityFallOn")){
+			$fall = $entity->getFallDistance();
+			$settings = $this->addonDefinition->getComponents()["minecraft:entity_fall_on"] ?? null;
+			$minimum = is_array($settings) ? (float) ($settings["minimum_fall_distance"] ?? 1.0) : 1.0;
+			if($fall >= $minimum){
+				$manager->dispatchBlockHook($this, "onEntityFallOn", ["entity" => $entity->getId(), "fallDistance" => $fall]);
+			}
+		}
+		return parent::onEntityLand($entity);
+	}
+
+	/** minecraft:loot: the pack's loot table instead of the block itself. */
+	public function getDropsForCompatibleTool(Item $item) : array{
+		$loot = $this->addonDefinition->getComponents()["minecraft:loot"] ?? null;
+		$table = \is_array($loot) ? ($loot["value"] ?? $loot["table"] ?? null) : $loot;
+		$tables = AddonManager::getInstance()?->getLootTables();
+		if(\is_string($table) && $tables !== null && $tables->exists($table)){
+			return $tables->roll($table, new \pocketmine\addon\loot\LootContext(null, null, $item, false));
+		}
+		return parent::getDropsForCompatibleTool($item);
 	}
 
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
