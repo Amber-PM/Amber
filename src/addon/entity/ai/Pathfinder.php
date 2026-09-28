@@ -40,10 +40,13 @@ use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 use function abs;
+use function array_keys;
+use function array_reverse;
 use function ceil;
 use function count;
 use function floor;
 use function max;
+use function min;
 use function sqrt;
 
 /**
@@ -60,49 +63,104 @@ use function sqrt;
 final class Pathfinder{
 	private const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-	/** Path searches allowed per server tick, across all mobs; the rest wait a tick. Keeps crowds from spiking a tick. */
+	/** Absolute path-search ceiling per server tick, across all mobs. */
 	public const SEARCHES_PER_TICK = 16;
+	/** Four worst-case searches per tick; cheap searches refund unused nodes */
+	public const WORK_NODES_PER_TICK = 1600;
+	private const DEFAULT_MAX_NODES = 400;
 
 	private static int $budgetTick = -1;
 	private static int $budgetUsed = 0;
-	/** @var array<int, true> requesters waiting for admission */
+	private static int $workUsed = 0;
+	/** @var array<int, int> requester => current queue-entry token */
 	private static array $waiting = [];
-	/** @var \SplQueue<int>|null */
+	private static int $waitSequence = 0;
+	/** @var \SplQueue<array{int, int}>|null */
 	private static ?\SplQueue $waitQueue = null;
 	/** @var array<int, true> slots reserved for previously denied requesters */
 	private static array $reserved = [];
+	/** @var array<int, true> denied this tick, including waiters promoted after their turn in the update order */
+	private static array $reservationAttempted = [];
+	/** @var array<int, true> admitted searches whose node reservations are still outstanding */
+	private static array $outstanding = [];
 
 	/** Takes one search from this tick's budget; false when it is used up. */
 	public static function takeBudget(int $currentTick, int $requesterId) : bool{
 		if($currentTick !== self::$budgetTick){
+			$queue = self::$waitQueue ??= new \SplQueue();
+			foreach(array_reverse(array_keys(self::$reserved)) as $id){
+				if(isset(self::$reservationAttempted[$id])){
+					self::$waiting[$id] = ++self::$waitSequence;
+					$queue->unshift([$id, self::$waiting[$id]]);
+				}
+			}
 			self::$budgetTick = $currentTick;
 			self::$budgetUsed = 0;
+			self::$workUsed = 0;
 			self::$reserved = [];
-			$queue = self::$waitQueue ??= new \SplQueue();
-			for($i = 0; $i < self::SEARCHES_PER_TICK && !$queue->isEmpty(); ++$i){
-				$id = $queue->dequeue();
-				unset(self::$waiting[$id]);
-				self::$reserved[$id] = true;
-			}
+			self::$reservationAttempted = [];
+			self::$outstanding = [];
+			self::reserveWaiting();
+		}
+		if(isset(self::$outstanding[$requesterId])){
+			return false;
 		}
 		if(isset(self::$reserved[$requesterId])){
+			if(self::$workUsed + self::DEFAULT_MAX_NODES > self::WORK_NODES_PER_TICK){
+				self::$reservationAttempted[$requesterId] = true;
+				return false;
+			}
 			unset(self::$reserved[$requesterId]);
-			++self::$budgetUsed;
-			return true;
+		}else{
+			if(self::$budgetUsed + count(self::$reserved) >= self::SEARCHES_PER_TICK || self::$workUsed + (count(self::$reserved) + 1) * self::DEFAULT_MAX_NODES > self::WORK_NODES_PER_TICK){
+				self::$reservationAttempted[$requesterId] = true;
+				if(!isset(self::$waiting[$requesterId])){
+					self::$waiting[$requesterId] = ++self::$waitSequence;
+					(self::$waitQueue ??= new \SplQueue())->enqueue([$requesterId, self::$waiting[$requesterId]]);
+				}
+				return false;
+			}
 		}
-		if(self::$budgetUsed + count(self::$reserved) < self::SEARCHES_PER_TICK){
-			++self::$budgetUsed;
-			return true;
+		++self::$budgetUsed;
+		self::$workUsed += self::DEFAULT_MAX_NODES;
+		self::$outstanding[$requesterId] = true;
+		return true;
+	}
+
+	public static function completeBudget(int $currentTick, int $requesterId, int $expandedNodes) : void{
+		if($currentTick !== self::$budgetTick || !isset(self::$outstanding[$requesterId])){
+			return;
 		}
-		if(!isset(self::$waiting[$requesterId])){
-			self::$waiting[$requesterId] = true;
-			(self::$waitQueue ??= new \SplQueue())->enqueue($requesterId);
+		unset(self::$outstanding[$requesterId]);
+		self::$workUsed -= self::DEFAULT_MAX_NODES - min(self::DEFAULT_MAX_NODES, max(0, $expandedNodes));
+		self::reserveWaiting();
+	}
+
+	public static function cancelBudget(int $requesterId) : void{
+		unset(self::$waiting[$requesterId], self::$reserved[$requesterId], self::$reservationAttempted[$requesterId]);
+		self::reserveWaiting();
+	}
+
+	private static function reserveWaiting() : void{
+		$queue = self::$waitQueue ??= new \SplQueue();
+		while(!$queue->isEmpty()){
+			[$id, $token] = $queue->bottom();
+			if((self::$waiting[$id] ?? null) !== $token){
+				$queue->dequeue();
+				continue;
+			}
+			if(self::$budgetUsed + count(self::$reserved) >= self::SEARCHES_PER_TICK || self::$workUsed + (count(self::$reserved) + 1) * self::DEFAULT_MAX_NODES > self::WORK_NODES_PER_TICK){
+				break;
+			}
+			$queue->dequeue();
+			unset(self::$waiting[$id]);
+			self::$reserved[$id] = true;
 		}
-		return false;
 	}
 
 	/** @var array<int, int> block hash => 0 passable, 1 solid, 2 water, 3 danger, 4 unstepable */
 	private array $cache = [];
+	private int $expandedNodes = 0;
 
 	public function __construct(
 		private World $world,
@@ -110,8 +168,10 @@ final class Pathfinder{
 		private bool $canSwim,
 		private bool $avoidWater,
 		private int $maxFall = 3,
-		private int $maxNodes = 400
+		private int $maxNodes = self::DEFAULT_MAX_NODES
 	){}
+
+	public function getExpandedNodes() : int{ return $this->expandedNodes; }
 
 	/**
 	 * @return list<Vector3>|null block-centre waypoints from (not including) the start to the goal, or null
@@ -119,6 +179,7 @@ final class Pathfinder{
 	 */
 	public function find(Vector3 $from, Vector3 $to, float $maxDistance = 24.0) : ?array{
 		$this->cache = [];
+		$this->expandedNodes = 0;
 		$sx = (int) floor($from->x);
 		$sy = (int) floor($from->y + 0.01);
 		$sz = (int) floor($from->z);
@@ -150,16 +211,14 @@ final class Pathfinder{
 		$open->insert($start, 0.0);
 		$best = $start;
 		$bestH = $this->h($sx, $sy, $sz, $gx, $gy, $gz);
-		$expanded = 0;
-
-		while(!$open->isEmpty() && $expanded < $this->maxNodes){
+		while(!$open->isEmpty() && $this->expandedNodes < $this->maxNodes){
 			/** @var int $current */
 			$current = $open->extract();
 			if(isset($closed[$current])){
 				continue;
 			}
 			$closed[$current] = true;
-			$expanded++;
+			++$this->expandedNodes;
 			[$cx, $cy, $cz] = $pos[$current];
 			if($cx === $gx && $cz === $gz && abs($cy - $gy) <= 1){
 				$best = $current;
