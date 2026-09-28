@@ -54,7 +54,7 @@ export const HudElement = Object.freeze({ PaperDoll: 0, Armor: 1, ToolTips: 2, T
 export const HudVisibility = Object.freeze({ Hide: 0, Reset: 1 });
 export const LiquidType = enumOf(["Water"]);
 export const ItemLockMode = enumOf(["inventory", "none", "slot"]);
-export const EntityComponentTypes = Object.freeze({ ...Names.EntityComponentTypes, 
+export const EntityComponentTypes = Object.freeze({ ...Names.EntityComponentTypes,
 	AddRider: "minecraft:addrider", Ageable: "minecraft:ageable", Breathable: "minecraft:breathable", CanClimb: "minecraft:can_climb", CanFly: "minecraft:can_fly",
 	Color: "minecraft:color", Equippable: "minecraft:equippable", Rideable: "minecraft:rideable", Riding: "minecraft:riding", Leashable: "minecraft:leashable", FireImmune: "minecraft:fire_immune", Health: "minecraft:health", Inventory: "minecraft:inventory",
 	IsBaby: "minecraft:is_baby", IsTamed: "minecraft:is_tamed", Item: "minecraft:item", MarkVariant: "minecraft:mark_variant", Movement: "minecraft:movement",
