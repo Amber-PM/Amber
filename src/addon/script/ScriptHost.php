@@ -102,6 +102,7 @@ use function feof;
 use function file_get_contents;
 use function floor;
 use function fread;
+use function fseek;
 use function fwrite;
 use function hrtime;
 use function implode;
@@ -136,6 +137,7 @@ use function str_ends_with;
 use function str_replace;
 use function str_starts_with;
 use function stream_get_contents;
+use function stream_get_meta_data;
 use function stream_select;
 use function stream_set_blocking;
 use function strlen;
@@ -143,14 +145,18 @@ use function strpos;
 use function strtolower;
 use function substr;
 use function trim;
+use function tmpfile;
 use function ucfirst;
 use function usort;
+use function usleep;
 use function version_compare;
 use const JSON_INVALID_UTF8_SUBSTITUTE;
 use const JSON_PRESERVE_ZERO_FRACTION;
 use const JSON_UNESCAPED_SLASHES;
 use const JSON_UNESCAPED_UNICODE;
 use const M_PI;
+use const PHP_OS_FAMILY;
+use const SEEK_CUR;
 
 /**
  * Runs behavior pack scripts (@minecraft/server, @minecraft/server-ui) in a Node.js process beside the server.
@@ -182,6 +188,7 @@ final class ScriptHost{
 	private $stdout = null;
 	/** @var resource|null */
 	private $stderr = null;
+	private bool $fileOutput = false;
 	private string $buffer = "";
 	private string $errBuffer = "";
 
@@ -273,13 +280,30 @@ final class ScriptHost{
 		}
 		$command = [...$command, "--max-old-space-size=" . $this->memoryMb, "--disable-proto=delete", "--no-warnings", "--stack-size=4096", Path::join($hostDir, "host.mjs")];
 		$pipes = [];
-		$process = proc_open($command, [0 => ["pipe", "r"], 1 => ["pipe", "w"], 2 => ["pipe", "w"]], $pipes, $hostDir);
+		$descriptors = [0 => ["pipe", "r"], 1 => ["pipe", "w"], 2 => ["pipe", "w"]];
+		$stdoutFile = $stderrFile = null;
+		if(PHP_OS_FAMILY === "Windows"){
+			$stdoutFile = @tmpfile();
+			$stderrFile = @tmpfile();
+			if($stdoutFile === false || $stderrFile === false){
+				if(is_resource($stdoutFile)){ fclose($stdoutFile); }
+				if(is_resource($stderrFile)){ fclose($stderrFile); }
+				$this->logger->error("Add-on scripts: could not create temporary output files");
+				return false;
+			}
+			$descriptors[1] = ["file", stream_get_meta_data($stdoutFile)["uri"], "wb"];
+			$descriptors[2] = ["file", stream_get_meta_data($stderrFile)["uri"], "wb"];
+		}
+		$process = proc_open($command, $descriptors, $pipes, $hostDir);
 		if(!is_resource($process)){
+			if(is_resource($stdoutFile)){ fclose($stdoutFile); }
+			if(is_resource($stderrFile)){ fclose($stderrFile); }
 			$this->logger->error("Add-on scripts: could not start Node.js");
 			return false;
 		}
 		$this->process = $process;
-		[$this->stdin, $this->stdout, $this->stderr] = [$pipes[0], $pipes[1], $pipes[2]];
+		[$this->stdin, $this->stdout, $this->stderr] = [$pipes[0], $stdoutFile ?? $pipes[1], $stderrFile ?? $pipes[2]];
+		$this->fileOutput = PHP_OS_FAMILY === "Windows";
 		stream_set_blocking($this->stdin, false);
 		stream_set_blocking($this->stdout, false);
 		stream_set_blocking($this->stderr, false);
@@ -518,7 +542,28 @@ final class ScriptHost{
 				}
 				return $decoded;
 			}
-			if($this->stdout === null || feof($this->stdout)){
+			if($this->stdout === null){
+				throw new \RuntimeException("script host exited");
+			}
+			if($this->fileOutput){
+				//clear the previous e0f so appended output can be read without waiting for the child
+				fseek($this->stdout, 0, SEEK_CUR);
+				$chunk = fread($this->stdout, 1 << 16);
+				if($chunk === false){
+					throw new \RuntimeException("script host output failed");
+				}
+				if($chunk !== ""){
+					$this->buffer .= $chunk;
+					continue;
+				}
+				if($this->process !== null && !proc_get_status($this->process)["running"]){
+					throw new \RuntimeException("script host exited");
+				}
+				$this->flushWriteBuffer();
+				usleep((int) min(1000, max(0, ($deadline - hrtime(true)) / 1000)));
+				continue;
+			}
+			if(feof($this->stdout)){
 				throw new \RuntimeException("script host exited");
 			}
 			$remaining = $deadline - hrtime(true);
@@ -548,6 +593,9 @@ final class ScriptHost{
 	private function drainStderr() : void{
 		if($this->stderr === null){
 			return;
+		}
+		if($this->fileOutput){
+			fseek($this->stderr, 0, SEEK_CUR);
 		}
 		$chunk = @fread($this->stderr, 1 << 16);
 		if(is_string($chunk) && $chunk !== ""){
