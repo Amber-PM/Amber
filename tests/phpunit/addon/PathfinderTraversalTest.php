@@ -12,6 +12,22 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\World;
 
 final class PathfinderTraversalTest extends TestCase{
+	public function testExpandedNodesCountsActualSearchAndResetsOnEarlyReturn() : void{
+		$chunk = new Chunk([], true);
+		for($x = 0; $x <= 4; ++$x){ $chunk->setBlockStateId($x, 0, 0, VanillaBlocks::STONE()->getStateId()); }
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods(["getChunk", "getMinY", "getMaxY"])->getMock();
+		$world->method("getChunk")->willReturn($chunk);
+		$world->method("getMinY")->willReturn(-64);
+		$world->method("getMaxY")->willReturn(320);
+		$finder = new Pathfinder($world, 2, false, false);
+		$path = $finder->find(new Vector3(0.5, 1, 0.5), new Vector3(4.5, 1, 0.5));
+		self::assertNotNull($path);
+		self::assertSame(5, $finder->getExpandedNodes());
+		self::assertEquals(new Vector3(4.5, 1, 0.5), $path[count($path) - 1]);
+		self::assertNull($finder->find(new Vector3(0.5, 1, 0.5), new Vector3(100.5, 1, 0.5)));
+		self::assertSame(0, $finder->getExpandedNodes());
+	}
+
 	/** @param array<int, Block> $blocks */
 	private function path(array $blocks, Vector3 $from, Vector3 $to) : ?array{
 		$chunk = new Chunk([], true);

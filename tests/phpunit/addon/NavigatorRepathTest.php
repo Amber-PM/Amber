@@ -37,5 +37,6 @@ final class NavigatorRepathTest extends TestCase{
 			$navigator->moveTo(new Vector3(10 + ($tick - 100) * 0.2, 1, 0), 1, $tick);
 		}
 		self::assertGreaterThan(0, $queries, "Cumulative movement must trigger a new path search");
+		self::assertSame(0, (new ReflectionProperty(\pocketmine\addon\entity\ai\Pathfinder::class, "workUsed"))->getValue(), "An early null search must refund its unused node reservation");
 	}
 }

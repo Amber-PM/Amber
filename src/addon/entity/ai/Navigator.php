@@ -74,6 +74,7 @@ final class Navigator{
 		$this->speed = $this->profile->speed * $speedMultiplier;
 		$this->requestedGoal = $goal;
 		if($this->profile->direct){
+			Pathfinder::cancelBudget($this->entity->getId());
 			$this->goal = $goal;
 			$this->path = [$goal];
 			$this->index = 0;
@@ -88,14 +89,19 @@ final class Navigator{
 			}
 			$this->lastPlan = $currentTick;
 			AddonTimings::$pathfinding->startTiming();
-			$path = (new Pathfinder(
+			$pathfinder = new Pathfinder(
 				$this->entity->getWorld(),
 				Pathfinder::heightInBlocks($this->entity->getSize()->getHeight()),
 				$this->profile->canSwim,
 				$this->profile->avoidWater,
 				$this->profile->maxFall
-			))->find($this->entity->getPosition(), $goal, $this->profile->range);
-			AddonTimings::$pathfinding->stopTiming();
+			);
+			try{
+				$path = $pathfinder->find($this->entity->getPosition(), $goal, $this->profile->range);
+			}finally{
+				Pathfinder::completeBudget($currentTick, $this->entity->getId(), $pathfinder->getExpandedNodes());
+				AddonTimings::$pathfinding->stopTiming();
+			}
 			if($path === null){
 				if($this->path === []){
 					$this->stop();
@@ -114,6 +120,7 @@ final class Navigator{
 	}
 
 	public function stop() : void{
+		Pathfinder::cancelBudget($this->entity->getId());
 		$this->path = [];
 		$this->index = 0;
 		$this->goal = null;
