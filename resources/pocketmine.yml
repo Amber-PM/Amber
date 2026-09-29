@@ -142,8 +142,8 @@ chunk-ticking:
 
 redstone:
   #Redstone wire, torches, repeaters, comparators, and what they power (lamps, copper bulbs, doors,
-  #trapdoors, fence gates, TNT, powered and activator rails). Pistons, droppers, dispensers, hoppers,
-  #observers and note blocks are not simulated.
+  #trapdoors, fence gates, TNT, powered and activator rails, note blocks, and hopper locking).
+  #Pistons, droppers, dispensers and observers are not simulated.
   enabled: true
   #Redstone positions evaluated per tick in each world. Busy circuits past this slow down instead of lagging the server.
   max-updates-per-tick: 2000
@@ -179,8 +179,9 @@ backups:
   worlds: []
 
 auto-report:
-  #Send crash reports for processing
-  enabled: true
+  #Send crash reports to the crash archive at "host". Crash reports include server settings and the plugin list.
+  #crash.pmmp.io is PocketMine-MP's archive, for official PocketMine-MP builds: only enable this with a host of your own.
+  enabled: false
   send-code: true
   send-settings: true
   send-phpinfo: false

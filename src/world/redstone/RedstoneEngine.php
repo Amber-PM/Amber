@@ -30,7 +30,9 @@ use pocketmine\block\CopperBulb;
 use pocketmine\block\DaylightSensor;
 use pocketmine\block\Door;
 use pocketmine\block\FenceGate;
+use pocketmine\block\Hopper;
 use pocketmine\block\Lever;
+use pocketmine\block\Note;
 use pocketmine\block\PoweredRail;
 use pocketmine\block\PressurePlate;
 use pocketmine\block\Redstone;
@@ -108,7 +110,7 @@ final class RedstoneEngine{
 			$block instanceof PressurePlate || $block instanceof Redstone || $block instanceof DaylightSensor ||
 			$block instanceof RedstoneLamp || $block instanceof CopperBulb || $block instanceof Door ||
 			$block instanceof Trapdoor || $block instanceof FenceGate || $block instanceof TNT ||
-			$block instanceof PoweredRail || $block instanceof ActivatorRail;
+			$block instanceof PoweredRail || $block instanceof ActivatorRail || $block instanceof Note || $block instanceof Hopper;
 	}
 
 	/** A block redstone power can pass through (a full, non-transparent block). */
@@ -270,6 +272,15 @@ final class RedstoneEngine{
 			$powered = $this->receivedPower($x, $y, $z) > 0;
 			if($this->edge($hash, $powered) && $block->isOpen() !== $powered){
 				$this->world->setBlockAt($x, $y, $z, $block->setOpen($powered));
+			}
+		}elseif($block instanceof Note){
+			if($this->edge($hash, $this->receivedPower($x, $y, $z) > 0) && isset($this->lastPowered[$hash])){
+				$block->play();
+			}
+		}elseif($block instanceof Hopper){
+			$powered = $this->receivedPower($x, $y, $z) > 0;
+			if($powered !== $block->isPowered()){
+				$this->world->setBlockAt($x, $y, $z, $block->setPowered($powered));
 			}
 		}elseif($block instanceof TNT){
 			if($this->receivedPower($x, $y, $z) > 0){

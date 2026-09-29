@@ -1814,7 +1814,7 @@ class Server{
 
 			$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_crash_submit($crashDumpPath)));
 
-			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, true)){
+			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, false)){
 				$report = true;
 
 				$stamp = Path::join($this->dataPath, "crashdumps", ".last_crash");
