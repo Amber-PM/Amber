@@ -50,8 +50,12 @@ use pocketmine\nbt\TreeRoot;
 use pocketmine\nbt\UnexpectedTagTypeException;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
+use pocketmine\network\mcpe\protocol\LevelChunkPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\serializer\ItemTypeDictionary;
+use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
+use pocketmine\network\mcpe\protocol\types\ChunkPosition;
+use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\protocol\types\GameMode as ProtocolGameMode;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStack;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStackExtraData;
@@ -66,9 +70,11 @@ use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\ProtocolSingletonTrait;
 use pocketmine\utils\Utils;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
+use function bin2hex;
 use function count;
 use function get_class;
 use function hash;
+use function implode;
 use function spl_object_id;
 
 class TypeConverter{
@@ -89,6 +95,10 @@ class TypeConverter{
 	private int $shieldRuntimeId;
 
 	private SkinAdapter $skinAdapter;
+
+	/** @phpstan-var array<string, int> */
+	private static array $chunkProtocolIds = [];
+	private ?int $chunkProtocolId = null;
 
 	public function __construct(int $protocolId){
 		$this->__protocolConstruct($protocolId);
@@ -115,6 +125,26 @@ class TypeConverter{
 	}
 
 	public function getBlockTranslator() : BlockTranslator{ return $this->blockTranslator; }
+
+	/**
+	 * Protocols that encode chunks to the same bytes share one chunk cache entry, prepared with the returned
+	 * protocol's converter.
+	 */
+	public function getChunkProtocolId() : int{
+		return $this->chunkProtocolId ??= (self::$chunkProtocolIds[$this->chunkEncodingKey()] ??= $this->protocolId);
+	}
+
+	private function chunkEncodingKey() : string{
+		$sample = new ByteBufferWriter();
+		PacketBatch::encodePackets($sample, $this->protocolId, [LevelChunkPacket::create(new ChunkPosition(0, 0), DimensionIds::OVERWORLD, 1, null, false, [], "")]);
+		return implode(":", [
+			spl_object_id($this->blockTranslator),
+			spl_object_id($this->itemTypeDictionary),
+			ItemTranslator::getItemSchemaId($this->protocolId),
+			$this->protocolId >= ProtocolInfo::PROTOCOL_1_20_60 ? "compressor-id" : "",
+			bin2hex($sample->getData())
+		]);
+	}
 
 	public function getItemTypeDictionary() : ItemTypeDictionary{ return $this->itemTypeDictionary; }
 

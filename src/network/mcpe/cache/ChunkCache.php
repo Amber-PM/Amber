@@ -170,6 +170,7 @@ class ChunkCache implements ChunkListener{
 	 * @return CompressBatchPromise|string Compressed chunk packet, or a promise for one to be resolved asynchronously.
 	 */
 	public function request(int $chunkX, int $chunkZ, TypeConverter $typeConverter) : CompressBatchPromise|string{
+		$typeConverter = TypeConverter::getInstance($typeConverter->getChunkProtocolId());
 		$chunkHash = World::chunkHash($chunkX, $chunkZ);
 		if(isset($this->caches[$chunkHash][$protocolId = $typeConverter->getProtocolId()])){
 			++$this->hits;
