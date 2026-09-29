@@ -49,7 +49,7 @@ final class AddonWorkerData{
 
 	/** @return list<BlockStateData> */
 	public static function getNetworkBlockStates() : array{
-		return AddonManager::getInstance()?->getNetworkBlockStates() ?? self::$networkBlockStates ?? [];
+		return self::$networkBlockStates ?? AddonManager::getInstance()?->getNetworkBlockStates() ?? [];
 	}
 
 	public static function getStateData(int $internalStateId) : ?BlockStateData{
