@@ -26,10 +26,16 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 * 🎯 **Custom Event Dispatchers** - Exposes developer-focused events such as `PlayerPressurePlateTriggerEvent`, `SessionDisconnectEvent`, and `ItemEntityDropEvent` for granular event manipulation.
 * 🧩 **Extensible Plugin API** - Keeps full compatibility with the official PocketMine-MP v5 plugin API, enabling most standard plugins to run without modifications.
 * ⚡ **Performance & Compression** - Features optimized protocol translation overhead and dynamic packet compression adjustments adapted to the connection's protocol level.
+* 🖥️ **Web panel & metrics** - Optional panel for players, console, add-ons and performance, and a Prometheus `/metrics` endpoint (`web` in `pocketmine.yml`). `/amber perf` shows the same numbers in game.
+* 💾 **World backups** - Scheduled, consistent world backups taken while the server runs (`backups` in `pocketmine.yml`, or `/amber backup`).
+* 🔀 **WaterdogPE support** - Accepts logins forwarded by a WaterdogPE proxy, with the player's real address (`network.waterdog-support`).
+* 🔴 **Redstone** - Wire, torches, repeaters and comparators powering lamps, doors, trapdoors, fence gates, TNT and rails (`redstone` in `pocketmine.yml`).
+* 🏛️ **Generated structures** - The default generator adds desert wells, igloos, ruins, ruined portals, boulders and buried fossils. Turn them off for a world with the generator setting `structures=false`; `/amber structure <name>` places one.
+* 📋 **Form builder** - `MenuForm`, `ConfirmForm` and `CustomForm`, sent in the layout each client version reads.
 
 ## :x: AmberPM is NOT a vanilla Minecraft server software.
 **It is designed primarily for custom game modes, minigames, and lobby servers.**
-Just like official PocketMine-MP, it does not ship with most survival features from the vanilla game (such as vanilla mob AI, redstone simulation, or vanilla world generation).
+Just like official PocketMine-MP, it does not ship with most survival features from the vanilla game (such as vanilla mob AI, pistons and the rest of redstone beyond the basics, or vanilla world generation).
 
 If you are trying to host a purely **vanilla survival multiplayer** server, please use the [official Minecraft: Bedrock server software](https://minecraft.net/download/server/bedrock).
 

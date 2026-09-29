@@ -32,11 +32,19 @@ use pocketmine\permission\Permission;
 use pocketmine\permission\PermissionManager;
 use pocketmine\player\Player;
 use pocketmine\stats\ServerMetrics;
+use pocketmine\utils\Random;
 use pocketmine\utils\TextFormat as TF;
+use pocketmine\world\format\Chunk;
+use pocketmine\world\generator\structure\Structure;
+use pocketmine\world\generator\structure\StructurePopulator;
+use function array_keys;
 use function basename;
 use function count;
+use function floor;
 use function implode;
 use function intdiv;
+use function is_numeric;
+use function mt_rand;
 use function number_format;
 use function round;
 use function sprintf;
@@ -45,7 +53,7 @@ final class AmberCommand extends Command{
 	public const PERMISSION = "pocketmine.command.amber";
 
 	public function __construct(){
-		parent::__construct("amber", "AmberPM tools", "/amber <perf|backup [world]>");
+		parent::__construct("amber", "AmberPM tools", "/amber <perf|backup [world]|structure <name> [x z [world]]>");
 		$operator = PermissionManager::getInstance()->getPermission(DefaultPermissions::ROOT_OPERATOR);
 		if(PermissionManager::getInstance()->getPermission(self::PERMISSION) === null && $operator !== null){
 			DefaultPermissions::registerPermission(new Permission(self::PERMISSION, "Allows the user to use /amber"), [$operator]);
@@ -57,6 +65,7 @@ final class AmberCommand extends Command{
 		return match($args[0] ?? "perf"){
 			"perf" => $this->perf($sender),
 			"backup" => $this->backup($sender, $args[1] ?? null),
+			"structure" => $this->structure($sender, $args),
 			default => throw new InvalidCommandSyntaxException(),
 		};
 	}
@@ -129,6 +138,53 @@ final class AmberCommand extends Command{
 				$sender->sendMessage($file !== null ? TF::GREEN . "Backed up $name to " . basename($file) : TF::RED . "Backup of $name failed: $error");
 			});
 			$sender->sendMessage($started ? TF::GRAY . "Backing up $name..." : TF::YELLOW . "A backup of $name is already running");
+		}
+		return true;
+	}
+
+	/**
+	 * @param string[] $args
+	 */
+	private function structure(CommandSender $sender, array $args) : bool{
+		$structures = StructurePopulator::defaultStructures();
+		$structure = $structures[$args[1] ?? ""] ?? null;
+		if($structure === null){
+			$sender->sendMessage(TF::GRAY . "Structures: " . implode(", ", array_keys($structures)));
+			return true;
+		}
+		if(isset($args[2], $args[3])){
+			if(!is_numeric($args[2]) || !is_numeric($args[3])){
+				throw new InvalidCommandSyntaxException();
+			}
+			$x = (int) floor((float) $args[2]);
+			$z = (int) floor((float) $args[3]);
+			$world = isset($args[4]) ? $sender->getServer()->getWorldManager()->getWorldByName($args[4]) : ($sender instanceof Player ? $sender->getWorld() : $sender->getServer()->getWorldManager()->getDefaultWorld());
+		}elseif($sender instanceof Player){
+			$position = $sender->getPosition();
+			$x = $position->getFloorX();
+			$z = $position->getFloorZ();
+			$world = $sender->getWorld();
+		}else{
+			throw new InvalidCommandSyntaxException();
+		}
+		if($world === null){
+			$sender->sendMessage(TF::RED . "No loaded world is called " . ($args[4] ?? ""));
+			return true;
+		}
+
+		$reach = Structure::MAX_RADIUS;
+		for($chunkX = ($x - $reach) >> Chunk::COORD_BIT_SIZE; $chunkX <= ($x + $reach) >> Chunk::COORD_BIT_SIZE; ++$chunkX){
+			for($chunkZ = ($z - $reach) >> Chunk::COORD_BIT_SIZE; $chunkZ <= ($z + $reach) >> Chunk::COORD_BIT_SIZE; ++$chunkZ){
+				if($world->loadChunk($chunkX, $chunkZ) === null){
+					$sender->sendMessage(TF::RED . "The terrain around $x, $z is not generated yet");
+					return true;
+				}
+			}
+		}
+		if($structure->place($world, $x, $z, new Random(mt_rand()))){
+			$sender->sendMessage(TF::GREEN . "Placed " . $structure->getName() . " at $x, $z");
+		}else{
+			$sender->sendMessage(TF::YELLOW . "The ground at $x, $z does not suit " . $structure->getName());
 		}
 		return true;
 	}
