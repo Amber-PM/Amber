@@ -69,6 +69,30 @@ class ChunkCache implements ChunkListener{
 		return self::$instances[$worldId][$compressorId];
 	}
 
+	/**
+	 * @return self[]
+	 * @phpstan-return list<self>
+	 */
+	public static function getAllInstances() : array{
+		$result = [];
+		foreach(self::$instances as $compressorMap){
+			foreach($compressorMap as $chunkCache){
+				$result[] = $chunkCache;
+			}
+		}
+		return $result;
+	}
+
+	public function getWorld() : World{ return $this->world; }
+
+	public function getHits() : int{ return $this->hits; }
+
+	public function getMisses() : int{ return $this->misses; }
+
+	public function getCachedChunkCount() : int{
+		return count($this->caches);
+	}
+
 	public static function pruneCaches() : void{
 		foreach(self::$instances as $compressorMap){
 			foreach($compressorMap as $chunkCache){

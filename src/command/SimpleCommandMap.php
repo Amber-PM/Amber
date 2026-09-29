@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\command;
 
+use pocketmine\command\defaults\AmberCommand;
 use pocketmine\command\defaults\BanCommand;
 use pocketmine\command\defaults\BanIpCommand;
 use pocketmine\command\defaults\BanListCommand;
@@ -99,6 +100,7 @@ class SimpleCommandMap implements CommandMap{
 
 	private function setDefaultCommands() : void{
 		$this->registerAll("pocketmine", [
+			new AmberCommand(),
 			new BanCommand(),
 			new BanIpCommand(),
 			new BanListCommand(),

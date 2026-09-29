@@ -216,6 +216,8 @@ final class ScriptHost{
 	private int $nestedDepth = 0;
 	private const MAX_NESTED_DEPTH = 5;
 	private int $asyncWorkBudget = 100;
+	/** Exponential moving average of the time scripts took per server tick, in milliseconds. */
+	private float $averageTickMs = 0.0;
 
 	private string $writeBuffer = "";
 	private const MAX_WRITE_BUFFER = 16 * 1024 * 1024; // 16MB limit
@@ -615,6 +617,7 @@ final class ScriptHost{
 			return;
 		}
 		$this->lastTick = $currentTick;
+		$start = hrtime(true);
 		try{
 			if($this->busy){
 				if($this->pumpUntil(["done"], $this->tickBudgetMs) === null){
@@ -640,8 +643,16 @@ final class ScriptHost{
 			}
 		}catch(\RuntimeException $e){
 			$this->crashed($e->getMessage());
+		}finally{
+			$this->averageTickMs = $this->averageTickMs * 0.95 + ((hrtime(true) - $start) / 1_000_000) * 0.05;
 		}
 	}
+
+	public function getAverageTickMs() : float{ return $this->averageTickMs; }
+
+	public function getTickBudgetMs() : int{ return $this->tickBudgetMs; }
+
+	public function isBusy() : bool{ return $this->busy; }
 
 	/**
 	 * Whether any of the custom components defines the hook, so the server can skip a call scripts would ignore

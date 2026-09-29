@@ -35,6 +35,7 @@ use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Filesystem;
 use pocketmine\utils\Utils;
 use function base64_decode;
+use function count;
 use function is_array;
 use function is_bool;
 use function is_int;
@@ -81,6 +82,11 @@ final class ItemTypeDictionaryFromDataHelper{
 
 	/** @phpstan-var array<string, ItemTypeDictionary> */
 	private static array $loaded = [];
+
+	/** Number of distinct item lists loaded in this thread. */
+	public static function getLoadedCount() : int{
+		return count(self::$loaded);
+	}
 
 	public static function loadFromProtocolId(int $protocolId) : ItemTypeDictionary{
 		return self::$loaded[self::PATHS[$protocolId]] ??= self::loadFromString(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId] . ".json", BedrockDataFiles::REQUIRED_ITEM_LIST_JSON)));

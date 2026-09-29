@@ -33,6 +33,7 @@ use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Filesystem;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
+use function count;
 use function str_replace;
 
 /**
@@ -188,6 +189,11 @@ final class BlockTranslator{
 	 * @phpstan-var array<string, BlockTranslator>
 	 */
 	private static array $loaded = [];
+
+	/** Number of distinct block palettes loaded in this thread. */
+	public static function getLoadedCount() : int{
+		return count(self::$loaded);
+	}
 
 	public static function loadFromProtocolId(int $protocolId) : BlockTranslator{
 		$hashedNetworkIds = $protocolId >= ProtocolInfo::PROTOCOL_1_26_50;
