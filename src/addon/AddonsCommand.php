@@ -45,7 +45,7 @@ final class AddonsCommand extends Command{
 	public const PERMISSION = "pocketmine.command.addons";
 
 	public function __construct(private AddonManager $manager){
-		parent::__construct("addons", "Lists add-ons and gives or spawns add-on content", "/addons [packs|items|blocks|entities|give <id> [count] [player]|spawn <id>]");
+		parent::__construct("addons", "Lists add-ons and gives or spawns add-on content", "/addons [packs|items|blocks|entities|give <id> [count] [player]|spawn <id>|reload]");
 		$operator = PermissionManager::getInstance()->getPermission(DefaultPermissions::ROOT_OPERATOR);
 		if(PermissionManager::getInstance()->getPermission(self::PERMISSION) === null && $operator !== null){
 			DefaultPermissions::registerPermission(new Permission(self::PERMISSION, "Allows the user to list add-ons and use add-on content"), [$operator]);
@@ -101,6 +101,16 @@ final class AddonsCommand extends Command{
 				}
 				$entity->spawnToAll();
 				$sender->sendMessage(TF::GREEN . "Spawned " . $entity->getName());
+				return true;
+			case "reload":
+				$result = $this->manager->reload();
+				$sender->sendMessage(TF::GREEN . "Reloaded loot tables, structures, trade tables and spawn rules.");
+				if($result["scripts"] !== null){
+					$sender->sendMessage($result["scripts"] ? TF::GREEN . "Scripts restarted from the pack files." : TF::RED . "Scripts could not be restarted, see the console.");
+				}
+				foreach($result["restartNeeded"] as $what){
+					$sender->sendMessage(TF::YELLOW . "Changed: $what. Restart the server to apply it.");
+				}
 				return true;
 			default:
 				throw new InvalidCommandSyntaxException();

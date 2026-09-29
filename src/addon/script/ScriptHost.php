@@ -372,6 +372,17 @@ final class ScriptHost{
 		$this->drainStderr();
 		$this->logger->error("Add-on scripts: the script host stopped ($why)");
 		$this->stop();
+		$this->resetScriptState();
+		if(++$this->restarts <= 3){
+			$this->logger->info("Add-on scripts: restarting the script host (attempt {$this->restarts} of 3)");
+			$this->start();
+		}else{
+			$this->logger->error("Add-on scripts: giving up after 3 restarts; scripts are off until the server restarts");
+		}
+	}
+
+	/** Forgets everything the running scripts registered. */
+	private function resetScriptState() : void{
 		$this->subscriptions = [];
 		$this->queue = [];
 		$this->customComponents = [];
@@ -380,12 +391,17 @@ final class ScriptHost{
 		$this->busy = false;
 		$this->nestedDepth = 0;
 		$this->servicing = "";
-		if(++$this->restarts <= 3){
-			$this->logger->info("Add-on scripts: restarting the script host (attempt {$this->restarts} of 3)");
-			$this->start();
-		}else{
-			$this->logger->error("Add-on scripts: giving up after 3 restarts; scripts are off until the server restarts");
-		}
+	}
+
+	/**
+	 * Stops the scripts and starts them again from the pack files, picking up edits. Dynamic properties are kept.
+	 * Returns whether scripts are running afterwards.
+	 */
+	public function restart() : bool{
+		$this->stop();
+		$this->resetScriptState();
+		$this->restarts = 0;
+		return $this->start();
 	}
 
 	private function nodeVersion() : ?string{

@@ -384,6 +384,7 @@ and custom block IDs in the client's own (FNV-1 64) order on every version.
 | `/addons items` · `blocks` · `entities` | Lists that content with identifiers |
 | `/addons give <id> [count] [player]` | Gives an add-on item or block |
 | `/addons spawn <id>` | Spawns an add-on entity at your position |
+| `/addons reload` | Restarts scripts from the pack files and reloads loot tables, structures, trade tables and spawn rules; lists changes (new packs, items, blocks, entities, recipes, resource packs) that need a restart |
 
 Permission: `pocketmine.command.addons` (operators by default).
 
