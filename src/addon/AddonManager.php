@@ -252,9 +252,17 @@ final class AddonManager{
 				"Restart the server after adding or removing an add-on.\n");
 		}
 
+		//TypeScript definitions for pack authors writing scripts against @amber/plugins
+		$types = @file_get_contents(Path::join(\pocketmine\RESOURCE_PATH, "addon_scripts", "types", "amber-plugins.d.ts"));
+		$typesTarget = Path::join($this->path, "types", "amber-plugins.d.ts");
+		if($types !== false && @file_get_contents($typesTarget) !== $types){
+			@mkdir(Path::join($this->path, "types"), 0777, true);
+			Filesystem::safeFilePutContents($typesTarget, $types);
+		}
+
 		$entries = scandir($this->path);
 		foreach($entries === false ? [] : $entries as $entry){
-			if($entry === "." || $entry === ".." || $entry === ".cache" || $entry === "README.txt"){
+			if($entry === "." || $entry === ".." || $entry === ".cache" || $entry === "README.txt" || $entry === "types"){
 				continue;
 			}
 			$full = Path::join($this->path, $entry);
