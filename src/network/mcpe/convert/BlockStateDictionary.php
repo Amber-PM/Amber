@@ -208,7 +208,7 @@ final class BlockStateDictionary{
 	 * @return array{0: list<BlockStateData>, 1: mixed[], 2: int[]|null}
 	 */
 	private static function withAddonStates(array $palette, array $metaMap, ?array $networkIds) : array{
-		$addon = \pocketmine\addon\AddonManager::getInstance()?->getNetworkBlockStates() ?? [];
+		$addon = \pocketmine\addon\AddonWorkerData::getNetworkBlockStates();
 		if($addon === []){
 			return [$palette, $metaMap, $networkIds];
 		}

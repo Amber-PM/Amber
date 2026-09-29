@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\convert;
 
+use pocketmine\addon\AddonWorkerData;
 use pocketmine\data\bedrock\BedrockDataFiles;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\BlockStateSerializeException;
@@ -210,7 +211,8 @@ final class BlockTranslator{
 		}
 
 		try{
-			$blockStateData = $this->blockStateSerializer->serialize($internalStateId);
+			//add-on blocks are only registered with the main thread's serializer
+			$blockStateData = AddonWorkerData::getStateData($internalStateId) ?? $this->blockStateSerializer->serialize($internalStateId);
 
 			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData);
 			if($networkId === null){

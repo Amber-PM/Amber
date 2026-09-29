@@ -289,6 +289,7 @@ final class AddonManager{
 			$this->tryRegister("item", $definition->getIdentifier(), fn() => $this->registerItem($definition));
 		}
 		$this->assignBlockIds();
+		$this->shareBlocksWithWorkers();
 		$this->registerEntities();
 		$this->reportUnsentComponents();
 		$this->reportEntityFeatures();
@@ -726,6 +727,28 @@ final class AddonManager{
 		$this->blocks[$id] = $block;
 		[$group, $category] = $this->resolveCreativeGroup($definition->getCategory(), $definition->getGroup());
 		CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
+	}
+
+	/**
+	 * Async workers serialize chunks with their own block palette and serializer, which know nothing of add-on
+	 * blocks registered here: hand them the add-on block data whenever one starts (see AddonWorkerData).
+	 */
+	private function shareBlocksWithWorkers() : void{
+		if($this->blocks === []){
+			return;
+		}
+		$serializer = GlobalBlockStateHandlers::getSerializer();
+		$stateData = [];
+		foreach($this->blocks as $block){
+			foreach($block->generateStatePermutations() as $state){
+				$stateData[$state->getStateId()] = $serializer->serialize($state->getStateId());
+			}
+		}
+		$payload = AddonWorkerData::encode($this->getNetworkBlockStates(), $stateData);
+		$pool = $this->server->getAsyncPool();
+		$pool->addWorkerStartHook(static function(int $worker) use ($pool, $payload) : void{
+			$pool->submitTaskToWorker(new AddonWorkerSetupTask($payload), $worker);
+		});
 	}
 
 	private function registerEntities() : void{
