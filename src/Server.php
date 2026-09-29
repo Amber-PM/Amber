@@ -117,6 +117,7 @@ use pocketmine\utils\SignalHandler;
 use pocketmine\utils\Terminal;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
+use pocketmine\world\backup\WorldBackupManager;
 use pocketmine\world\format\io\WorldProviderManager;
 use pocketmine\world\format\io\WritableWorldProviderManagerEntry;
 use pocketmine\world\generator\Generator;
@@ -130,6 +131,7 @@ use pocketmine\YmlServerProperties as Yml;
 use Ramsey\Uuid\UuidInterface;
 use Symfony\Component\Filesystem\Path;
 use function array_fill;
+use function array_map;
 use function array_sum;
 use function base64_encode;
 use function chr;
@@ -270,6 +272,7 @@ class Server{
 
 	private ResourcePackManager $resourceManager;
 	private \pocketmine\addon\AddonManager $addonManager;
+	private WorldBackupManager $backupManager;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -477,6 +480,10 @@ class Server{
 
 	public function getResourcePackManager() : ResourcePackManager{
 		return $this->resourceManager;
+	}
+
+	public function getBackupManager() : WorldBackupManager{
+		return $this->backupManager;
 	}
 
 	/** Bedrock add-ons (addons/ directory): resource packs, custom items, blocks and entities. */
@@ -1131,6 +1138,14 @@ class Server{
 			$this->worldManager = new WorldManager($this, Path::join($this->dataPath, "worlds"), $providerManager);
 			$this->worldManager->setAutoSave($this->configGroup->getConfigBool(ServerProperties::AUTO_SAVE, $this->worldManager->getAutoSave()));
 			$this->worldManager->setAutoSaveInterval($this->configGroup->getPropertyInt(Yml::TICKS_PER_AUTOSAVE, $this->worldManager->getAutoSaveInterval()));
+			$this->backupManager = new WorldBackupManager(
+				$this,
+				Path::join($this->dataPath, "backups"),
+				$this->configGroup->getPropertyBool(Yml::BACKUPS_ENABLED, false),
+				max(1, $this->configGroup->getPropertyInt(Yml::BACKUPS_INTERVAL_MINUTES, 360)) * 60,
+				max(0, $this->configGroup->getPropertyInt(Yml::BACKUPS_KEEP, 7)),
+				array_map(strval(...), (array) $this->configGroup->getProperty(Yml::BACKUPS_WORLDS, []))
+			);
 
 			$this->updater = new UpdateChecker($this, $this->configGroup->getPropertyString(Yml::AUTO_UPDATER_HOST, "update.pmmp.io"));
 
@@ -1992,6 +2007,7 @@ class Server{
 		Timings::$connection->stopTiming();
 
 		if(($this->tickCounter % self::TARGET_TICKS_PER_SECOND) === 0){
+			$this->backupManager->tick();
 			if($this->doTitleTick){
 				$this->titleTick();
 			}

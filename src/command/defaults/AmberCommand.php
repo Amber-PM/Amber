@@ -30,8 +30,10 @@ use pocketmine\command\utils\InvalidCommandSyntaxException;
 use pocketmine\permission\DefaultPermissions;
 use pocketmine\permission\Permission;
 use pocketmine\permission\PermissionManager;
+use pocketmine\player\Player;
 use pocketmine\stats\ServerMetrics;
 use pocketmine\utils\TextFormat as TF;
+use function basename;
 use function count;
 use function implode;
 use function intdiv;
@@ -43,7 +45,7 @@ final class AmberCommand extends Command{
 	public const PERMISSION = "pocketmine.command.amber";
 
 	public function __construct(){
-		parent::__construct("amber", "AmberPM tools", "/amber perf");
+		parent::__construct("amber", "AmberPM tools", "/amber <perf|backup [world]>");
 		$operator = PermissionManager::getInstance()->getPermission(DefaultPermissions::ROOT_OPERATOR);
 		if(PermissionManager::getInstance()->getPermission(self::PERMISSION) === null && $operator !== null){
 			DefaultPermissions::registerPermission(new Permission(self::PERMISSION, "Allows the user to use /amber"), [$operator]);
@@ -54,6 +56,7 @@ final class AmberCommand extends Command{
 	public function execute(CommandSender $sender, string $commandLabel, array $args) : bool{
 		return match($args[0] ?? "perf"){
 			"perf" => $this->perf($sender),
+			"backup" => $this->backup($sender, $args[1] ?? null),
 			default => throw new InvalidCommandSyntaxException(),
 		};
 	}
@@ -106,6 +109,26 @@ final class AmberCommand extends Command{
 		if($m->scripts !== null && $m->scripts["running"]){
 			$sender->sendMessage(sprintf("%sAdd-on scripts: %.2f ms/tick average of a %d ms budget%s",
 				TF::GRAY, $m->scripts["averageTickMs"], $m->scripts["budgetMs"], $m->scripts["busy"] ? TF::RED . " (over budget)" : ""));
+		}
+		return true;
+	}
+
+	private function backup(CommandSender $sender, ?string $worldName) : bool{
+		$server = $sender->getServer();
+		$worlds = $worldName !== null ? [$server->getWorldManager()->getWorldByName($worldName)] : $server->getWorldManager()->getWorlds();
+		foreach($worlds as $world){
+			if($world === null){
+				$sender->sendMessage(TF::RED . "No loaded world is called $worldName");
+				return true;
+			}
+			$name = $world->getFolderName();
+			$started = $server->getBackupManager()->backup($world, function(?string $file, ?string $error) use ($sender, $name) : void{
+				if($sender instanceof Player && !$sender->isConnected()){
+					return;
+				}
+				$sender->sendMessage($file !== null ? TF::GREEN . "Backed up $name to " . basename($file) : TF::RED . "Backup of $name failed: $error");
+			});
+			$sender->sendMessage($started ? TF::GRAY . "Backing up $name..." : TF::YELLOW . "A backup of $name is already running");
 		}
 		return true;
 	}
