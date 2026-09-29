@@ -107,7 +107,6 @@ final class ScriptHostSecurityTest extends TestCase{
 	}
 
 	public function testNodeBuiltinsUnreachable() : void{
-		//process.getBuiltinModule() bypasses the import hooks, and --permission covers neither sockets nor signals
 		$this->startNode('console.error("BUILTINS:" + typeof process.getBuiltinModule + ":" + typeof process.kill + ":" + typeof process.binding);');
 
 		[$type, $err] = $this->readUntilDone();

@@ -69,7 +69,6 @@ final class TradeTransaction extends InventoryTransaction{
 		}
 		[$wantA, $wantB] = self::price($offer, $repetitions);
 		if($wantB !== null && $wantB->canStackWith($wantA)){
-			//both ingredients are the same item: the payment must cover both, not each on its own
 			$wantA->setCount($wantA->getCount() + $wantB->getCount());
 			$wantB = null;
 		}

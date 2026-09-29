@@ -63,10 +63,6 @@ final class AddonWorkerDataTest extends TestCase{
 		self::assertNull(AddonWorkerData::getStateData(1));
 	}
 
-	/**
-	 * A worker's palette must contain the add-on states the main thread gave it, or chunks it serializes use the
-	 * wrong runtime IDs.
-	 */
 	public function testWorkerPaletteIncludesAddonStates() : void{
 		$vanilla = [BlockStateData::current(BlockTypeNames::AIR, []), BlockStateData::current(BlockTypeNames::INFO_UPDATE, []), BlockStateData::current(BlockTypeNames::SKELETON_SKULL, [])];
 		$addon = BlockStateData::current("test:lamp", []);

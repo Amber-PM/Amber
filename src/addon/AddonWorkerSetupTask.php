@@ -26,13 +26,9 @@ namespace pocketmine\addon;
 use pocketmine\scheduler\AsyncTask;
 
 /**
- * Gives an async worker the add-on block data (see AddonWorkerData). Submitted to every worker when it starts,
- * so it runs before any other task on that worker.
- *
  * @internal
  */
 final class AddonWorkerSetupTask extends AsyncTask{
-	/** @param string $payload from AddonWorkerData::encode() */
 	public function __construct(
 		private string $payload
 	){}

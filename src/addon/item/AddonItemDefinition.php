@@ -211,10 +211,6 @@ final class AddonItemDefinition{
 		return self::KIND_ITEM;
 	}
 
-	/**
-	 * The texture key from a "minecraft:icon" component, in any of its JSON shapes: a bare string,
-	 * {"texture": ...} (1.16.100 - 1.20.30) or {"textures": {"default": ...}} (1.20.40+).
-	 */
 	public static function iconFromComponent(mixed $icon) : ?string{
 		if(is_string($icon)){
 			return $icon !== "" ? $icon : null;
@@ -230,11 +226,6 @@ final class AddonItemDefinition{
 		return null;
 	}
 
-	/**
-	 * Icon declared by the resource pack's items/*.json for this identifier. Older-format add-ons (1.10 - 1.14)
-	 * only declare the icon there, and the client never sees behavior pack or resource pack item files for
-	 * component-based items, so without it the item would be sent with a guessed texture key.
-	 */
 	public function setResourcePackIcon(string $icon) : void{
 		$this->resourcePackIcon = $icon;
 	}

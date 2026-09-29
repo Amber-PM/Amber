@@ -49,9 +49,6 @@ final class TradeInventory extends SimpleInventory implements TemporaryInventory
 
 	public function getPlayer() : Player{ return $this->player; }
 
-	/**
-	 * An offer the player can take right now: shown on the screen (unlocked tier) and from a trader still in reach.
-	 */
 	public function getOffer(int $netId) : ?TradeOffer{
 		if(!$this->trader->canBeUsedBy($this->player)){
 			return null;

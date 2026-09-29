@@ -132,7 +132,6 @@ final class AddonTradeTest extends TestCase{
 	}
 
 	public function testCheckRejectsPayingSameItemIngredientsOnce() : void{
-		//wants 2 + 3 emeralds: 3 alone covers each ingredient separately but not both together
 		$offer = new TradeOffer(1, VanillaItems::EMERALD()->setCount(2), VanillaItems::EMERALD()->setCount(3), VanillaItems::BREAD(), 0, 4, 2, true);
 		$this->expectException(TransactionValidationException::class);
 		TradeTransaction::check($offer, 1, [VanillaItems::EMERALD()->setCount(3)], [VanillaItems::BREAD()]);

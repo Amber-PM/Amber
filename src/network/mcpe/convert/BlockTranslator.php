@@ -184,11 +184,7 @@ final class BlockTranslator{
 	private int $fallbackStateId;
 
 	/**
-	 * Translators already built in this thread, keyed by the data they were built from. Several protocols use the
-	 * same palette (see PATHS); a translator is read-only once built, so they share one instead of each holding
-	 * (and spending startup time on) its own copy of a palette with tens of thousands of states.
-	 *
-	 * @var BlockTranslator[]
+	 * Shared by protocols using the same palette.
 	 * @phpstan-var array<string, BlockTranslator>
 	 */
 	private static array $loaded = [];
@@ -227,7 +223,6 @@ final class BlockTranslator{
 		}
 
 		try{
-			//add-on blocks are only registered with the main thread's serializer
 			$blockStateData = AddonWorkerData::getStateData($internalStateId) ?? $this->blockStateSerializer->serialize($internalStateId);
 
 			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData);

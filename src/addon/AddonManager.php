@@ -182,7 +182,7 @@ final class AddonManager{
 
 	/** @var array<string, int> */
 	private array $itemRuntimeIds = [];
-	/** @var array<string, true> identifiers whose icon came from a resource pack item file */
+	/** @var array<string, true> */
 	private array $resourcePackIconsSet = [];
 	/** @var array<string, int> */
 	private array $blockNumericIds = [];
@@ -596,10 +596,7 @@ final class AddonManager{
 		}
 	}
 
-	/**
-	 * Resource pack item files (items/*.json with "minecraft:item") carry the icon for older-format add-ons.
-	 * The first resource pack declaring an icon for an identifier wins, like the pack stack order on the client.
-	 */
+	/** Older-format add-ons only declare item icons in the resource pack. */
 	private function readResourcePackItemIcons(AddonPack $pack) : void{
 		foreach($this->jsonFiles(Path::join($pack->getPath(), "items")) as $file){
 			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
@@ -729,10 +726,7 @@ final class AddonManager{
 		CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
 	}
 
-	/**
-	 * Async workers serialize chunks with their own block palette and serializer, which know nothing of add-on
-	 * blocks registered here: hand them the add-on block data whenever one starts (see AddonWorkerData).
-	 */
+	/** Async workers serialize chunks and need the add-on block states too. */
 	private function shareBlocksWithWorkers() : void{
 		if($this->blocks === []){
 			return;

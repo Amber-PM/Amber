@@ -33,49 +33,30 @@ use function is_int;
 use function is_string;
 
 /**
- * Add-on block data the network layer needs in every thread.
- *
- * Add-on blocks are registered on the main thread only, but chunks are turned into packets by async workers,
- * which build their own block palettes. Without the add-on states a worker's palette would lack them: add-on
- * blocks would be sent as unknown blocks, and for clients with index-ordered palettes (before 1.26.50) every
- * vanilla state after them would be sent with the wrong runtime ID. The main thread hands this data to each
- * worker when it starts (see AddonWorkerSetupTask).
+ * Add-on block states for threads other than the main one, which never register add-on blocks.
  *
  * @internal
  */
 final class AddonWorkerData{
 	/** @var list<BlockStateData>|null */
 	private static ?array $networkBlockStates = null;
-	/**
-	 * @var BlockStateData[] internal state ID => the state's serialized form
-	 * @phpstan-var array<int, BlockStateData>
-	 */
+	/** @phpstan-var array<int, BlockStateData> */
 	private static array $stateData = [];
 
 	private function __construct(){
 		//NOOP
 	}
 
-	/**
-	 * Every state of every add-on block, as network block state data, in palette order.
-	 *
-	 * @return list<BlockStateData>
-	 */
+	/** @return list<BlockStateData> */
 	public static function getNetworkBlockStates() : array{
 		return AddonManager::getInstance()?->getNetworkBlockStates() ?? self::$networkBlockStates ?? [];
 	}
 
-	/**
-	 * The serialized form of an add-on block state, for threads whose block state serializer does not know
-	 * add-on blocks. Null for any other state.
-	 */
 	public static function getStateData(int $internalStateId) : ?BlockStateData{
 		return self::$stateData[$internalStateId] ?? null;
 	}
 
 	/**
-	 * Packs the data for another thread (see apply()).
-	 *
 	 * @param list<BlockStateData>       $networkBlockStates
 	 * @param array<int, BlockStateData> $stateData
 	 */
@@ -92,9 +73,6 @@ final class AddonWorkerData{
 		return (string) igbinary_serialize([$states, $byStateId]);
 	}
 
-	/**
-	 * Sets this thread's data from encode()'s output.
-	 */
 	public static function apply(string $payload) : void{
 		$decoded = igbinary_unserialize($payload);
 		if(!is_array($decoded) || !is_array($decoded[0] ?? null) || !is_array($decoded[1] ?? null)){
