@@ -50,18 +50,27 @@ use pocketmine\player\PlayerInfo;
 use pocketmine\player\XboxLivePlayerInfo;
 use pocketmine\Server;
 use pocketmine\utils\Utils;
+use pocketmine\YmlServerProperties;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
+use function array_map;
 use function base64_decode;
 use function chr;
 use function count;
+use function ctype_digit;
+use function filter_var;
 use function gettype;
+use function in_array;
 use function is_array;
 use function is_object;
+use function is_string;
 use function json_decode;
 use function md5;
 use function ord;
+use function str_starts_with;
+use function strval;
 use function substr;
+use const FILTER_VALIDATE_IP;
 use const JSON_THROW_ON_ERROR;
 
 /**
@@ -79,6 +88,8 @@ class LoginPacketHandler extends PacketHandler{
 		private \Closure $authCallback
 	){}
 
+	private ?string $proxiedXuid = null;
+
 	private static function calculateUuidFromXuid(string $xuid) : UuidInterface{
 		$hash = md5("pocket-auth-1-xuid:" . $xuid, binary: true);
 		$hash[6] = chr((ord($hash[6]) & 0x0f) | 0x30); // set version to 3
@@ -88,6 +99,10 @@ class LoginPacketHandler extends PacketHandler{
 	}
 
 	public function handleLogin(LoginPacket $packet) : bool{
+		if(!$this->acceptProxiedLogin($packet)){
+			return true;
+		}
+
 		if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_93){
 			$authInfo = $this->parseAuthInfo($packet->authInfoJson);
 		}elseif($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_90){
@@ -229,7 +244,51 @@ class LoginPacketHandler extends PacketHandler{
 		return true;
 	}
 
+	/**
+	 * With network.waterdog-support on, players arrive through WaterdogPE: only the proxy may connect, and the
+	 * player's address and XUID come from the login extras it adds to the client data (Waterdog_IP,
+	 * Waterdog_XUID). The proxy authenticates players with Xbox Live and signs their login itself.
+	 *
+	 * Returns false if the session was disconnected.
+	 */
+	private function acceptProxiedLogin(LoginPacket $packet) : bool{
+		$config = $this->server->getConfigGroup();
+		if(!$config->getPropertyBool(YmlServerProperties::NETWORK_WATERDOG_SUPPORT, false)){
+			return true;
+		}
+
+		$proxyAddresses = array_map(strval(...), (array) $config->getProperty(YmlServerProperties::NETWORK_PROXY_ADDRESSES, []));
+		if(count($proxyAddresses) > 0 && !in_array($this->session->getIp(), $proxyAddresses, true)){
+			$this->session->disconnect("Connection from " . $this->session->getIp() . " is not from a proxy listed in network.proxy-addresses", "Please join through this server's proxy.");
+			return false;
+		}
+
+		try{
+			[, $claims, ] = JwtUtils::parse($packet->clientDataJwt);
+		}catch(JwtException $e){
+			throw PacketHandlingException::wrap($e);
+		}
+		$ip = $claims["Waterdog_IP"] ?? null;
+		$xuid = $claims["Waterdog_XUID"] ?? "";
+		if(!is_string($ip) || filter_var($ip, FILTER_VALIDATE_IP) === false){
+			$this->session->disconnectWithError("The proxy did not send the player's address (set use_login_extras: true in WaterdogPE's config.yml)");
+			return false;
+		}
+		if(!is_string($xuid) || ($xuid !== "" && !ctype_digit($xuid))){
+			throw new PacketHandlingException("Invalid Waterdog_XUID");
+		}
+
+		$this->session->setProxiedAddress($ip);
+		$this->proxiedXuid = $xuid;
+		$authCallback = $this->authCallback;
+		$this->authCallback = static function(bool $isAuthenticated, bool $authRequired, Translatable|string|null $error, ?string $clientPubKey) use ($authCallback, $xuid) : void{
+			$authCallback($error === null && $xuid !== "", $authRequired, $error, $clientPubKey);
+		};
+		return true;
+	}
+
 	private function processLoginCommon(LoginPacket $packet, string $username, UuidInterface $legacyUuid, string $xuid) : ?bool{
+		$xuid = $this->proxiedXuid ?? $xuid;
 		if(!Player::isValidUserName($username)){
 			$this->session->disconnectWithError(KnownTranslationFactory::disconnectionScreen_invalidName());
 
@@ -374,6 +433,14 @@ class LoginPacketHandler extends PacketHandler{
 			[, $clientDataClaims, ] = JwtUtils::parse($clientDataJwt);
 		}catch(JwtException $e){
 			throw PacketHandlingException::wrap($e);
+		}
+
+		if($this->proxiedXuid !== null){
+			foreach($clientDataClaims as $key => $_){
+				if(is_string($key) && str_starts_with($key, "Waterdog_")){
+					unset($clientDataClaims[$key]);
+				}
+			}
 		}
 
 		$mapper = $this->defaultJsonMapper("ClientData JWT body");
