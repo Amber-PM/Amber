@@ -34,6 +34,7 @@ use pocketmine\stats\ServerMetrics;
 use pocketmine\utils\TextFormat as TF;
 use function count;
 use function implode;
+use function intdiv;
 use function number_format;
 use function round;
 use function sprintf;
@@ -115,6 +116,6 @@ final class AmberCommand extends Command{
 
 	public static function duration(float $seconds) : string{
 		$s = (int) $seconds;
-		return sprintf("%dd %02dh %02dm %02ds", $s / 86400, ($s / 3600) % 24, ($s / 60) % 60, $s % 60);
+		return sprintf("%dd %02dh %02dm %02ds", intdiv($s, 86400), intdiv($s, 3600) % 24, intdiv($s, 60) % 60, $s % 60);
 	}
 }
