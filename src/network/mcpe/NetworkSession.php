@@ -34,6 +34,7 @@ use pocketmine\event\server\DataPacketDecodeEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\form\Form;
+use pocketmine\form\ProtocolAwareForm;
 use pocketmine\item\Item;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Translatable;
@@ -1400,7 +1401,8 @@ class NetworkSession{
 	}
 
 	public function onFormSent(int $id, Form $form) : bool{
-		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($form, JSON_THROW_ON_ERROR)));
+		$data = $form instanceof ProtocolAwareForm ? $form->serializeFor($this->protocolId) : $form;
+		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($data, JSON_THROW_ON_ERROR)));
 	}
 
 	public function onCloseAllForms() : void{
