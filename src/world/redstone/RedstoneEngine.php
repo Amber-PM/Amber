@@ -125,7 +125,15 @@ final class RedstoneEngine{
 		if(self::isComponent($block)){
 			$this->active = true;
 			$this->request($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
-		}elseif($this->active && self::isConductor($block)){
+			return;
+		}
+		if(!$this->active){
+			return;
+		}
+		//whatever was here is gone: forget its state
+		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		unset($this->lastPowered[$hash], $this->torchToggles[$hash], $this->burntOut[$hash]);
+		if(self::isConductor($block)){
 			$this->requestComponentsAround($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		}
 	}
