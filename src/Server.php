@@ -1109,6 +1109,10 @@ class Server{
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
 			$this->addonManager->registerResourcePacks($this->resourceManager);
 
+			if($this->configGroup->getPropertyBool(Yml::NETWORK_WATERDOG_SUPPORT, false) && count((array) $this->configGroup->getProperty(Yml::NETWORK_PROXY_ADDRESSES, [])) === 0){
+				$this->logger->warning("network.waterdog-support is on and network.proxy-addresses is empty: anyone who can reach this server can log in as any player. List your proxy's address, or firewall this server's port.");
+			}
+
 			if($this->configGroup->getPropertyBool(Yml::WEB_ENABLED, false)){
 				$address = $this->configGroup->getPropertyString(Yml::WEB_ADDRESS, "127.0.0.1");
 				$port = $this->configGroup->getPropertyInt(Yml::WEB_PORT, 8080);

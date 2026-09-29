@@ -194,7 +194,8 @@ anonymous-statistics:
   host: stats.pocketmine.net
 
 auto-updater:
-  enabled: true
+  #update.pmmp.io announces PocketMine-MP releases, not AmberPM ones: only enable this with a host of your own.
+  enabled: false
   on-update:
     warn-console: true
   #Can be development, alpha, beta or stable.
