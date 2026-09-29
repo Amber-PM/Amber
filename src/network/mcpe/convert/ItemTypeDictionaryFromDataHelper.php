@@ -79,8 +79,17 @@ final class ItemTypeDictionaryFromDataHelper{
 		ProtocolInfo::PROTOCOL_1_20_0 => "-1.20.0",
 	];
 
+	/**
+	 * Dictionaries already built in this thread, by item list file: protocols sharing a list share the (read-only)
+	 * dictionary.
+	 *
+	 * @var ItemTypeDictionary[]
+	 * @phpstan-var array<string, ItemTypeDictionary>
+	 */
+	private static array $loaded = [];
+
 	public static function loadFromProtocolId(int $protocolId) : ItemTypeDictionary{
-		return self::loadFromString(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId] . ".json", BedrockDataFiles::REQUIRED_ITEM_LIST_JSON)));
+		return self::$loaded[self::PATHS[$protocolId]] ??= self::loadFromString(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId] . ".json", BedrockDataFiles::REQUIRED_ITEM_LIST_JSON)));
 	}
 
 	public static function loadFromString(string $data) : ItemTypeDictionary{
