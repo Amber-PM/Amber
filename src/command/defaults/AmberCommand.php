@@ -98,6 +98,11 @@ final class AmberCommand extends Command{
 		$sender->sendMessage(sprintf("%sAsync workers: %d running of %d, %d task(s) queued",
 			TF::GRAY, count($m->asyncQueues), $m->asyncPoolSize, $m->getQueuedAsyncTasks()));
 
+		if($m->pathSearches["async"] + $m->pathSearches["sync"] > 0){
+			$sender->sendMessage(sprintf("%sAdd-on path searches: %s in async workers, %s on the main thread",
+				TF::GRAY, number_format($m->pathSearches["async"]), number_format($m->pathSearches["sync"])));
+		}
+
 		if($m->scripts !== null && $m->scripts["running"]){
 			$sender->sendMessage(sprintf("%sAdd-on scripts: %.2f ms/tick average of a %d ms budget%s",
 				TF::GRAY, $m->scripts["averageTickMs"], $m->scripts["budgetMs"], $m->scripts["busy"] ? TF::RED . " (over budget)" : ""));

@@ -163,7 +163,7 @@ final class Pathfinder{
 	private int $expandedNodes = 0;
 
 	public function __construct(
-		private World $world,
+		private World|PathChunkSnapshot $world,
 		private int $height,
 		private bool $canSwim,
 		private bool $avoidWater,
@@ -362,6 +362,16 @@ final class Pathfinder{
 
 	/** @var array<int, int> block state id => 0 passable, 1 solid, 2 water, 3 danger, 4 unstepable */
 	private static array $stateClasses = [];
+
+	/** The path class of a block state: 0 passable, 1 solid, 2 water, 3 danger, 4 unstepable. */
+	public static function classOf(int $state) : int{
+		return self::$stateClasses[$state] ??= self::classifyState($state);
+	}
+
+	/** @internal for classes computed by another thread */
+	public static function setClassOf(int $state, int $class) : void{
+		self::$stateClasses[$state] = $class;
+	}
 
 	private static function classifyState(int $state) : int{
 		try{

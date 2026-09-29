@@ -24,6 +24,7 @@ declare(strict_types=1);
 
 namespace pocketmine\stats;
 
+use pocketmine\addon\entity\ai\Navigator;
 use pocketmine\command\defaults\ProtocolsCommand;
 use pocketmine\network\mcpe\cache\ChunkCache;
 use pocketmine\network\mcpe\convert\BlockTranslator;
@@ -52,6 +53,7 @@ final class ServerMetrics{
 	 * @param array<int, int>                                                                                   $asyncQueues
 	 * @param list<int>                                                                                         $loadedProtocols
 	 * @param array{running: bool, busy: bool, averageTickMs: float, budgetMs: int}|null                         $scripts
+	 * @param array{async: int, sync: int}                                                                      $pathSearches
 	 */
 	public function __construct(
 		public readonly float $uptime,
@@ -73,7 +75,8 @@ final class ServerMetrics{
 		public readonly array $loadedProtocols,
 		public readonly int $loadedPalettes,
 		public readonly int $loadedItemLists,
-		public readonly ?array $scripts
+		public readonly ?array $scripts,
+		public readonly array $pathSearches
 	){}
 
 	public static function collect(Server $server) : self{
@@ -134,7 +137,8 @@ final class ServerMetrics{
 			$loadedProtocols,
 			BlockTranslator::getLoadedCount(),
 			ItemTypeDictionaryFromDataHelper::getLoadedCount(),
-			$scripts
+			$scripts,
+			Navigator::getSearchCounts()
 		);
 	}
 

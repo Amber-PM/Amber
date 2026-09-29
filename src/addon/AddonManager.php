@@ -28,6 +28,7 @@ use pocketmine\addon\block\AddonBlockDefinition;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\addon\entity\ai\MobBrain;
+use pocketmine\addon\entity\ai\Navigator;
 use pocketmine\addon\entity\trade\TradeTable;
 use pocketmine\addon\item\AddonArmorItem;
 use pocketmine\addon\item\AddonDurableItem;
@@ -948,6 +949,7 @@ final class AddonManager{
 			@mkdir($this->path, 0777, true);
 			$this->config = new Config(Path::join($this->path, "config.yml"), Config::YAML, [
 				"scripting" => ["enabled" => true, "node" => "node", "tick-budget-ms" => 30, "memory-mb" => 256],
+				"pathfinding" => ["async" => true],
 				"spawning" => ["enabled" => true, "interval-ticks" => 40, "worlds" => [], "caps" => ["monster" => 10, "animal" => 6, "water_animal" => 4, "ambient" => 3, "default" => 5]],
 			]);
 		}
@@ -962,6 +964,8 @@ final class AddonManager{
 		if($this->entityDefinitions === [] && $this->scriptPacks === [] && $this->blocks === [] && $this->items === []){
 			return;
 		}
+		$pathfinding = (array) $this->config()->get("pathfinding", []);
+		Navigator::setAsync((bool) ($pathfinding["async"] ?? true));
 		$runtimeDir = Path::join($this->path, ".runtime");
 		@mkdir($runtimeDir, 0777, true);
 		try{
