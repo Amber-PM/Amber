@@ -147,6 +147,18 @@ chunk-generation:
 ticks-per:
   autosave: 6000
 
+web:
+  #Built-in web panel (players, console, add-ons, performance) at http://<address>:<port>/, and Prometheus
+  #metrics at /metrics. The panel can run any command: keep it on 127.0.0.1 unless it is behind a reverse
+  #proxy that adds HTTPS, and never share the token.
+  enabled: false
+  address: 127.0.0.1
+  port: 8080
+  #Token for the panel and its API. Empty: a random token is generated into web-token.txt.
+  token: ""
+  #Whether /metrics needs the token too (Authorization: Bearer <token>).
+  metrics-require-token: false
+
 backups:
   #Automatic world backups, as zip files in backups/<world>/. /amber backup [world] makes one any time.
   #To restore one, stop the server and unzip it into worlds/<world>/ in place of the world's folder.

@@ -123,5 +123,11 @@ final class YmlServerProperties{
 	public const TICKS_PER_AUTOSAVE = 'ticks-per.autosave';
 	public const TIMINGS = 'timings';
 	public const TIMINGS_HOST = 'timings.host';
+	public const WEB = 'web';
+	public const WEB_ADDRESS = 'web.address';
+	public const WEB_ENABLED = 'web.enabled';
+	public const WEB_METRICS_REQUIRE_TOKEN = 'web.metrics-require-token';
+	public const WEB_PORT = 'web.port';
+	public const WEB_TOKEN = 'web.token';
 	public const WORLDS = 'worlds';
 }

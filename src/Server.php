@@ -126,6 +126,7 @@ use pocketmine\world\generator\InvalidGeneratorOptionsException;
 use pocketmine\world\Position;
 use pocketmine\world\World;
 use pocketmine\world\WorldCreationOptions;
+use pocketmine\web\WebPanel;
 use pocketmine\world\WorldManager;
 use pocketmine\YmlServerProperties as Yml;
 use Ramsey\Uuid\UuidInterface;
@@ -173,6 +174,7 @@ use function stripos;
 use function strlen;
 use function strrpos;
 use function strtolower;
+use function str_contains;
 use function strval;
 use function time;
 use function touch;
@@ -273,6 +275,7 @@ class Server{
 	private ResourcePackManager $resourceManager;
 	private \pocketmine\addon\AddonManager $addonManager;
 	private WorldBackupManager $backupManager;
+	private ?WebPanel $webPanel = null;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -1105,6 +1108,23 @@ class Server{
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
 			$this->addonManager->registerResourcePacks($this->resourceManager);
+
+			if($this->configGroup->getPropertyBool(Yml::WEB_ENABLED, false)){
+				$address = $this->configGroup->getPropertyString(Yml::WEB_ADDRESS, "127.0.0.1");
+				$port = $this->configGroup->getPropertyInt(Yml::WEB_PORT, 8080);
+				try{
+					$this->webPanel = new WebPanel(
+						$this,
+						$address,
+						$port,
+						WebPanel::resolveToken($this->configGroup->getPropertyString(Yml::WEB_TOKEN, ""), $this->dataPath, $this->logger),
+						$this->configGroup->getPropertyBool(Yml::WEB_METRICS_REQUIRE_TOKEN, false)
+					);
+					$this->logger->info("Web panel running on http://" . (str_contains($address, ":") ? "[$address]" : $address) . ":$port/");
+				}catch(\RuntimeException $e){
+					$this->logger->error("Web panel could not start: " . $e->getMessage());
+				}
+			}
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
@@ -1644,6 +1664,9 @@ class Server{
 
 			$this->shutdown();
 
+			$this->webPanel?->shutdown();
+			$this->webPanel = null;
+
 			if(isset($this->addonManager)){
 				$this->addonManager->shutdown();
 			}
@@ -2005,6 +2028,8 @@ class Server{
 		Timings::$connection->startTiming();
 		$this->network->tick();
 		Timings::$connection->stopTiming();
+
+		$this->webPanel?->tick();
 
 		if(($this->tickCounter % self::TARGET_TICKS_PER_SECOND) === 0){
 			$this->backupManager->tick();
