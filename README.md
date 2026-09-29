@@ -30,7 +30,7 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 * 💾 **World backups** - Scheduled, consistent world backups taken while the server runs (`backups` in `pocketmine.yml`, or `/amber backup`).
 * 🔀 **WaterdogPE support** - Accepts logins forwarded by a WaterdogPE proxy, with the player's real address (`network.waterdog-support`).
 * 🔴 **Redstone & hoppers** - Wire, torches, repeaters and comparators powering lamps, doors, trapdoors, fence gates, TNT, rails and note blocks (`redstone` in `pocketmine.yml`). Hoppers move items between chests, barrels, shulker boxes and furnaces, pick up dropped items, and lock when powered.
-* 🏛️ **Generated structures** - The default generator adds desert wells, igloos, ruins, ruined portals, boulders and buried fossils. Turn them off for a world with the generator setting `structures=false`; `/amber structure <name>` places one.
+* 🏛️ **Generated structures** - The default generator adds desert wells, igloos, ruins, ruined portals, boulders and buried fossils; igloos, ruins and portals can have loot chests. Turn them off for a world with the generator setting `structures=false`; `/amber structure <name>` places one.
 * 📋 **Form builder** - `MenuForm`, `ConfirmForm` and `CustomForm`, sent in the layout each client version reads.
 
 ## :x: AmberPM is NOT a vanilla Minecraft server software.

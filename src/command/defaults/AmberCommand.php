@@ -36,6 +36,7 @@ use pocketmine\utils\Random;
 use pocketmine\utils\TextFormat as TF;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\structure\Structure;
+use pocketmine\world\generator\structure\StructureLoot;
 use pocketmine\world\generator\structure\StructurePopulator;
 use function array_keys;
 use function basename;
@@ -181,7 +182,11 @@ final class AmberCommand extends Command{
 				}
 			}
 		}
-		if($structure->place($world, $x, $z, new Random(mt_rand()))){
+		$random = new Random(mt_rand());
+		if($structure->place($world, $x, $z, $random)){
+			if(StructureLoot::hasLoot($structure->getName())){
+				StructureLoot::fillChests($world, $x, $z, $structure->getName(), $random, true);
+			}
 			$sender->sendMessage(TF::GREEN . "Placed " . $structure->getName() . " at $x, $z");
 		}else{
 			$sender->sendMessage(TF::YELLOW . "The ground at $x, $z does not suit " . $structure->getName());

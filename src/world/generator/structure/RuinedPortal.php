@@ -81,6 +81,11 @@ final class RuinedPortal extends Structure{
 			}
 		}
 
+		$chestY = self::groundY($world, $x - 2, $z + 1);
+		if($chestY !== null){
+			self::set($world, $x - 2, $chestY + 1, $z + 1, VanillaBlocks::CHEST());
+		}
+
 		$goldX = $x + $random->nextRange(-2, 2);
 		$goldZ = $z + ($random->nextBoolean() ? 2 : -2);
 		$goldY = self::groundY($world, $goldX, $goldZ);

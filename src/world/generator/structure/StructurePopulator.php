@@ -104,6 +104,22 @@ final class StructurePopulator implements Populator{
 		}
 	}
 
+	/**
+	 * The structures this chunk is the candidate chunk for. Whether each was actually placed also depends on the
+	 * biome and the ground.
+	 *
+	 * @return list<Structure>
+	 */
+	public function getCandidates(int $chunkX, int $chunkZ) : array{
+		$candidates = [];
+		foreach($this->placements as $index => [$structure, $spacing, $separation]){
+			if($this->isCandidate($index, $spacing, $separation, $chunkX, $chunkZ)){
+				$candidates[] = $structure;
+			}
+		}
+		return $candidates;
+	}
+
 	/** Whether this chunk is the candidate chunk of its region for the placement. */
 	public function isCandidate(int $index, int $spacing, int $separation, int $chunkX, int $chunkZ) : bool{
 		$regionX = self::floorDiv($chunkX, $spacing);

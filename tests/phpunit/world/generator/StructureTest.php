@@ -27,13 +27,16 @@ use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\inventory\SimpleInventory;
 use pocketmine\utils\Random;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\normal\Normal;
 use pocketmine\world\generator\structure\Structure;
+use pocketmine\world\generator\structure\StructureLoot;
 use pocketmine\world\generator\structure\StructurePopulator;
 use pocketmine\world\SimpleChunkManager;
 use pocketmine\world\World;
+use function count;
 
 final class StructureTest extends TestCase{
 	private const GROUND_Y = 64;
@@ -166,6 +169,30 @@ final class StructureTest extends TestCase{
 				}
 			}
 		}
+	}
+
+	public function testIglooHasChest() : void{
+		$world = $this->makeWorld(VanillaBlocks::GRASS());
+		self::assertTrue(StructurePopulator::defaultStructures()["igloo"]->place($world, 8, 8, new Random(1)));
+		self::assertSame(BlockTypeIds::CHEST, $world->getBlockAt(9, self::GROUND_Y + 1, 6)->getTypeId());
+	}
+
+	public function testLootFill() : void{
+		foreach(["igloo", "ruins", "ruined_portal"] as $structure){
+			self::assertTrue(StructureLoot::hasLoot($structure));
+			for($seed = 0; $seed < 10; ++$seed){
+				$inventory = new SimpleInventory(27);
+				StructureLoot::fill($inventory, $structure, new Random($seed));
+				$stacks = $inventory->getContents();
+				self::assertGreaterThanOrEqual(3, count($stacks), $structure);
+				self::assertLessThanOrEqual(6, count($stacks), $structure);
+				foreach($stacks as $item){
+					self::assertGreaterThan(0, $item->getCount());
+					self::assertLessThanOrEqual($item->getMaxStackSize(), $item->getCount());
+				}
+			}
+		}
+		self::assertFalse(StructureLoot::hasLoot("fossil"));
 	}
 
 	public function testStructuresOption() : void{

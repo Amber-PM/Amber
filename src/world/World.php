@@ -113,6 +113,8 @@ use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\particle\BlockParticle;
 use pocketmine\world\particle\ItemParticle;
 use pocketmine\world\particle\Particle;
+use pocketmine\world\generator\normal\Normal;
+use pocketmine\world\generator\structure\StructureLoot;
 use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\particle\ProtocolParticle;
@@ -341,6 +343,7 @@ class World implements ChunkManager{
 	private \SplQueue $neighbourBlockUpdateQueue;
 	private ?RedstoneEngine $redstone = null;
 	private ?HopperTicker $hopperTicker = null;
+	private ?StructureLoot $structureLoot = null;
 	/**
 	 * @var true[] blockhash => dummy
 	 * @phpstan-var array<BlockPosHash, true>
@@ -536,6 +539,9 @@ class World implements ChunkManager{
 		$generator = GeneratorManager::getInstance()->getGenerator($this->provider->getWorldData()->getGenerator()) ??
 			throw new AssumptionFailedError("WorldManager should already have checked that the generator exists");
 		$generator->validateGeneratorOptions($this->provider->getWorldData()->getGeneratorOptions());
+		if($generator->getGeneratorClass() === Normal::class && Normal::parseStructuresOption($this->provider->getWorldData()->getGeneratorOptions())){
+			$this->structureLoot = new StructureLoot($this, $this->getSeed());
+		}
 
 		$executorSetupParameters = new GeneratorExecutorSetupParameters(
 			worldMinY: $this->minY,
@@ -3808,6 +3814,7 @@ class World implements ChunkManager{
 				}
 
 				if(($oldChunk === null || !$oldChunk->isPopulated()) && $chunk->isPopulated()){
+					$this->structureLoot?->onChunkPopulated($x, $z);
 					if(ChunkPopulateEvent::hasHandlers()){
 						(new ChunkPopulateEvent($this, $x, $z, $chunk))->call();
 					}

@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world\generator\structure;
 
 use pocketmine\block\VanillaBlocks;
+use pocketmine\math\Facing;
 use pocketmine\utils\Random;
 use pocketmine\world\ChunkManager;
 use function abs;
@@ -92,6 +93,7 @@ final class Igloo extends Structure{
 			}
 		}
 		self::set($world, $x - 2, $y + 1, $z - 1, VanillaBlocks::LANTERN());
+		self::set($world, $x + 1, $y + 1, $z - 2, VanillaBlocks::CHEST()->setFacing(Facing::SOUTH));
 		return true;
 	}
 }

@@ -69,6 +69,9 @@ final class Ruins extends Structure{
 				}
 			}
 		}
+		if($random->nextBoundedInt(2) === 0){
+			self::set($world, $x + self::HALF - 1, $y + 1, $z + self::HALF - 1, VanillaBlocks::CHEST());
+		}
 		return true;
 	}
 
