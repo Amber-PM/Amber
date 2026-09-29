@@ -97,6 +97,7 @@ use function floor;
 use function in_array;
 use function is_array;
 use function is_bool;
+use function is_finite;
 use function is_float;
 use function is_int;
 use function is_numeric;
@@ -138,6 +139,8 @@ class AddonEntity extends Living{
 	private const TAG_MAINHAND = "AddonMainHand";
 	private const TAG_OFFHAND = "AddonOffHand";
 	private const TAG_TRADES = "AddonTrades";
+	/** Same reach as Player::interactEntity(). */
+	private const MAX_USE_DISTANCE = 8;
 
 	/** Deepest chain of events triggering events before the chain is cut (packs can loop). */
 	private const MAX_EVENT_DEPTH = 16;
@@ -1326,10 +1329,20 @@ class AddonEntity extends Living{
 	}
 
 	/** Opens the entity's inventory for a player, when minecraft:inventory allows it. */
+	/**
+	 * Whether the player may use this entity's screens (inventory, trading) right now. Requests for these come
+	 * straight from the client with only a runtime ID, so reach is checked here like any other interaction.
+	 */
+	public function canBeUsedBy(Player $player) : bool{
+		return !$this->isClosed() && $this->isAlive() && $player->isAlive() && !$player->isSpectator() &&
+			$player->getWorld() === $this->getWorld() &&
+			$player->canInteract($this->location, self::MAX_USE_DISTANCE);
+	}
+
 	public function openInventoryFor(Player $player) : bool{
 		$component = $this->components["minecraft:inventory"] ?? null;
 		$inventory = $this->getInventory();
-		if($inventory === null || $component === null){
+		if($inventory === null || $component === null || !$this->canBeUsedBy($player)){
 			return false;
 		}
 		if(is_array($component) && ((bool) ($component["private"] ?? false) || ((bool) ($component["restrict_to_owner"] ?? false) && $this->getOwningEntity() !== $player))){
@@ -1946,6 +1959,9 @@ class AddonEntity extends Living{
 	public static function setRiderInput(Player $player, float $strafe, float $forward, bool $jump) : void{
 		$vehicle = self::getVehicleOf($player);
 		if($vehicle !== null && ($vehicle->riders[$vehicle->controllingSeat()] ?? null) === $player){
+			//client-supplied: NaN or infinite values would end up in the mount's position
+			$strafe = is_finite($strafe) ? max(-1.0, min(1.0, $strafe)) : 0.0;
+			$forward = is_finite($forward) ? max(-1.0, min(1.0, $forward)) : 0.0;
 			$vehicle->riderInput = [$strafe, $forward, $jump];
 			$vehicle->riderInputTick = $vehicle->now();
 		}
