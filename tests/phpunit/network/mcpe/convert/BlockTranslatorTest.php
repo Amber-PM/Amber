@@ -24,7 +24,9 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\convert;
 
 use PHPUnit\Framework\TestCase;
+use pocketmine\block\BlockTypeIds;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 
 class BlockTranslatorTest extends TestCase{
 
@@ -35,6 +37,21 @@ class BlockTranslatorTest extends TestCase{
 		$blockTranslator = TypeConverter::getInstance()->getBlockTranslator();
 		foreach(RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $state){
 			$blockTranslator->internalIdToNetworkId($state->getStateId());
+		}
+	}
+
+	/**
+	 * Blocks an older client lacks are sent as a similar block it has, never as the "update!" block.
+	 */
+	public function testEveryStateHasAStandInOnEveryProtocol() : void{
+		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocolId){
+			$blockTranslator = TypeConverter::getInstance($protocolId)->getBlockTranslator();
+			$fallback = $blockTranslator->getBlockStateDictionary()->lookupStateIdFromData($blockTranslator->getFallbackStateData());
+			foreach(RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $stateId => $state){
+				if($state->getTypeId() !== BlockTypeIds::INFO_UPDATE){
+					self::assertNotSame($fallback, $blockTranslator->internalIdToNetworkId($stateId), $state->getName() . " is sent as an update block to protocol $protocolId");
+				}
+			}
 		}
 	}
 }

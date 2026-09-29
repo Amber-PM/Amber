@@ -231,7 +231,7 @@ final class BlockTranslator{
 		try{
 			$blockStateData = AddonWorkerData::getStateData($internalStateId) ?? $this->blockStateSerializer->serialize($internalStateId);
 
-			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData);
+			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData) ?? $this->lookupStandInStateId($blockStateData);
 			if($networkId === null){
 				throw new BlockStateSerializeException("Unmapped blockstate returned by blockstate serializer: " . $blockStateData->toNbt());
 			}
@@ -242,6 +242,21 @@ final class BlockTranslator{
 		}
 
 		return $this->networkIdCache[$internalStateId] = $networkId;
+	}
+
+	/**
+	 * For a state this palette lacks: the closest state of the same block, or of a similar block the client has.
+	 */
+	private function lookupStandInStateId(BlockStateData $data) : ?int{
+		$properties = $data->getStates();
+		$networkId = $this->blockStateDictionary->lookupClosestStateId($data->getName(), $properties);
+		foreach(BlockStateFallbacks::getCandidates($data->getName()) as $name){
+			if($networkId !== null){
+				break;
+			}
+			$networkId = $this->blockStateDictionary->lookupClosestStateId($name, $properties);
+		}
+		return $networkId;
 	}
 
 	/**

@@ -845,7 +845,7 @@ class World implements ChunkManager{
 		$chunkHash = self::chunkHash($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE);
 		$this->activeShapes[$chunkHash][$networkId] = $shapeData;
 
-		NetworkBroadcastUtils::broadcastPackets($players, [$pk]);
+		NetworkBroadcastUtils::broadcastPackets(self::shapeViewers($players), [$pk]);
 
 		$remover = function() use ($pos, $networkId, &$chunkHash) : void{
 			unset($this->activeShapes[$chunkHash][$networkId]);
@@ -855,7 +855,7 @@ class World implements ChunkManager{
 			$removePk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([
 				\pocketmine\network\mcpe\protocol\types\shape\PacketShapeData::remove($networkId)
 			]);
-			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$removePk]);
+			NetworkBroadcastUtils::broadcastPackets(self::shapeViewers($this->getViewersForPosition($pos)), [$removePk]);
 		};
 
 		$updater = function(Shape $newShape, ?\pocketmine\math\Vector3 $newPos = null) use (&$pos, $networkId, &$chunkHash) : void{
@@ -874,10 +874,18 @@ class World implements ChunkManager{
 			$pos = $targetPos;
 
 			$pk = \pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create([$shapeData]);
-			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$pk]);
+			NetworkBroadcastUtils::broadcastPackets(self::shapeViewers($this->getViewersForPosition($pos)), [$pk]);
 		};
 
 		return new ShapeHandle($networkId, $remover, $updater);
+	}
+
+	/**
+	 * @param Player[] $players
+	 * @return Player[]
+	 */
+	private static function shapeViewers(array $players) : array{
+		return array_filter($players, static fn(Player $player) : bool => $player->getNetworkSession()->supportsShapes());
 	}
 
 	// returns all live shapes for a chunk
