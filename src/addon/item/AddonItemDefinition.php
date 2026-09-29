@@ -211,20 +211,38 @@ final class AddonItemDefinition{
 		return self::KIND_ITEM;
 	}
 
-	public function getIconTexture() : string{
-		$icon = $this->components["minecraft:icon"] ?? null;
+	/**
+	 * The texture key from a "minecraft:icon" component, in any of its JSON shapes: a bare string,
+	 * {"texture": ...} (1.16.100 - 1.20.30) or {"textures": {"default": ...}} (1.20.40+).
+	 */
+	public static function iconFromComponent(mixed $icon) : ?string{
 		if(is_string($icon)){
-			return $icon;
+			return $icon !== "" ? $icon : null;
 		}
 		if(is_array($icon)){
-			if(is_string($icon["texture"] ?? null)){
+			if(is_string($icon["texture"] ?? null) && $icon["texture"] !== ""){
 				return $icon["texture"];
 			}
-			if(is_array($icon["textures"] ?? null) && is_string($icon["textures"]["default"] ?? null)){
+			if(is_array($icon["textures"] ?? null) && is_string($icon["textures"]["default"] ?? null) && $icon["textures"]["default"] !== ""){
 				return $icon["textures"]["default"];
 			}
 		}
-		return explode(":", $this->identifier, 2)[1];
+		return null;
+	}
+
+	/**
+	 * Icon declared by the resource pack's items/*.json for this identifier. Older-format add-ons (1.10 - 1.14)
+	 * only declare the icon there, and the client never sees behavior pack or resource pack item files for
+	 * component-based items, so without it the item would be sent with a guessed texture key.
+	 */
+	public function setResourcePackIcon(string $icon) : void{
+		$this->resourcePackIcon = $icon;
+	}
+
+	public function getIconTexture() : string{
+		return self::iconFromComponent($this->components["minecraft:icon"] ?? null)
+			?? $this->resourcePackIcon
+			?? explode(":", $this->identifier, 2)[1];
 	}
 
 	/**
@@ -279,6 +297,7 @@ final class AddonItemDefinition{
 
 	/** @var list<string>|null */
 	private ?array $unsentComponents = null;
+	private ?string $resourcePackIcon = null;
 
 	/**
 	 * JSON components the client is not sent: server-only ones (tags, repairable, script components...) and

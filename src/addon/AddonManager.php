@@ -182,6 +182,8 @@ final class AddonManager{
 
 	/** @var array<string, int> */
 	private array $itemRuntimeIds = [];
+	/** @var array<string, true> identifiers whose icon came from a resource pack item file */
+	private array $resourcePackIconsSet = [];
 	/** @var array<string, int> */
 	private array $blockNumericIds = [];
 	/** @var array<string, array{0: ?CreativeGroup, 1: CreativeCategory}> */
@@ -268,6 +270,11 @@ final class AddonManager{
 		foreach($this->packs as $pack){
 			if($pack->isBehaviorPack()){
 				$this->readBehaviorPack($pack);
+			}
+		}
+		foreach($this->packs as $pack){
+			if($pack->isResourcePack()){
+				$this->readResourcePackItemIcons($pack);
 			}
 		}
 
@@ -585,6 +592,33 @@ final class AddonManager{
 		if($vanillaOverrides !== []){
 			//behavior packs commonly redefine vanilla mobs or the player; the server keeps its own
 			$this->logger->warning("Add-on " . $pack->getName() . ": " . count($vanillaOverrides) . " vanilla override(s) not applied, the server's own are used (" . implode(", ", $vanillaOverrides) . ")");
+		}
+	}
+
+	/**
+	 * Resource pack item files (items/*.json with "minecraft:item") carry the icon for older-format add-ons.
+	 * The first resource pack declaring an icon for an identifier wins, like the pack stack order on the client.
+	 */
+	private function readResourcePackItemIcons(AddonPack $pack) : void{
+		foreach($this->jsonFiles(Path::join($pack->getPath(), "items")) as $file){
+			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
+			try{
+				$json = AddonJson::decode((string) file_get_contents($file), $relative);
+			}catch(AddonException $e){
+				$this->logger->debug("Skipped resource pack item " . $e->getMessage());
+				continue;
+			}
+			$item = is_array($json["minecraft:item"] ?? null) ? $json["minecraft:item"] : null;
+			$identifier = is_array($item["description"] ?? null) ? ($item["description"]["identifier"] ?? null) : null;
+			if(!is_string($identifier) || !isset($this->itemDefinitions[$identifier]) || isset($this->resourcePackIconsSet[$identifier])){
+				continue;
+			}
+			$components = is_array($item["components"] ?? null) ? $item["components"] : [];
+			$icon = AddonItemDefinition::iconFromComponent($components["minecraft:icon"] ?? null);
+			if($icon !== null){
+				$this->itemDefinitions[$identifier]->setResourcePackIcon($icon);
+				$this->resourcePackIconsSet[$identifier] = true;
+			}
 		}
 	}
 
