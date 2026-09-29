@@ -919,6 +919,7 @@ class Server{
 				])
 			);
 			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
+			TypeConverter::setNativeSpectator($this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true));
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
