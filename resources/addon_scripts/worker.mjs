@@ -13,6 +13,15 @@ delete globalThis.fetch;
 delete globalThis.WebSocket;
 delete globalThis.EventSource;
 
+// Pack scripts run in this thread and see `process`. Node's --permission flag does not cover networking or
+// signals, and process.getBuiltinModule() reaches Node built-ins without going through the import hooks, so
+// the parts of `process` that lead outside the sandbox are removed before any pack code loads.
+for(const name of ["getBuiltinModule", "binding", "_linkedBinding", "dlopen", "kill", "chdir", "execve", "loadEnvFile", "setuid", "setgid", "seteuid", "setegid", "setgroups", "initgroups"]){
+	try{
+		Object.defineProperty(process, name, { value: undefined, writable: false, configurable: false });
+	}catch{}
+}
+
 let api, ui, bridge;
 
 function drain(){
