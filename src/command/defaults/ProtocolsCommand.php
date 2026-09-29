@@ -34,9 +34,13 @@ use pocketmine\Server;
 use pocketmine\utils\TextFormat;
 use ReflectionClass;
 use ReflectionException;
+use function array_sum;
+use function arsort;
+use function implode;
 use function is_string;
 use function mb_substr;
 use function preg_replace;
+use function round;
 use function str_replace;
 use function str_starts_with;
 use function substr;
@@ -68,16 +72,42 @@ class ProtocolsCommand extends OverloadedCommand{
 	}
 
 	private function showAllProtocols(CommandSender $sender) : bool{
+		$online = self::countPlayersByProtocol(Server::getInstance()->getOnlinePlayers());
 		$sender->sendMessage(TextFormat::GOLD . "Accepted Protocols:");
 		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocolId){
 			$label = self::getVersionLabel($protocolId);
 			$isAllowed = Server::getInstance()->isProtocolAllowed($protocolId);
 
 			$statusText = $isAllowed ? TextFormat::GREEN . "Enabled" : TextFormat::RED . "Blocked";
-			$sender->sendMessage("- " . TextFormat::YELLOW . $protocolId . TextFormat::RESET . " (" . $label . ") : " . $statusText);
+			$players = $online[$protocolId] ?? 0;
+			$playersText = $players > 0 ? TextFormat::AQUA . " - " . $players . " online" : "";
+			$sender->sendMessage("- " . TextFormat::YELLOW . $protocolId . TextFormat::RESET . " (" . $label . ") : " . $statusText . $playersText);
+		}
+
+		$total = array_sum($online);
+		if($total > 0){
+			arsort($online);
+			$top = [];
+			foreach($online as $protocolId => $count){
+				$top[] = self::getVersionLabel($protocolId) . " " . round($count / $total * 100) . "%";
+			}
+			$sender->sendMessage(TextFormat::GOLD . "Online: " . TextFormat::RESET . $total . " player(s) - " . implode(", ", $top));
 		}
 
 		return true;
+	}
+
+	/**
+	 * @param Player[] $players
+	 * @return array<int, int> protocol ID => number of players
+	 */
+	public static function countPlayersByProtocol(array $players) : array{
+		$counts = [];
+		foreach($players as $player){
+			$protocolId = $player->getNetworkSession()->getProtocolId();
+			$counts[$protocolId] = ($counts[$protocolId] ?? 0) + 1;
+		}
+		return $counts;
 	}
 
 	private function showPlayerProtocol(CommandSender $sender, Player $player) : bool{

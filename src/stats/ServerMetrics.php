@@ -24,6 +24,7 @@ declare(strict_types=1);
 
 namespace pocketmine\stats;
 
+use pocketmine\command\defaults\ProtocolsCommand;
 use pocketmine\network\mcpe\cache\ChunkCache;
 use pocketmine\network\mcpe\convert\BlockTranslator;
 use pocketmine\network\mcpe\convert\ItemTypeDictionaryFromDataHelper;
@@ -76,11 +77,7 @@ final class ServerMetrics{
 	){}
 
 	public static function collect(Server $server) : self{
-		$playersByProtocol = [];
-		foreach($server->getOnlinePlayers() as $player){
-			$protocolId = $player->getNetworkSession()->getProtocolId();
-			$playersByProtocol[$protocolId] = ($playersByProtocol[$protocolId] ?? 0) + 1;
-		}
+		$playersByProtocol = ProtocolsCommand::countPlayersByProtocol($server->getOnlinePlayers());
 		ksort($playersByProtocol);
 
 		$worlds = [];
