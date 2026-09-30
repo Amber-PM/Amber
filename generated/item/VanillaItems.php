@@ -317,10 +317,12 @@ final class VanillaItems{
 	private static Shears $_mSHEARS;
 	private static Item $_mSHULKER_SHELL;
 	private static Item $_mSILENCE_ARMOR_TRIM_SMITHING_TEMPLATE;
+	private static SpawnEgg $_mSKELETON_SPAWN_EGG;
 	private static Item $_mSLIMEBALL;
 	private static Item $_mSNOUT_ARMOR_TRIM_SMITHING_TEMPLATE;
 	private static Snowball $_mSNOWBALL;
 	private static SpiderEye $_mSPIDER_EYE;
+	private static SpawnEgg $_mSPIDER_SPAWN_EGG;
 	private static Item $_mSPIRE_ARMOR_TRIM_SMITHING_TEMPLATE;
 	private static SplashPotion $_mSPLASH_POTION;
 	private static Boat $_mSPRUCE_BOAT;
@@ -675,10 +677,12 @@ final class VanillaItems{
 			"shears" => fn(Shears $v) => self::$_mSHEARS = $v,
 			"shulker_shell" => fn(Item $v) => self::$_mSHULKER_SHELL = $v,
 			"silence_armor_trim_smithing_template" => fn(Item $v) => self::$_mSILENCE_ARMOR_TRIM_SMITHING_TEMPLATE = $v,
+			"skeleton_spawn_egg" => fn(SpawnEgg $v) => self::$_mSKELETON_SPAWN_EGG = $v,
 			"slimeball" => fn(Item $v) => self::$_mSLIMEBALL = $v,
 			"snout_armor_trim_smithing_template" => fn(Item $v) => self::$_mSNOUT_ARMOR_TRIM_SMITHING_TEMPLATE = $v,
 			"snowball" => fn(Snowball $v) => self::$_mSNOWBALL = $v,
 			"spider_eye" => fn(SpiderEye $v) => self::$_mSPIDER_EYE = $v,
+			"spider_spawn_egg" => fn(SpawnEgg $v) => self::$_mSPIDER_SPAWN_EGG = $v,
 			"spire_armor_trim_smithing_template" => fn(Item $v) => self::$_mSPIRE_ARMOR_TRIM_SMITHING_TEMPLATE = $v,
 			"splash_potion" => fn(SplashPotion $v) => self::$_mSPLASH_POTION = $v,
 			"spruce_boat" => fn(Boat $v) => self::$_mSPRUCE_BOAT = $v,
@@ -2153,6 +2157,11 @@ final class VanillaItems{
 		return clone self::$_mSILENCE_ARMOR_TRIM_SMITHING_TEMPLATE;
 	}
 
+	public static function SKELETON_SPAWN_EGG() : SpawnEgg{
+		if(!isset(self::$_mSKELETON_SPAWN_EGG)){ self::init(); }
+		return clone self::$_mSKELETON_SPAWN_EGG;
+	}
+
 	public static function SLIMEBALL() : Item{
 		if(!isset(self::$_mSLIMEBALL)){ self::init(); }
 		return clone self::$_mSLIMEBALL;
@@ -2171,6 +2180,11 @@ final class VanillaItems{
 	public static function SPIDER_EYE() : SpiderEye{
 		if(!isset(self::$_mSPIDER_EYE)){ self::init(); }
 		return clone self::$_mSPIDER_EYE;
+	}
+
+	public static function SPIDER_SPAWN_EGG() : SpawnEgg{
+		if(!isset(self::$_mSPIDER_SPAWN_EGG)){ self::init(); }
+		return clone self::$_mSPIDER_SPAWN_EGG;
 	}
 
 	public static function SPIRE_ARMOR_TRIM_SMITHING_TEMPLATE() : Item{

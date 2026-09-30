@@ -195,6 +195,14 @@ final class EntityFactory{
 			'ThrownTrident' //as above
 		]);
 
+		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
+			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Skeleton', 'minecraft:skeleton']);
+
+		$this->register(Spider::class, function(World $world, CompoundTag $nbt) : Spider{
+			return new Spider(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Spider', 'minecraft:spider']);
+
 		$this->register(Squid::class, function(World $world, CompoundTag $nbt) : Squid{
 			return new Squid(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Squid', 'minecraft:squid']);

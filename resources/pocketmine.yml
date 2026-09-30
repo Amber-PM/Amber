@@ -173,6 +173,11 @@ console:
   #NOTE: The title ticker will be disabled regardless if console colours are not enabled.
   title-tick: true
 
+spawners:
+  # Whether mob spawners should ignore light levels when spawning monsters (useful for mob farms/skyblock).
+  # false = strict vanilla (light <= 7 for monsters); true = spawn regardless of light.
+  ignore-light-level: false
+
 aliases:
   ##This section allows you to add, remove or remap command aliases.
   ##A single alias can call one or more other commands (or aliases).

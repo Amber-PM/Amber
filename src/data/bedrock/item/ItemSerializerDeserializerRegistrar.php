@@ -397,10 +397,12 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::SHEARS, Items::SHEARS());
 		$this->map1to1Item(Ids::SHULKER_SHELL, Items::SHULKER_SHELL());
 		$this->map1to1Item(Ids::SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE, Items::SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE());
+		$this->map1to1Item(Ids::SKELETON_SPAWN_EGG, Items::SKELETON_SPAWN_EGG());
 		$this->map1to1Item(Ids::SLIME_BALL, Items::SLIMEBALL());
 		$this->map1to1Item(Ids::SNOUT_ARMOR_TRIM_SMITHING_TEMPLATE, Items::SNOUT_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$this->map1to1Item(Ids::SNOWBALL, Items::SNOWBALL());
 		$this->map1to1Item(Ids::SPIDER_EYE, Items::SPIDER_EYE());
+		$this->map1to1Item(Ids::SPIDER_SPAWN_EGG, Items::SPIDER_SPAWN_EGG());
 		$this->map1to1Item(Ids::SPIRE_ARMOR_TRIM_SMITHING_TEMPLATE, Items::SPIRE_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$this->map1to1Item(Ids::SPRUCE_BOAT, Items::SPRUCE_BOAT());
 		$this->map1to1Item(Ids::SPRUCE_HANGING_SIGN, Items::SPRUCE_HANGING_SIGN());
