@@ -27,26 +27,30 @@ use pmmp\thread\ThreadSafeArray;
 use pocketmine\thread\log\ThreadSafeLoggerAttachment;
 use pocketmine\utils\TextFormat;
 use function max;
+use function min;
 
 /**
  * Keeps the most recent log lines for the web panel. Attached to the main logger, so it is fed from any thread.
  */
 final class WebLogBuffer extends ThreadSafeLoggerAttachment{
-	private const MAX_LINES = 500;
+	public const MIN_LINES = 100;
+	public const MAX_LINES = 10000;
 
 	/** @phpstan-var ThreadSafeArray<int, string> */
 	private ThreadSafeArray $lines;
 	private int $next = 0;
+	private int $capacity;
 
-	public function __construct(){
+	public function __construct(int $capacity = 1000){
 		$this->lines = new ThreadSafeArray();
+		$this->capacity = max(self::MIN_LINES, min(self::MAX_LINES, $capacity));
 	}
 
 	public function log(string $level, string $message) : void{
 		$line = "[" . $level . "] " . TextFormat::clean($message);
 		$this->synchronized(function() use ($line) : void{
 			$this->lines[$this->next] = $line;
-			unset($this->lines[$this->next - self::MAX_LINES]);
+			unset($this->lines[$this->next - $this->capacity]);
 			++$this->next;
 		});
 	}
@@ -58,7 +62,7 @@ final class WebLogBuffer extends ThreadSafeLoggerAttachment{
 	public function getLinesAfter(int $after) : array{
 		return $this->synchronized(function() use ($after) : array{
 			$lines = [];
-			for($i = max($after, $this->next - self::MAX_LINES, 0); $i < $this->next; ++$i){
+			for($i = max($after, $this->next - $this->capacity, 0); $i < $this->next; ++$i){
 				$line = $this->lines[$i] ?? null;
 				if($line !== null){
 					$lines[] = [$i, $line];

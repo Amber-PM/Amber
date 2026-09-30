@@ -147,6 +147,7 @@ use function filemtime;
 use function fopen;
 use function get_class;
 use function gettype;
+use function in_array;
 use function ini_set;
 use function is_array;
 use function is_dir;
@@ -1116,15 +1117,28 @@ class Server{
 			if($this->configGroup->getPropertyBool(Yml::WEB_ENABLED, false)){
 				$address = $this->configGroup->getPropertyString(Yml::WEB_ADDRESS, "127.0.0.1");
 				$port = $this->configGroup->getPropertyInt(Yml::WEB_PORT, 8080);
+				$tlsCertificate = $this->configGroup->getPropertyString(Yml::WEB_TLS_CERTIFICATE, "");
+				$tlsKey = $this->configGroup->getPropertyString(Yml::WEB_TLS_KEY, "");
 				try{
+					if(($tlsCertificate === "") !== ($tlsKey === "")){
+						throw new \RuntimeException("set both web.tls-certificate and web.tls-key, or neither");
+					}
 					$this->webPanel = new WebPanel(
 						$this,
 						$address,
 						$port,
 						WebPanel::resolveToken($this->configGroup->getPropertyString(Yml::WEB_TOKEN, ""), $this->dataPath, $this->logger),
-						$this->configGroup->getPropertyBool(Yml::WEB_METRICS_REQUIRE_TOKEN, false)
+						array_map(strval(...), (array) $this->configGroup->getProperty(Yml::WEB_READ_ONLY_TOKENS, [])),
+						$this->configGroup->getPropertyBool(Yml::WEB_METRICS_REQUIRE_TOKEN, false),
+						$this->configGroup->getPropertyInt(Yml::WEB_LOG_LINES, 1000),
+						$tlsCertificate !== "" ? Path::makeAbsolute($tlsCertificate, $this->dataPath) : null,
+						$tlsKey !== "" ? Path::makeAbsolute($tlsKey, $this->dataPath) : null
 					);
-					$this->logger->info("Web panel running on http://" . (str_contains($address, ":") ? "[$address]" : $address) . ":$port/");
+					$scheme = $this->webPanel->isTls() ? "https" : "http";
+					$this->logger->info("Web panel running on $scheme://" . (str_contains($address, ":") ? "[$address]" : $address) . ":$port/");
+					if(!$this->webPanel->isTls() && !in_array($address, ["127.0.0.1", "::1", "localhost"], true)){
+						$this->logger->warning("The web panel is reachable from other machines over plain HTTP, so its token can be read on the way: set web.tls-certificate and web.tls-key, or put it behind an HTTPS reverse proxy.");
+					}
 				}catch(\RuntimeException $e){
 					$this->logger->error("Web panel could not start: " . $e->getMessage());
 				}

@@ -56,11 +56,14 @@ use const JSON_THROW_ON_ERROR;
 /**
  * The built-in web panel (players, console, add-ons, performance) and the Prometheus endpoint.
  *
- * Everything but the static page and /metrics needs the token, sent as "Authorization: Bearer <token>". There
- * are no cookies, so other sites cannot make a logged-in browser act on the panel. Repeated wrong tokens from an
- * address are refused for a while.
+ * Everything but the static page and /metrics needs a token, sent as "Authorization: Bearer <token>". The admin
+ * token can do everything; read-only tokens can look but not run commands. There are no cookies, so other sites
+ * cannot make a logged-in browser act on the panel. Repeated wrong tokens from an address are refused for a while.
  */
 final class WebPanel{
+	public const SCOPE_ADMIN = "admin";
+	public const SCOPE_READ = "read";
+
 	private const MAX_AUTH_FAILURES = 10;
 	private const AUTH_FAILURE_WINDOW = 60;
 	private const MIN_TOKEN_LENGTH = 16;
@@ -73,22 +76,44 @@ final class WebPanel{
 
 	private HttpServer $http;
 	private WebLogBuffer $log;
+	private MetricsHistory $history;
+	private int $lastSample = 0;
 	/** @var array<string, array{int, int}> address => failures, window start */
 	private array $authFailures = [];
+	/** @var list<string> */
+	private array $readTokens = [];
 
 	/**
-	 * @throws \RuntimeException if the address cannot be listened on
+	 * @param string[] $readTokens tokens that can view but not run commands
+	 *
+	 * @throws \RuntimeException if the address cannot be listened on, or the TLS files cannot be read
 	 */
 	public function __construct(
 		private Server $server,
 		string $address,
 		int $port,
 		private string $token,
-		private bool $metricsNeedToken
+		array $readTokens,
+		private bool $metricsNeedToken,
+		int $logLines = 1000,
+		?string $tlsCertificate = null,
+		?string $tlsKey = null
 	){
-		$this->log = new WebLogBuffer();
+		foreach($readTokens as $readToken){
+			if(strlen($readToken) < self::MIN_TOKEN_LENGTH || hash_equals($this->token, $readToken)){
+				$this->server->getLogger()->warning("Ignoring a web.read-only-tokens entry: tokens must be at least " . self::MIN_TOKEN_LENGTH . " characters and differ from web.token");
+				continue;
+			}
+			$this->readTokens[] = $readToken;
+		}
+		$this->http = new HttpServer($address, $port, $this->handle(...), $tlsCertificate, $tlsKey);
+		$this->history = new MetricsHistory();
+		$this->log = new WebLogBuffer($logLines);
 		$this->server->getLogger()->addAttachment($this->log);
-		$this->http = new HttpServer($address, $port, $this->handle(...));
+	}
+
+	public function isTls() : bool{
+		return $this->http->isTls();
 	}
 
 	/**
@@ -113,6 +138,11 @@ final class WebPanel{
 	}
 
 	public function tick() : void{
+		$now = time();
+		if($now - $this->lastSample >= MetricsHistory::INTERVAL){
+			$this->lastSample = $now;
+			$this->history->add($now, ServerMetrics::collect($this->server));
+		}
 		$this->http->tick();
 	}
 
@@ -134,7 +164,7 @@ final class WebPanel{
 			if($request->method !== "GET"){
 				return HttpResponse::error(405, "Use GET");
 			}
-			if($this->metricsNeedToken && ($refusal = $this->authenticate($request)) !== null){
+			if($this->metricsNeedToken && ($refusal = $this->authenticate($request, $scope)) !== null){
 				return $refusal;
 			}
 			return new HttpResponse(200, PrometheusExporter::render(ServerMetrics::collect($this->server)), "text/plain; version=0.0.4; charset=utf-8");
@@ -142,19 +172,28 @@ final class WebPanel{
 		if(!str_starts_with($request->path, "/api/")){
 			return HttpResponse::error(404, "Not found");
 		}
-		if(($refusal = $this->authenticate($request)) !== null){
+		$scope = null;
+		if(($refusal = $this->authenticate($request, $scope)) !== null){
 			return $refusal;
 		}
 		return match($request->method . " " . $request->path){
+			"GET /api/session" => HttpResponse::json(["scope" => $scope, "tls" => $this->http->isTls()]),
 			"GET /api/status" => HttpResponse::json($this->status()),
+			"GET /api/history" => HttpResponse::json($this->history->toArray()),
 			"GET /api/log" => $this->logLines($request),
 			"GET /api/addons" => HttpResponse::json($this->addons()),
-			"POST /api/command" => $this->command($request),
+			"POST /api/command" => $scope === self::SCOPE_ADMIN ? $this->command($request) : HttpResponse::error(403, "This token can only view the panel"),
 			default => HttpResponse::error(404, "Not found"),
 		};
 	}
 
-	private function authenticate(HttpRequest $request) : ?HttpResponse{
+	/**
+	 * Checks the request's token. Returns the refusal to send, or null with $scope set to what the token allows.
+	 *
+	 * @param-out string|null $scope
+	 */
+	private function authenticate(HttpRequest $request, ?string &$scope) : ?HttpResponse{
+		$scope = null;
 		$address = $request->remoteAddress;
 		$now = time();
 		[$failures, $since] = $this->authFailures[$address] ?? [0, $now];
@@ -173,7 +212,16 @@ final class WebPanel{
 		}
 		$header = $request->getHeader("Authorization") ?? "";
 		$given = str_starts_with($header, "Bearer ") ? substr($header, 7) : "";
-		if($given === "" || !hash_equals($this->token, $given)){
+		if($given !== "" && hash_equals($this->token, $given)){
+			$scope = self::SCOPE_ADMIN;
+		}elseif($given !== ""){
+			foreach($this->readTokens as $readToken){
+				if(hash_equals($readToken, $given)){
+					$scope = self::SCOPE_READ;
+				}
+			}
+		}
+		if($scope === null){
 			$this->authFailures[$address] = [$failures + 1, $since];
 			return HttpResponse::error(401, "Missing or wrong token");
 		}

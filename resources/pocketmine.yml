@@ -156,16 +156,25 @@ ticks-per:
   autosave: 6000
 
 web:
-  #Built-in web panel (players, console, add-ons, performance) at http://<address>:<port>/, and Prometheus
-  #metrics at /metrics. The panel can run any command: keep it on 127.0.0.1 unless it is behind a reverse
-  #proxy that adds HTTPS, and never share the token.
+  #Built-in web panel (players, console, add-ons, performance) at http(s)://<address>:<port>/, and Prometheus
+  #metrics at /metrics. The admin token can run any command: keep the panel on 127.0.0.1 unless it uses HTTPS
+  #(tls-certificate below, or a reverse proxy), and never share the token.
   enabled: false
   address: 127.0.0.1
   port: 8080
-  #Token for the panel and its API. Empty: a random token is generated into web-token.txt.
+  #Admin token for the panel and its API (can run commands). Empty: a random token is generated into web-token.txt.
   token: ""
-  #Whether /metrics needs the token too (Authorization: Bearer <token>).
+  #Tokens that can see the panel, console output and metrics but not run commands, e.g. for dashboards and monitoring.
+  #Each must be at least 16 characters.
+  read-only-tokens: []
+  #Whether /metrics needs a token too (Authorization: Bearer <token>).
   metrics-require-token: false
+  #Serve the panel over HTTPS with this certificate and private key (PEM files, relative to the server folder).
+  #Both empty: plain HTTP.
+  tls-certificate: ""
+  tls-key: ""
+  #Console lines the panel keeps (100-10000).
+  log-lines: 1000
 
 backups:
   #Automatic world backups, as zip files in backups/<world>/. /amber backup [world] makes one any time.
