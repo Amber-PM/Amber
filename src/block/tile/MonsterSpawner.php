@@ -119,7 +119,7 @@ class MonsterSpawner extends Spawnable{
 		$this->displayEntityHeight = $nbt->getFloat(self::TAG_ENTITY_HEIGHT, 1.0);
 		$this->displayEntityScale = $nbt->getFloat(self::TAG_ENTITY_SCALE, 1.0);
 
-		if($this->position->isValid()){
+		if(isset($this->position) && $this->position->isValid()){
 			$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, 1);
 		}
 	}
@@ -256,11 +256,6 @@ class MonsterSpawner extends Spawnable{
 			}
 		}
 
-		$nearest = $world->getNearestEntity($this->position, (float) $this->requiredPlayerRange, Player::class);
-		if($nearest instanceof Player && $nearest->isAlive() && !$nearest->isSpectator()){
-			return true;
-		}
-
 		return false;
 	}
 
@@ -384,7 +379,7 @@ class MonsterSpawner extends Spawnable{
 		}
 
 		try{
-			$saveId = strtolower(EntityFactory::getInstance()->getSaveId(get_class($entity)));
+			$saveId = strtolower(EntityFactory::getInstance()->getSaveId($entity::class));
 			if($saveId === $targetId || $saveId === $targetIdWithoutPrefix){
 				return true;
 			}
