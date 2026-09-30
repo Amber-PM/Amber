@@ -365,8 +365,10 @@ final class ItemTypeIds{
 	public const CROSSBOW = 20326;
 	public const ELYTRA = 20327;
 	public const SHIELD = 20328;
+	public const SKELETON_SPAWN_EGG = 20329;
+	public const SPIDER_SPAWN_EGG = 20330;
 
-	public const FIRST_UNUSED_ITEM_ID = 20329;
+	public const FIRST_UNUSED_ITEM_ID = 20331;
 
 	private static int $nextDynamicId = self::FIRST_UNUSED_ITEM_ID;
 

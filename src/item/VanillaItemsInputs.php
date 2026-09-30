@@ -27,6 +27,8 @@ use pocketmine\block\utils\RecordType;
 use pocketmine\block\VanillaBlocks as Blocks;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
+use pocketmine\entity\Skeleton;
+use pocketmine\entity\Spider;
 use pocketmine\entity\Squid;
 use pocketmine\entity\Villager;
 use pocketmine\entity\Zombie;
@@ -341,6 +343,16 @@ final class VanillaItemsInputs extends RegistrySource{
 	}
 
 	private function registerSpawnEggs() : void{
+		self::register("skeleton_spawn_egg", fn(IID $id) => new class($id, "Skeleton Spawn Egg") extends SpawnEgg{
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Skeleton(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("spider_spawn_egg", fn(IID $id) => new class($id, "Spider Spawn Egg") extends SpawnEgg{
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Spider(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
 		self::register("zombie_spawn_egg", fn(IID $id) => new class($id, "Zombie Spawn Egg") extends SpawnEgg{
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Zombie(Location::fromObject($pos, $world, $yaw, $pitch));
