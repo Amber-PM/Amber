@@ -25,6 +25,11 @@ namespace pocketmine\block;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\tile\MonsterSpawner as TileMonsterSpawner;
+use pocketmine\item\SpawnEgg;
+use pocketmine\item\VanillaItems;
+use pocketmine\math\Facing;
+use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use ReflectionClass;
 use ReflectionNamedType;
 
@@ -85,6 +90,41 @@ final class MonsterSpawnerTest extends TestCase{
 		self::assertInstanceOf(ReflectionNamedType::class, $ret);
 		self::assertSame("void", $ret->getName());
 		self::assertSame(0, $onScheduledUpdate->getNumberOfParameters());
+
+		$onInteract = $refClass->getMethod("onInteract");
+		$ret = $onInteract->getReturnType();
+		self::assertInstanceOf(ReflectionNamedType::class, $ret);
+		self::assertSame("bool", $ret->getName());
+		self::assertSame(5, $onInteract->getNumberOfParameters());
+	}
+
+	public function testSpawnEggMethodSignatures() : void{
+		$refClass = new ReflectionClass(SpawnEgg::class);
+
+		$getSpawnEntityNetworkId = $refClass->getMethod("getSpawnEntityNetworkId");
+		$ret = $getSpawnEntityNetworkId->getReturnType();
+		self::assertInstanceOf(ReflectionNamedType::class, $ret);
+		self::assertSame("string", $ret->getName());
+		self::assertSame(0, $getSpawnEntityNetworkId->getNumberOfParameters());
+	}
+
+	public function testSpawnEggNetworkIds() : void{
+		self::assertSame(EntityIds::ZOMBIE, VanillaItems::ZOMBIE_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SKELETON, VanillaItems::SKELETON_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SPIDER, VanillaItems::SPIDER_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SQUID, VanillaItems::SQUID_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::VILLAGER, VanillaItems::VILLAGER_SPAWN_EGG()->getSpawnEntityNetworkId());
+	}
+
+	public function testBlockOnInteractReturnsTrueForSpawnEgg() : void{
+		$refClass = new ReflectionClass(MonsterSpawner::class);
+		/** @var MonsterSpawner $block */
+		$block = $refClass->newInstanceWithoutConstructor();
+
+		$returnedItems = [];
+		self::assertTrue($block->onInteract(VanillaItems::ZOMBIE_SPAWN_EGG(), Facing::UP, new Vector3(0, 0, 0), null, $returnedItems));
+		self::assertTrue($block->onInteract(VanillaItems::SKELETON_SPAWN_EGG(), Facing::UP, new Vector3(0, 0, 0), null, $returnedItems));
+		self::assertFalse($block->onInteract(VanillaItems::FEATHER(), Facing::UP, new Vector3(0, 0, 0), null, $returnedItems));
 	}
 
 	public function testTileClosedReturnsZero() : void{
@@ -106,6 +146,29 @@ final class MonsterSpawnerTest extends TestCase{
 
 		$tile->setEntityId("minecraft:spider");
 		self::assertSame("minecraft:spider", $tile->getEntityId());
+
+		$tile->closed = true;
+	}
+
+	public function testTileSetEntityIdViaSpawnEggNetworkId() : void{
+		$refClass = new ReflectionClass(TileMonsterSpawner::class);
+		/** @var TileMonsterSpawner $tile */
+		$tile = $refClass->newInstanceWithoutConstructor();
+
+		$tile->setEntityId(VanillaItems::ZOMBIE_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::ZOMBIE, $tile->getEntityId());
+
+		$tile->setEntityId(VanillaItems::SKELETON_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SKELETON, $tile->getEntityId());
+
+		$tile->setEntityId(VanillaItems::SPIDER_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SPIDER, $tile->getEntityId());
+
+		$tile->setEntityId(VanillaItems::SQUID_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::SQUID, $tile->getEntityId());
+
+		$tile->setEntityId(VanillaItems::VILLAGER_SPAWN_EGG()->getSpawnEntityNetworkId());
+		self::assertSame(EntityIds::VILLAGER, $tile->getEntityId());
 
 		$tile->closed = true;
 	}

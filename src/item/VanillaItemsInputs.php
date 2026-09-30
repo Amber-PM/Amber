@@ -37,6 +37,7 @@ use pocketmine\item\enchantment\ItemEnchantmentTags as EnchantmentTags;
 use pocketmine\item\ItemIdentifier as IID;
 use pocketmine\item\VanillaArmorMaterials as ArmorMaterials;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\utils\RegistrySource;
 use pocketmine\world\World;
 use function is_int;
@@ -344,26 +345,46 @@ final class VanillaItemsInputs extends RegistrySource{
 
 	private function registerSpawnEggs() : void{
 		self::register("skeleton_spawn_egg", fn(IID $id) => new class($id, "Skeleton Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SKELETON;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Skeleton(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("spider_spawn_egg", fn(IID $id) => new class($id, "Spider Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SPIDER;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Spider(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("zombie_spawn_egg", fn(IID $id) => new class($id, "Zombie Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::ZOMBIE;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Zombie(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("squid_spawn_egg", fn(IID $id) => new class($id, "Squid Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SQUID;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Squid(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("villager_spawn_egg", fn(IID $id) => new class($id, "Villager Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::VILLAGER;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Villager(Location::fromObject($pos, $world, $yaw, $pitch));
 			}

@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\item;
 
 use pocketmine\block\Block;
+use pocketmine\block\MonsterSpawner;
+use pocketmine\block\tile\MonsterSpawner as TileMonsterSpawner;
 use pocketmine\entity\Entity;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
@@ -34,7 +36,20 @@ abstract class SpawnEgg extends Item{
 
 	abstract protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity;
 
+	abstract public function getSpawnEntityNetworkId() : string;
+
 	public function onInteractBlock(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, array &$returnedItems) : ItemUseResult{
+		if($blockClicked instanceof MonsterSpawner){
+			$tile = $player->getWorld()->getTile($blockClicked->getPosition());
+			if($tile instanceof TileMonsterSpawner){
+				$tile->setEntityId($this->getSpawnEntityNetworkId());
+				if($player->isSurvival()){
+					$this->pop();
+				}
+				return ItemUseResult::SUCCESS;
+			}
+		}
+
 		$entity = $this->createEntity($player->getWorld(), $blockReplace->getPosition()->add(0.5, 0, 0.5), Utils::getRandomFloat() * 360, 0);
 
 		if($this->hasCustomName()){
