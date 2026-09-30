@@ -299,10 +299,16 @@ class MonsterSpawner extends Spawnable{
 			return;
 		}
 
+		$remainingCapacity = $this->maxNearbyEntities - $matchingCount;
+
 		$server = Server::getInstance();
 		$ignoreLight = $server?->getConfigGroup()->getPropertyBool(YmlServerProperties::SPAWNERS_IGNORE_LIGHT_LEVEL, false) ?? false;
 
 		for($attempt = 0; $attempt < $this->spawnPerAttempt; ++$attempt){
+			if($remainingCapacity <= 0){
+				break;
+			}
+
 			$targetX = $pos->getFloorX() + mt_rand(-$this->spawnRange, $this->spawnRange);
 			$targetY = $pos->getFloorY() + mt_rand(-1, 1);
 			$targetZ = $pos->getFloorZ() + mt_rand(-$this->spawnRange, $this->spawnRange);
@@ -354,6 +360,11 @@ class MonsterSpawner extends Spawnable{
 				continue;
 			}
 
+			if(count($world->getBlockCollisionBoxes($entity->getBoundingBox())) > 0){
+				$entity->close();
+				continue;
+			}
+
 			$ev = new SpawnerSpawnEvent($this, $entity, $spawnPos);
 			$ev->call();
 			if($ev->isCancelled()){
@@ -363,6 +374,7 @@ class MonsterSpawner extends Spawnable{
 
 			$entity->spawnToAll();
 			$world->addParticle($spawnPos, new MobSpawnParticle());
+			--$remainingCapacity;
 		}
 	}
 
