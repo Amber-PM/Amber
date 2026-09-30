@@ -26,7 +26,7 @@
 	}
 	function bytes(n){ return n >= 1073741824 ? (n / 1073741824).toFixed(2) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(1) + " KB"; }
 	function duration(s){ s = Math.floor(s); const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60; return (d ? d + "d " : "") + h + "h " + m + "m"; }
-	function quote(name){ return "\"" + name.replace(/"/g, "") + "\""; }
+	function quote(name){ return "\"" + name.replace(/["\\]/g, "\\$&") + "\""; }
 
 	function chart(id, values, format, fixedMax){
 		const svg = $(id);

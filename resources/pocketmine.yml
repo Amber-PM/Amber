@@ -96,7 +96,7 @@ network:
   #Players' IP and XUID are then taken from what the proxy sends, so nothing but the proxy may be able to connect:
   #list its address in proxy-addresses and/or firewall this server's port.
   waterdog-support: false
-  #Addresses allowed to connect while waterdog-support is on. An empty list allows any address (not recommended).
+  #Addresses allowed to connect while waterdog-support is on. Must contain your proxy's address; an empty list refuses every login.
   proxy-addresses:
     - 127.0.0.1
 

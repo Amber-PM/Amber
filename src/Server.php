@@ -1111,7 +1111,7 @@ class Server{
 			$this->addonManager->registerResourcePacks($this->resourceManager);
 
 			if($this->configGroup->getPropertyBool(Yml::NETWORK_WATERDOG_SUPPORT, false) && count((array) $this->configGroup->getProperty(Yml::NETWORK_PROXY_ADDRESSES, [])) === 0){
-				$this->logger->warning("network.waterdog-support is on and network.proxy-addresses is empty: anyone who can reach this server can log in as any player. List your proxy's address, or firewall this server's port.");
+				$this->logger->critical("network.waterdog-support is on but network.proxy-addresses is empty: every login is refused until your proxy's address is listed.");
 			}
 
 			if($this->configGroup->getPropertyBool(Yml::WEB_ENABLED, false)){

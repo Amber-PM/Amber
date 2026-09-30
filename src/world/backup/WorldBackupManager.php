@@ -114,7 +114,7 @@ final class WorldBackupManager{
 		$staging = Path::join($this->backupPath, self::STAGING_DIR, $name . "-" . $stamp . "-" . $attempt);
 		try{
 			$world->save(true);
-			$this->snapshot(Path::join($this->server->getDataPath(), "worlds", $name), $staging);
+			$this->snapshot($world->getProvider()->getPath(), $staging);
 		}catch(\Throwable $e){
 			if(is_dir($staging)){
 				Filesystem::recursiveUnlink($staging);

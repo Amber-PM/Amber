@@ -258,8 +258,11 @@ class LoginPacketHandler extends PacketHandler{
 		}
 
 		$proxyAddresses = array_map(strval(...), (array) $config->getProperty(YmlServerProperties::NETWORK_PROXY_ADDRESSES, []));
-		if(count($proxyAddresses) > 0 && !in_array($this->session->getIp(), $proxyAddresses, true)){
-			$this->session->disconnect("Connection from " . $this->session->getIp() . " is not from a proxy listed in network.proxy-addresses", "Please join through this server's proxy.");
+		if(!in_array($this->session->getIp(), $proxyAddresses, true)){
+			$this->session->disconnect(
+				count($proxyAddresses) === 0 ? "WaterdogPE support is on, but network.proxy-addresses is empty" : "Connection from " . $this->session->getIp() . " is not from a proxy listed in network.proxy-addresses",
+				"Please join through this server's proxy."
+			);
 			return false;
 		}
 

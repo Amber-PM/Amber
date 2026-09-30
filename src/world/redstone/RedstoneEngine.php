@@ -409,7 +409,12 @@ final class RedstoneEngine{
 				continue;
 			}
 			$back = $comparator->getPosition()->getSide($comparator->getFacing());
-			$tile = $this->world->getTileAt($back->getFloorX(), $back->getFloorY(), $back->getFloorZ());
+			$bx = $back->getFloorX();
+			$bz = $back->getFloorZ();
+			if(!$this->world->isChunkLoaded($bx >> 4, $bz >> 4)){
+				continue; //getTileAt() would load the chunk
+			}
+			$tile = $this->world->getTileAt($bx, $back->getFloorY(), $bz);
 			if(!$tile instanceof Container || self::containerSignal($tile) !== $signal){
 				$this->request($x, $y, $z);
 			}
@@ -421,7 +426,9 @@ final class RedstoneEngine{
 		$pos = $comparator->getPosition();
 		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		$backPos = $pos->getSide($comparator->getFacing());
-		$tile = $this->world->getTileAt($backPos->getFloorX(), $backPos->getFloorY(), $backPos->getFloorZ());
+		$bx = $backPos->getFloorX();
+		$bz = $backPos->getFloorZ();
+		$tile = $this->world->isChunkLoaded($bx >> 4, $bz >> 4) ? $this->world->getTileAt($bx, $backPos->getFloorY(), $bz) : null;
 		if($tile instanceof Container){
 			$signal = self::containerSignal($tile);
 			$this->containerWatch[$hash] = $signal;

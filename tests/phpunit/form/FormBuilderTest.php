@@ -124,11 +124,23 @@ final class FormBuilderTest extends TestCase{
 		$form = $this->settings($response);
 		$form->handleResponse($this->player(), [null, false, 0, null, "Alex", 35, 2]);
 		self::assertNotNull($response);
+		self::assertTrue($response->has("mentions"));
+		self::assertFalse($response->has("non_existent"));
 		self::assertFalse($response->getBool("mentions"));
 		self::assertSame(0, $response->getInt("lang"));
 		self::assertSame("Alex", $response->getString("nick"));
 		self::assertSame(35.0, $response->getFloat("volume"));
 		self::assertSame(2, $response->getInt("size"));
+	}
+
+	public function testCustomFormMissingElementThrows() : void{
+		$response = null;
+		$form = $this->settings($response);
+		$form->handleResponse($this->player(), [null, false, 0, null, "Alex", 35, 2]);
+		self::assertNotNull($response);
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage('No answer for form element "missing"');
+		$response->getString("missing");
 	}
 
 	public function testCustomFormRejectsInvalidAnswers() : void{

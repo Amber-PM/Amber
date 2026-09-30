@@ -101,6 +101,9 @@ final class HopperTicker{
 
 	private function push(Inventory $hopper, int $x, int $y, int $z, int $facing) : void{
 		[$dx, $dy, $dz] = Facing::OFFSET[$facing];
+		if(!$this->world->isChunkLoaded(($x + $dx) >> 4, ($z + $dz) >> 4)){
+			return; //getTileAt() would load the chunk
+		}
 		$target = $this->world->getTileAt($x + $dx, $y + $dy, $z + $dz);
 		if(!self::isSupported($target)){
 			return;
@@ -120,8 +123,14 @@ final class HopperTicker{
 
 	private function pullFromAbove(Inventory $hopper, int $x, int $y, int $z) : bool{
 		$source = $this->world->getTileAt($x, $y + 1, $z);
-		if(!self::isSupported($source) || $source instanceof HopperTile){
+		if(!self::isSupported($source)){
 			return $source instanceof Container;
+		}
+		if($source instanceof HopperTile){
+			$above = $this->world->getBlockAt($x, $y + 1, $z);
+			if($above instanceof Hopper && $above->getFacing() === Facing::DOWN){
+				return true; //it pushes into this one itself
+			}
 		}
 		$inventory = $source->getInventory();
 		$slots = $source instanceof Furnace ? [self::FURNACE_OUTPUT] : range(0, $inventory->getSize() - 1);

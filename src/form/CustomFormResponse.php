@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\form;
 
+use function array_key_exists;
 use function is_bool;
 use function is_float;
 use function is_int;
@@ -42,24 +43,35 @@ final class CustomFormResponse{
 	/** @return array<string, string|bool|float|int> */
 	public function getAll() : array{ return $this->values; }
 
+	public function has(string $id) : bool{
+		return array_key_exists($id, $this->values);
+	}
+
+	private function value(string $id) : string|bool|float|int{
+		if(!array_key_exists($id, $this->values)){
+			throw new \InvalidArgumentException("No answer for form element \"$id\"");
+		}
+		return $this->values[$id];
+	}
+
 	public function getString(string $id) : string{
-		$value = $this->values[$id] ?? null;
+		$value = $this->value($id);
 		return is_string($value) ? $value : throw new \InvalidArgumentException("\"$id\" is not a text input");
 	}
 
 	public function getBool(string $id) : bool{
-		$value = $this->values[$id] ?? null;
+		$value = $this->value($id);
 		return is_bool($value) ? $value : throw new \InvalidArgumentException("\"$id\" is not a toggle");
 	}
 
 	public function getFloat(string $id) : float{
-		$value = $this->values[$id] ?? null;
+		$value = $this->value($id);
 		return is_float($value) ? $value : throw new \InvalidArgumentException("\"$id\" is not a slider");
 	}
 
 	/** The chosen index of a dropdown or step slider. */
 	public function getInt(string $id) : int{
-		$value = $this->values[$id] ?? null;
+		$value = $this->value($id);
 		return is_int($value) ? $value : throw new \InvalidArgumentException("\"$id\" is not a dropdown or step slider");
 	}
 }
