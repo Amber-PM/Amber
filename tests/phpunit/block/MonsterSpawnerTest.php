@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\tile\MonsterSpawner as TileMonsterSpawner;
+use pocketmine\entity\Entity;
 use pocketmine\item\ItemUseResult;
 use pocketmine\item\SpawnEgg;
 use pocketmine\item\VanillaItems;
@@ -34,6 +35,7 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\player\Player;
 use ReflectionClass;
 use ReflectionNamedType;
+use ReflectionProperty;
 
 final class MonsterSpawnerTest extends TestCase{
 
@@ -192,6 +194,8 @@ final class MonsterSpawnerTest extends TestCase{
 
 	public function testSpawnEggOnInteractBlockReturnsNoneOnSpawner() : void{
 		$player = (new ReflectionClass(Player::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
 		$replaceBlock = (new ReflectionClass(Block::class))->newInstanceWithoutConstructor();
 		$spawnerBlock = (new ReflectionClass(MonsterSpawner::class))->newInstanceWithoutConstructor();
 		$returnedItems = [];

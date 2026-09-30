@@ -45,6 +45,7 @@ final class DungeonMobsTest extends TestCase{
 
 	public function testSpiderHealth() : void{
 		$spider = (new ReflectionClass(Spider::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($spider, true);
 		$attrMapProp = new ReflectionProperty(Entity::class, "attributeMap");
 		$attrMapProp->setValue($spider, new AttributeMap());
 		$addAttributes = (new ReflectionClass(Spider::class))->getMethod("addAttributes");
