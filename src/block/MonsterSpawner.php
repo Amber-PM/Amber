@@ -39,7 +39,7 @@ class MonsterSpawner extends Transparent{
 				$tile = $this->position->getWorld()->getTile($this->position);
 				if($tile instanceof TileMonsterSpawner){
 					$tile->setEntityId($item->getSpawnEntityNetworkId());
-					if($player !== null && $player->isSurvival()){
+					if($player === null || $player->hasFiniteResources()){
 						$item->pop();
 					}
 				}

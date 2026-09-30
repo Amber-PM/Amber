@@ -161,7 +161,11 @@ class MonsterSpawner extends Spawnable{
 	public function setEntityId(string $id) : void{
 		$this->entityTypeId = $id;
 		$this->clearSpawnCompoundCache();
+		$min = min($this->minSpawnDelay, $this->maxSpawnDelay);
+		$max = max($this->minSpawnDelay, $this->maxSpawnDelay);
+		$this->spawnDelay = mt_rand($min, $max);
 		if(isset($this->position) && $this->position->isValid()){
+			$this->position->getWorld()->setBlock($this->position, $this->getBlock(), false);
 			$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, 1);
 		}
 	}
@@ -303,14 +307,15 @@ class MonsterSpawner extends Spawnable{
 			$targetY = $pos->getFloorY() + mt_rand(-1, 1);
 			$targetZ = $pos->getFloorZ() + mt_rand(-$this->spawnRange, $this->spawnRange);
 
-			if(!$world->isInWorld($targetX, $targetY, $targetZ) || !$world->isInWorld($targetX, $targetY - 1, $targetZ)){
+			if(!$world->isInWorld($targetX, $targetY, $targetZ) || !$world->isInWorld($targetX, $targetY - 1, $targetZ) || !$world->isInWorld($targetX, $targetY + 1, $targetZ)){
 				continue;
 			}
 
 			$block = $world->getBlockAt($targetX, $targetY, $targetZ);
 			$blockBelow = $world->getBlockAt($targetX, $targetY - 1, $targetZ);
+			$blockAbove = $world->getBlockAt($targetX, $targetY + 1, $targetZ);
 
-			if($block->isSolid() || !$blockBelow->isSolid()){
+			if($block->isSolid() || !$blockBelow->isSolid() || $blockAbove->isSolid()){
 				continue;
 			}
 

@@ -26,6 +26,8 @@ namespace pocketmine\entity;
 use PHPUnit\Framework\TestCase;
 use pocketmine\item\VanillaItems;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use ReflectionClass;
+use ReflectionProperty;
 
 final class DungeonMobsTest extends TestCase{
 
@@ -39,5 +41,15 @@ final class DungeonMobsTest extends TestCase{
 		self::assertSame(EntityIds::SPIDER, Spider::getNetworkTypeId());
 		$egg = VanillaItems::SPIDER_SPAWN_EGG();
 		self::assertSame("Spider Spawn Egg", $egg->getName());
+	}
+
+	public function testSpiderHealth() : void{
+		$spider = (new ReflectionClass(Spider::class))->newInstanceWithoutConstructor();
+		$attrMapProp = new ReflectionProperty(Entity::class, "attributeMap");
+		$attrMapProp->setValue($spider, new AttributeMap());
+		$addAttributes = (new ReflectionClass(Spider::class))->getMethod("addAttributes");
+		$addAttributes->invoke($spider);
+
+		self::assertSame(16, $spider->getMaxHealth());
 	}
 }

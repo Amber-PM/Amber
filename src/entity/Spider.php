@@ -32,6 +32,11 @@ class Spider extends Living{
 
 	public static function getNetworkTypeId() : string{ return EntityIds::SPIDER; }
 
+	protected function addAttributes() : void{
+		parent::addAttributes();
+		$this->setMaxHealth(16);
+	}
+
 	protected function getInitialSizeInfo() : EntitySizeInfo{
 		return new EntitySizeInfo(0.9, 1.4);
 	}

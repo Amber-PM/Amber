@@ -25,11 +25,13 @@ namespace pocketmine\block;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\tile\MonsterSpawner as TileMonsterSpawner;
+use pocketmine\item\ItemUseResult;
 use pocketmine\item\SpawnEgg;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\player\Player;
 use ReflectionClass;
 use ReflectionNamedType;
 
@@ -171,5 +173,30 @@ final class MonsterSpawnerTest extends TestCase{
 		self::assertSame(EntityIds::VILLAGER, $tile->getEntityId());
 
 		$tile->closed = true;
+	}
+
+	public function testTileSetEntityIdResetsSpawnDelay() : void{
+		$refClass = new ReflectionClass(TileMonsterSpawner::class);
+		/** @var TileMonsterSpawner $tile */
+		$tile = $refClass->newInstanceWithoutConstructor();
+
+		$tile->setMinSpawnDelay(300);
+		$tile->setMaxSpawnDelay(500);
+		$tile->setEntityId("minecraft:skeleton");
+
+		self::assertGreaterThanOrEqual(300, $tile->getSpawnDelay());
+		self::assertLessThanOrEqual(500, $tile->getSpawnDelay());
+
+		$tile->closed = true;
+	}
+
+	public function testSpawnEggOnInteractBlockReturnsNoneOnSpawner() : void{
+		$player = (new ReflectionClass(Player::class))->newInstanceWithoutConstructor();
+		$replaceBlock = (new ReflectionClass(Block::class))->newInstanceWithoutConstructor();
+		$spawnerBlock = (new ReflectionClass(MonsterSpawner::class))->newInstanceWithoutConstructor();
+		$returnedItems = [];
+
+		$result = VanillaItems::ZOMBIE_SPAWN_EGG()->onInteractBlock($player, $replaceBlock, $spawnerBlock, Facing::UP, Vector3::zero(), $returnedItems);
+		self::assertSame(ItemUseResult::NONE, $result);
 	}
 }
