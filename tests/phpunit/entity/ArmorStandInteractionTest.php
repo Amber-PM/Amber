@@ -42,9 +42,13 @@ use pocketmine\event\HandlerListManager;
 use pocketmine\event\RegisteredListener;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
+use pocketmine\item\Durable;
+use pocketmine\item\enchantment\EnchantmentInstance;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
 use pocketmine\item\ItemUseResult;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -52,6 +56,8 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\player\Player;
 use pocketmine\plugin\Plugin;
 use pocketmine\timings\TimingsHandler;
+use pocketmine\world\Position;
+use pocketmine\world\World;
 use ReflectionClass;
 use ReflectionProperty;
 use function round;
@@ -100,10 +106,10 @@ final class ArmorStandInteractionTest extends TestCase{
 		return $stand;
 	}
 
-	private function createPlayer(bool $isSneaking = false, bool $isCreative = false, ?Item $heldItem = null) : Player{
+	private function createPlayer(bool $isSneaking = false, bool $isCreative = false, ?Item $heldItem = null, bool $isSpectator = false) : Player{
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["isSneaking", "isCreative", "getInventory", "hasFiniteResources", "getViewers"])
+			->onlyMethods(["isSneaking", "isCreative", "isSpectator", "getInventory", "hasFiniteResources", "getViewers"])
 			->getMock();
 		$this->markClosed($player);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($player, 2);
@@ -114,9 +120,12 @@ final class ArmorStandInteractionTest extends TestCase{
 			$inventory->setItemInHand($heldItem);
 		}
 		$player->method("isSneaking")->willReturn($isSneaking);
-		$player->method("isCreative")->willReturn($isCreative);
+		$player->method("isCreative")->willReturnCallback(function(bool $literal = false) use ($isCreative, $isSpectator) : bool{
+			return $isCreative || (!$literal && $isSpectator);
+		});
+		$player->method("isSpectator")->willReturn($isSpectator);
 		$player->method("getInventory")->willReturn($inventory);
-		$player->method("hasFiniteResources")->willReturn(!$isCreative);
+		$player->method("hasFiniteResources")->willReturn(!$isCreative && !$isSpectator);
 		$player->method("getViewers")->willReturn([]);
 		$this->createdEntities[] = $player;
 		return $player;
@@ -501,38 +510,43 @@ final class ArmorStandInteractionTest extends TestCase{
 		self::assertSame(ItemUseResult::NONE, $res);
 	}
 
-	public function testItemOnInteractBlockSolidReplaceBlockRejected() : void{
+	public function testItemOnInteractBlockBlockCollisionRejected() : void{
 		$item = VanillaItems::ARMOR_STAND();
 		$player = $this->createPlayer();
 
 		$clickedBlock = $this->createMock(Block::class);
 		$clickedBlock->method("isSolid")->willReturn(true);
 
-		$blockAbove = $this->createMock(Block::class);
-		$blockAbove->method("isSolid")->willReturn(false);
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockCollisionBoxes")->willReturn([new AxisAlignedBB(0, 64, 0, 1, 65, 1)]);
+		$world->method("getCollidingEntities")->willReturn([]);
 
+		$pos = new Position(0, 64, 0, $world);
 		$replaceBlock = $this->createMock(Block::class);
-		$replaceBlock->method("isSolid")->willReturn(true); // obstructed
-		$replaceBlock->method("getSide")->with(Facing::UP)->willReturn($blockAbove);
+		(new ReflectionProperty(Block::class, "position"))->setValue($replaceBlock, $pos);
 
 		$returned = [];
 		$res = $item->onInteractBlock($player, $replaceBlock, $clickedBlock, Facing::UP, Vector3::zero(), $returned);
 		self::assertSame(ItemUseResult::NONE, $res);
 	}
 
-	public function testItemOnInteractBlockObstructedCeilingRejected() : void{
+	public function testItemOnInteractBlockEntityCollisionRejected() : void{
 		$item = VanillaItems::ARMOR_STAND();
 		$player = $this->createPlayer();
 
 		$clickedBlock = $this->createMock(Block::class);
 		$clickedBlock->method("isSolid")->willReturn(true);
 
-		$blockAbove = $this->createMock(Block::class);
-		$blockAbove->method("isSolid")->willReturn(true); // ceiling solid
+		$existingEntity = $this->createArmorStand();
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockCollisionBoxes")->willReturn([]);
+		$world->method("getCollidingEntities")->willReturn([$existingEntity]);
 
+		$pos = new Position(0, 64, 0, $world);
 		$replaceBlock = $this->createMock(Block::class);
-		$replaceBlock->method("isSolid")->willReturn(false);
-		$replaceBlock->method("getSide")->with(Facing::UP)->willReturn($blockAbove);
+		(new ReflectionProperty(Block::class, "position"))->setValue($replaceBlock, $pos);
 
 		$returned = [];
 		$res = $item->onInteractBlock($player, $replaceBlock, $clickedBlock, Facing::UP, Vector3::zero(), $returned);
@@ -621,5 +635,141 @@ final class ArmorStandInteractionTest extends TestCase{
 		$currentHelmet = $stand->getArmorInventory()->getHelmet();
 		self::assertFalse($currentHelmet->isNull());
 		self::assertSame(0, $currentHelmet->getDamage());
+	}
+
+	public function testSpectatorInteractionRejected() : void{
+		$stand = $this->createArmorStand();
+		$spectator = $this->createPlayer(isSpectator: true);
+
+		self::assertFalse($stand->onInteract($spectator, Vector3::zero()));
+	}
+
+	public function testAlreadyCancelledCreativePunchDoesNotDespawn() : void{
+		$stand = $this->createArmorStand();
+		$creativePlayer = $this->createPlayer(isCreative: true);
+
+		$damageEv = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager", "isCancelled"])
+			->getMock();
+		$damageEv->method("getDamager")->willReturn($creativePlayer);
+		$damageEv->method("isCancelled")->willReturn(true);
+
+		$stand->attack($damageEv);
+		self::assertFalse($stand->isFlaggedForDespawn());
+	}
+
+	public function testSpectatorPunchDoesNotDespawn() : void{
+		$stand = $this->createArmorStand();
+		$spectator = $this->createPlayer(isSpectator: true);
+
+		$damageEv = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager"])
+			->getMock();
+		$damageEv->method("getDamager")->willReturn($spectator);
+
+		$stand->attack($damageEv);
+		self::assertFalse($stand->isFlaggedForDespawn());
+	}
+
+	public function testNameTagLockedRenamingProtection() : void{
+		$stand = $this->createArmorStand(locked: true);
+		self::assertFalse($stand->canBeRenamed());
+
+		$stand->setLocked(false);
+		self::assertTrue($stand->canBeRenamed());
+	}
+
+	public function testNameTagWithCustomNameDoesNotTriggerEquip() : void{
+		$stand = $this->createArmorStand();
+		$nameTag = VanillaItems::NAME_TAG()->setCustomName("Display Stand");
+		$player = $this->createPlayer(heldItem: $nameTag);
+
+		self::assertFalse($stand->onInteract($player, Vector3::zero()));
+		self::assertTrue($stand->getMainHandItem()->isNull());
+	}
+
+	public function testSurvivalWeaponOneHitBreak() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND_SWORD());
+
+		$damageEv = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager", "call"])
+			->getMock();
+		$damageEv->method("getDamager")->willReturn($player);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
+
+		$stand->attack($damageEv);
+		self::assertFalse($stand->isAlive());
+	}
+
+	public function testSurvivalFistTwoHitBreak() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer(); // bare fist
+
+		// 1st punch wobbles and remains alive
+		$damageEv1 = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager", "call"])
+			->getMock();
+		$damageEv1->method("getDamager")->willReturn($player);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv1, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
+
+		$stand->attack($damageEv1);
+		self::assertTrue($stand->isAlive());
+
+		// 2nd punch within 20 ticks breaks the stand
+		$damageEv2 = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager", "call"])
+			->getMock();
+		$damageEv2->method("getDamager")->willReturn($player);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv2, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
+
+		$stand->attack($damageEv2);
+		self::assertFalse($stand->isAlive());
+	}
+
+	public function testExplosionDropsArmorAndHeldItemButNotStandItem() : void{
+		$stand = $this->createArmorStand();
+		$stand->getArmorInventory()->setHelmet(VanillaItems::DIAMOND_HELMET());
+		$stand->setMainHandItem(VanillaItems::DIAMOND_SWORD());
+
+		$explosionEv = $this->getMockBuilder(EntityDamageEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getCause", "call"])
+			->getMock();
+		$explosionEv->method("getCause")->willReturn(EntityDamageEvent::CAUSE_BLOCK_EXPLOSION);
+
+		$stand->attack($explosionEv);
+		self::assertFalse($stand->isAlive());
+
+		$drops = $stand->getDrops();
+		$dropIds = array_map(fn(Item $i) => $i->getTypeId(), $drops);
+		self::assertNotContains(VanillaItems::ARMOR_STAND()->getTypeId(), $dropIds);
+		self::assertContains(VanillaItems::DIAMOND_HELMET()->getTypeId(), $dropIds);
+		self::assertContains(VanillaItems::DIAMOND_SWORD()->getTypeId(), $dropIds);
+	}
+
+	public function testThornsDoesNotDegradeEquippedArmorOnStand() : void{
+		$stand = $this->createArmorStand();
+		$chestplate = VanillaItems::DIAMOND_CHESTPLATE();
+		$chestplate->addEnchantment(new EnchantmentInstance(VanillaEnchantments::THORNS(), 3));
+		$stand->getArmorInventory()->setChestplate($chestplate);
+
+		$player = $this->createPlayer();
+		$damageEv = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getDamager", "call"])
+			->getMock();
+		$damageEv->method("getDamager")->willReturn($player);
+
+		$stand->attack($damageEv);
+
+		/** @var Durable $equipped */
+		$equipped = $stand->getArmorInventory()->getChestplate();
+		self::assertSame(0, $equipped->getDamage());
 	}
 }

@@ -2114,6 +2114,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 					}
 					$this->inventory->setItemInHand($item);
 				}
+				return true;
 			}
 			return $entity->onInteract($this, $clickPos);
 		}

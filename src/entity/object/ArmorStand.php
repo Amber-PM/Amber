@@ -25,6 +25,7 @@ namespace pocketmine\entity\object;
 
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\entity\animation\HurtAnimation;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Living;
 use pocketmine\event\entity\ArmorStandEquipEvent;
@@ -35,6 +36,9 @@ use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\Armor;
 use pocketmine\item\Item;
 use pocketmine\item\ItemBlock;
+use pocketmine\item\NameTag;
+use pocketmine\item\Sword;
+use pocketmine\item\Tool;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\NBT;
@@ -51,7 +55,9 @@ use pocketmine\player\Player;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\sound\ArmorEquipGenericSound;
 use pocketmine\world\sound\BlockBreakSound;
+use pocketmine\world\sound\BlockPunchSound;
 use pocketmine\world\sound\ClickSound;
+use function max;
 
 class ArmorStand extends Living{
 
@@ -87,6 +93,8 @@ class ArmorStand extends Living{
 		return 0.08;
 	}
 
+	protected int $punchTicks = 0;
+
 	protected function addAttributes() : void{
 		parent::addAttributes();
 		$this->setMaxHealth(6);
@@ -103,6 +111,22 @@ class ArmorStand extends Living{
 
 	public function damageArmor(float $damage) : void{
 		// Armor stands do not degrade equipped armor when attacked
+	}
+
+	protected function applyPostDamageEffects(EntityDamageEvent $source) : void{
+		// Armor stands do not reduce absorption or take Thorns/durability damage
+	}
+
+	public function canBeRenamed() : bool{
+		return !$this->isLocked();
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+		if($this->punchTicks > 0){
+			$this->punchTicks = max(0, $this->punchTicks - $tickDiff);
+		}
+		return $hasUpdate;
 	}
 
 	public function getPickedItem() : ?Item{
@@ -171,7 +195,12 @@ class ArmorStand extends Living{
 	}
 
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
-		if($this->isLocked()){
+		if($this->isLocked() || $player->isSpectator()){
+			return false;
+		}
+
+		$playerItem = $player->getInventory()->getItemInHand();
+		if($playerItem instanceof NameTag && $playerItem->hasCustomName()){
 			return false;
 		}
 
@@ -296,37 +325,151 @@ class ArmorStand extends Living{
 			return;
 		}
 
+		if($source->isCancelled()){
+			return;
+		}
+
 		if($source instanceof EntityDamageByEntityEvent){
 			$damager = $source->getDamager();
-			if($damager instanceof Player && $damager->isCreative()){
-				$source->cancel();
-				$this->flagForDespawn();
-				if(isset($this->location)){
-					$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
+			if($damager instanceof Player){
+				if($damager->isCreative(true)){
+					$source->call();
+					if($source->isCancelled()){
+						return;
+					}
+					$source->cancel();
+					$this->setLastDamageCause($source);
+					$this->flagForDespawn();
+					if(isset($this->location)){
+						$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
+					}
+					return;
+				}
+
+				// Survival / Adventure player attack
+				$source->call();
+				if($source->isCancelled()){
+					return;
+				}
+
+				$this->setLastDamageCause($source);
+				$heldItem = $damager->getInventory()->getItemInHand();
+				$isToolOrWeapon = $heldItem instanceof Tool || $heldItem instanceof Sword || $heldItem->getAttackPoints() > 1;
+
+				if($isToolOrWeapon || $this->punchTicks > 0){
+					$this->kill();
+				}else{
+					$this->punchTicks = 20;
+					$this->broadcastAnimation(new HurtAnimation($this));
+					if(isset($this->location)){
+						$this->broadcastSound(new BlockPunchSound(VanillaBlocks::OAK_PLANKS()));
+					}
 				}
 				return;
 			}
 		}
 
-		parent::attack($source);
+		if($source->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
+			$source->call();
+			if($source->isCancelled()){
+				return;
+			}
+			$this->setLastDamageCause($source);
+			$this->kill();
+			return;
+		}
+
+		if($source->getCause() === EntityDamageEvent::CAUSE_BLOCK_EXPLOSION || $source->getCause() === EntityDamageEvent::CAUSE_ENTITY_EXPLOSION){
+			$source->call();
+			if($source->isCancelled()){
+				return;
+			}
+			$this->setLastDamageCause($source);
+			$this->kill();
+			return;
+		}
+
+		if($source->getCause() === EntityDamageEvent::CAUSE_VOID || $source->getCause() === EntityDamageEvent::CAUSE_SUICIDE){
+			$source->call();
+			if($source->isCancelled()){
+				return;
+			}
+			$this->setLastDamageCause($source);
+			$this->kill();
+			return;
+		}
+
+		// Environmental damage (fire, lava, cactus, etc.)
+		if($this->isFireProof() && (
+				$source->getCause() === EntityDamageEvent::CAUSE_FIRE ||
+				$source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK ||
+				$source->getCause() === EntityDamageEvent::CAUSE_LAVA
+			)
+		){
+			$source->cancel();
+		}
+
+		$source->call();
+		if($source->isCancelled()){
+			return;
+		}
+
+		$this->setLastDamageCause($source);
+		$this->setHealth($this->getHealth() - $source->getFinalDamage());
 	}
 
 	/**
 	 * @return Item[]
 	 */
 	public function getDrops() : array{
-		$drops = [VanillaItems::ARMOR_STAND()];
+		$cause = $this->lastDamageCause;
+		$dropsStandItem = true;
+
+		if($cause !== null){
+			$causeType = $cause->getCause();
+
+			// Creative player punch: no drops
+			if($cause instanceof EntityDamageByEntityEvent){
+				$damager = $cause->getDamager();
+				if($damager instanceof Player && $damager->isCreative(true)){
+					return [];
+				}
+			}
+
+			// Void, suicide (/kill): no drops
+			if($causeType === EntityDamageEvent::CAUSE_VOID || $causeType === EntityDamageEvent::CAUSE_SUICIDE){
+				return [];
+			}
+
+			// Explosions, fire, and lava do not drop the armor stand entity item itself
+			if(
+				$causeType === EntityDamageEvent::CAUSE_BLOCK_EXPLOSION ||
+				$causeType === EntityDamageEvent::CAUSE_ENTITY_EXPLOSION ||
+				$causeType === EntityDamageEvent::CAUSE_FIRE ||
+				$causeType === EntityDamageEvent::CAUSE_FIRE_TICK ||
+				$causeType === EntityDamageEvent::CAUSE_LAVA
+			){
+				$dropsStandItem = false;
+			}
+		}
+
+		$drops = [];
+		if($dropsStandItem){
+			$drops[] = $this->getPickedItem();
+		}
+
 		if(isset($this->armorInventory)){
 			foreach($this->armorInventory->getContents() as $item){
 				if(!$item->isNull()){
-					$drops[] = $item;
+					$drops[] = clone $item;
 				}
 			}
 		}
 		$held = $this->getMainHandItem();
 		if(!$held->isNull()){
-			$drops[] = $held;
+			$drops[] = clone $held;
 		}
+
 		return $drops;
 	}
 

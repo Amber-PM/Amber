@@ -27,11 +27,13 @@ use pocketmine\block\Block;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Location;
 use pocketmine\entity\object\ArmorStand as ArmorStandEntity;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
 use pocketmine\world\sound\BlockPlaceSound;
+use function count;
 use function round;
 
 class ArmorStand extends Item{
@@ -49,21 +51,30 @@ class ArmorStand extends Item{
 			return ItemUseResult::NONE;
 		}
 
-		$blockAbove = $blockReplace->getSide(Facing::UP);
-		if($blockReplace->isSolid() || $blockAbove->isSolid()){
+		$pos = $blockReplace->getPosition();
+		$world = $pos->getWorld();
+		$spawnAABB = new AxisAlignedBB(
+			$pos->x + 0.25,
+			$pos->y,
+			$pos->z + 0.25,
+			$pos->x + 0.75,
+			$pos->y + 1.975,
+			$pos->z + 0.75
+		);
+
+		if(count($world->getBlockCollisionBoxes($spawnAABB)) > 0 || count($world->getCollidingEntities($spawnAABB)) > 0){
 			return ItemUseResult::NONE;
 		}
 
 		$playerYaw = $player->getLocation()->getYaw();
 		$snappedYaw = round($playerYaw / 22.5) * 22.5;
 
-		$pos = $blockReplace->getPosition();
-		$location = new Location($pos->x + 0.5, $pos->y, $pos->z + 0.5, $pos->getWorld(), $snappedYaw, 0.0);
+		$location = new Location($pos->x + 0.5, $pos->y, $pos->z + 0.5, $world, $snappedYaw, 0.0);
 
 		$entity = new ArmorStandEntity($location, CompoundTag::create());
 		$entity->spawnToAll();
 
-		$pos->getWorld()->addSound($location, new BlockPlaceSound(VanillaBlocks::OAK_PLANKS()));
+		$world->addSound($location, new BlockPlaceSound(VanillaBlocks::OAK_PLANKS()));
 
 		$this->pop();
 		return ItemUseResult::SUCCESS;
