@@ -43,6 +43,13 @@ final class ServerConfigGroup{
 		private Config $serverProperties
 	){}
 
+	/** Re-reads pocketmine.yml and server.properties from disk. */
+	public function reload() : void{
+		$this->pocketmineYml->reload();
+		$this->serverProperties->reload();
+		$this->propertyCache = [];
+	}
+
 	public function getProperty(string $variable, mixed $defaultValue = null) : mixed{
 		if(!array_key_exists($variable, $this->propertyCache)){
 			$v = getopt("", ["$variable::"]);

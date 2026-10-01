@@ -448,6 +448,16 @@ class PluginManager{
 		return $loadedPlugins;
 	}
 
+	/** The loader that can load the plugin at the path (a file or folder), or null if none can. */
+	public function getLoaderFor(string $path) : ?PluginLoader{
+		foreach($this->fileAssociations as $loader){
+			if($loader->canLoadPlugin($path)){
+				return $loader;
+			}
+		}
+		return null;
+	}
+
 	public function isPluginEnabled(Plugin $plugin) : bool{
 		return isset($this->plugins[$plugin->getDescription()->getName()]) && $plugin->isEnabled();
 	}

@@ -91,6 +91,7 @@ use pocketmine\plugin\PluginOwned;
 use pocketmine\plugin\ScriptPluginLoader;
 use pocketmine\promise\Promise;
 use pocketmine\promise\PromiseResolver;
+use pocketmine\reload\PluginReloader;
 use pocketmine\resourcepacks\ResourcePackManager;
 use pocketmine\scheduler\AsyncPool;
 use pocketmine\scheduler\TimingsCollectionTask;
@@ -277,6 +278,7 @@ class Server{
 	private \pocketmine\addon\AddonManager $addonManager;
 	private WorldBackupManager $backupManager;
 	private ?WebPanel $webPanel = null;
+	private ?PluginReloader $pluginReloader = null;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -484,6 +486,42 @@ class Server{
 
 	public function getResourcePackManager() : ResourcePackManager{
 		return $this->resourceManager;
+	}
+
+	/**
+	 * Loads resource_packs/ again, with the add-on resource packs. Players get the new stack when they next join.
+	 */
+	public function reloadResourcePacks() : void{
+		$manager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
+		$this->addonManager->registerResourcePacks($manager);
+		$this->resourceManager = $manager;
+	}
+
+	/**
+	 * Re-reads server.properties, pocketmine.yml, the operator and whitelist files and the ban lists, and applies the
+	 * settings the server keeps a copy of (maximum players, server name in the server list, operator status).
+	 */
+	public function reloadConfiguration() : void{
+		$this->configGroup->reload();
+		$this->maxPlayers = $this->configGroup->getConfigInt(ServerProperties::MAX_PLAYERS, self::DEFAULT_MAX_PLAYERS);
+		$this->network->setName($this->getMotd());
+
+		$this->operators->reload();
+		$this->whitelist->reload();
+		$this->banByName->load();
+		$this->banByIP->load();
+		foreach($this->getOnlinePlayers() as $player){
+			if($this->isOp($player->getName())){
+				$player->setBasePermission(DefaultPermissions::ROOT_OPERATOR, true);
+			}else{
+				$player->unsetBasePermission(DefaultPermissions::ROOT_OPERATOR);
+			}
+		}
+	}
+
+	/** Applies changes to the plugins folder while the server runs (/restart realtime); null until startup ends. */
+	public function getPluginReloader() : ?PluginReloader{
+		return $this->pluginReloader;
 	}
 
 	public function getBackupManager() : WorldBackupManager{
@@ -1219,6 +1257,7 @@ class Server{
 
 			//add-on runtime: scripts, natural spawning and the event bridge, once worlds and plugins are up
 			$this->addonManager->start();
+			$this->pluginReloader = new PluginReloader($this);
 
 			CameraPresetRegistry::getInstance()->freeze();
 
