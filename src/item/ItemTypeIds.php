@@ -367,8 +367,9 @@ final class ItemTypeIds{
 	public const SHIELD = 20328;
 	public const SKELETON_SPAWN_EGG = 20329;
 	public const SPIDER_SPAWN_EGG = 20330;
+	public const ARMOR_STAND = 20331;
 
-	public const FIRST_UNUSED_ITEM_ID = 20331;
+	public const FIRST_UNUSED_ITEM_ID = 20332;
 
 	private static int $nextDynamicId = self::FIRST_UNUSED_ITEM_ID;
 
