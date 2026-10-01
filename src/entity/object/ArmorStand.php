@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\object;
 
+use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Living;
@@ -30,11 +31,15 @@ use pocketmine\event\entity\ArmorStandEquipEvent;
 use pocketmine\event\entity\ArmorStandPoseChangeEvent;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\Armor;
 use pocketmine\item\Item;
+use pocketmine\item\ItemBlock;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
+use pocketmine\nbt\NBT;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\protocol\MobEquipmentPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
@@ -52,6 +57,7 @@ class ArmorStand extends Living{
 
 	public const TAG_POSE = "Pose";
 	public const TAG_MAIN_HAND = "MainHand";
+	public const TAG_ARMOR = "Armor";
 	public const TAG_LOCKED = "Locked";
 	public const TAG_SHOW_BASE_PLATE = "ShowBasePlate";
 	public const POSE_COUNT = 13;
@@ -81,6 +87,24 @@ class ArmorStand extends Living{
 		return 0.08;
 	}
 
+	protected function addAttributes() : void{
+		parent::addAttributes();
+		$this->setMaxHealth(6);
+		$this->setHealth(6.0);
+	}
+
+	protected function applyDamageKnockback(float $base) : void{
+		// Armor stands are stationary objects and do not take knockback
+	}
+
+	public function knockBack(float $x, float $z, float $force = self::DEFAULT_KNOCKBACK_FORCE, ?float $verticalLimit = self::DEFAULT_KNOCKBACK_VERTICAL_LIMIT) : void{
+		// Armor stands are stationary objects and do not take knockback
+	}
+
+	public function damageArmor(float $damage) : void{
+		// Armor stands do not degrade equipped armor when attacked
+	}
+
 	public function getPickedItem() : ?Item{
 		return VanillaItems::ARMOR_STAND();
 	}
@@ -91,10 +115,8 @@ class ArmorStand extends Living{
 
 	public function setPose(int $pose) : void{
 		$this->poseIndex = ($pose % self::POSE_COUNT + self::POSE_COUNT) % self::POSE_COUNT;
-		try{
-			$this->getNetworkProperties()->setInt(EntityMetadataProperties::ARMOR_STAND_POSE_INDEX, $this->poseIndex);
-		}catch(\Error){
-			//networkProperties not initialized
+		if(isset($this->networkProperties)){
+			$this->networkProperties->setInt(EntityMetadataProperties::ARMOR_STAND_POSE_INDEX, $this->poseIndex);
 		}
 	}
 
@@ -112,10 +134,8 @@ class ArmorStand extends Living{
 
 	public function setBasePlate(bool $show) : void{
 		$this->showBasePlate = $show;
-		try{
-			$this->getNetworkProperties()->setGenericFlag(EntityMetadataFlags::SHOWBASE, $show);
-		}catch(\Error){
-			//networkProperties not initialized
+		if(isset($this->networkProperties)){
+			$this->networkProperties->setGenericFlag(EntityMetadataFlags::SHOWBASE, $show);
 		}
 	}
 
@@ -135,19 +155,18 @@ class ArmorStand extends Living{
 		if(!isset($this->heldItem)){
 			$this->heldItem = VanillaItems::AIR();
 		}
-		try{
-			foreach($this->getViewers() as $player){
-				$session = $player->getNetworkSession();
-				$session->sendDataPacket(MobEquipmentPacket::create(
-					$this->getId(),
-					ItemStackWrapper::legacy($session->getTypeConverter()->coreItemStackToNet($this->heldItem)),
-					0,
-					0,
-					ContainerIds::INVENTORY
-				));
-			}
-		}catch(\Error){
-			//viewers not initialized
+		if(!isset($this->id)){
+			return;
+		}
+		foreach($this->getViewers() as $player){
+			$session = $player->getNetworkSession();
+			$session->sendDataPacket(MobEquipmentPacket::create(
+				$this->getId(),
+				ItemStackWrapper::legacy($session->getTypeConverter()->coreItemStackToNet($this->heldItem)),
+				0,
+				0,
+				ContainerIds::INVENTORY
+			));
 		}
 	}
 
@@ -165,30 +184,35 @@ class ArmorStand extends Living{
 				return false;
 			}
 			$this->setPose($ev->getNewPose());
-			try{
+			if(isset($this->location)){
 				$this->broadcastSound(new ClickSound());
-			}catch(\Error){
-				//location/world not initialized
 			}
 			return true;
 		}
 
 		$playerItem = $player->getInventory()->getItemInHand();
+		$armorSlot = null;
 		if($playerItem instanceof Armor){
-			$slot = $playerItem->getArmorSlot();
-			$oldItem = $this->armorInventory->getItem($slot);
+			$armorSlot = $playerItem->getArmorSlot();
+		}elseif($playerItem instanceof ItemBlock && (
+			$playerItem->getBlock()->getTypeId() === BlockTypeIds::CARVED_PUMPKIN ||
+			$playerItem->getBlock()->getTypeId() === BlockTypeIds::MOB_HEAD
+		)){
+			$armorSlot = ArmorInventory::SLOT_HEAD;
+		}
+
+		if($armorSlot !== null){
+			$oldItem = $this->armorInventory->getItem($armorSlot);
 			$newItem = $playerItem;
-			$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, $newItem);
+			$ev = new ArmorStandEquipEvent($this, $player, $armorSlot, $oldItem, $newItem);
 			$ev->call();
 			if($ev->isCancelled()){
 				return false;
 			}
-			$this->armorInventory->setItem($slot, $ev->getNewItem());
+			$this->armorInventory->setItem($armorSlot, $ev->getNewItem());
 			$player->getInventory()->setItemInHand($oldItem);
-			try{
+			if(isset($this->location)){
 				$this->broadcastSound(new ArmorEquipGenericSound());
-			}catch(\Error){
-				//location/world not initialized
 			}
 			return true;
 		}
@@ -204,10 +228,8 @@ class ArmorStand extends Living{
 			}
 			$this->setMainHandItem($ev->getNewItem());
 			$player->getInventory()->setItemInHand($oldItem);
-			try{
+			if(isset($this->location)){
 				$this->broadcastSound(new ArmorEquipGenericSound());
-			}catch(\Error){
-				//location/world not initialized
 			}
 			return true;
 		}
@@ -262,10 +284,8 @@ class ArmorStand extends Living{
 			$this->armorInventory->setItem($slot, $ev->getNewItem());
 		}
 		$player->getInventory()->setItemInHand($oldItem);
-		try{
+		if(isset($this->location)){
 			$this->broadcastSound(new ArmorEquipGenericSound());
-		}catch(\Error){
-			//location/world not initialized
 		}
 		return true;
 	}
@@ -281,10 +301,8 @@ class ArmorStand extends Living{
 			if($damager instanceof Player && $damager->isCreative()){
 				$source->cancel();
 				$this->flagForDespawn();
-				try{
+				if(isset($this->location)){
 					$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
-				}catch(\Error){
-					//location/world not initialized
 				}
 				return;
 			}
@@ -313,11 +331,9 @@ class ArmorStand extends Living{
 	}
 
 	protected function startDeathAnimation() : void{
-		try{
+		if(isset($this->location)){
 			$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
 			$this->getWorld()->addParticle($this->location, new BlockBreakParticle(VanillaBlocks::OAK_PLANKS()));
-		}catch(\Error){
-			//location/world not initialized
 		}
 		$this->flagForDespawn();
 	}
@@ -337,6 +353,20 @@ class ArmorStand extends Living{
 		}else{
 			$this->heldItem = VanillaItems::AIR();
 		}
+
+		$armorTag = $nbt->getListTag(self::TAG_ARMOR);
+		if($armorTag !== null && isset($this->armorInventory)){
+			$index = 0;
+			foreach($armorTag as $itemTag){
+				if($itemTag instanceof CompoundTag){
+					$slot = $itemTag->getByte("Slot", $index);
+					if($slot >= 0 && $slot < 4){
+						$this->armorInventory->setItem($slot, Item::nbtDeserialize($itemTag));
+					}
+				}
+				$index++;
+			}
+		}
 	}
 
 	protected function initEntity(CompoundTag $nbt) : void{
@@ -353,6 +383,18 @@ class ArmorStand extends Living{
 		$nbt->setByte(self::TAG_SHOW_BASE_PLATE, $this->showBasePlate ? 1 : 0);
 		if(isset($this->heldItem) && !$this->heldItem->isNull()){
 			$nbt->setTag(self::TAG_MAIN_HAND, $this->heldItem->nbtSerialize());
+		}else{
+			$nbt->removeTag(self::TAG_MAIN_HAND);
+		}
+		if(isset($this->armorInventory)){
+			$armorTag = [];
+			for($slot = 0; $slot < 4; ++$slot){
+				$item = $this->armorInventory->getItem($slot);
+				if(!$item->isNull()){
+					$armorTag[] = $item->nbtSerialize($slot);
+				}
+			}
+			$nbt->setTag(self::TAG_ARMOR, new ListTag($armorTag, NBT::TAG_Compound));
 		}
 	}
 

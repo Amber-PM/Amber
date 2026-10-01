@@ -24,11 +24,13 @@ declare(strict_types=1);
 namespace pocketmine\entity\object;
 
 use PHPUnit\Framework\TestCase;
+use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Living;
+use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
@@ -63,6 +65,7 @@ final class ArmorStandTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($stand, new EntityMetadataCollection());
 		(new ReflectionProperty(Entity::class, "size"))->setValue($stand, new EntitySizeInfo(1.975, 0.5));
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($stand, new EffectManager($stand));
+		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($stand, new ArmorInventory($stand));
 		$this->createdStands[] = $stand;
 		return $stand;
 	}
@@ -271,5 +274,50 @@ final class ArmorStandTest extends TestCase{
 		$poseProp = $all[EntityMetadataProperties::ARMOR_STAND_POSE_INDEX] ?? null;
 		self::assertInstanceOf(IntMetadataProperty::class, $poseProp);
 		self::assertSame(4, $poseProp->getValue());
+	}
+
+	public function testArmorNbtRoundtrip() : void{
+		$stand1 = $this->createArmorStand();
+		$stand1->getArmorInventory()->setHelmet(VanillaItems::DIAMOND_HELMET());
+		$stand1->getArmorInventory()->setChestplate(VanillaItems::DIAMOND_CHESTPLATE());
+		$stand1->getArmorInventory()->setLeggings(VanillaItems::DIAMOND_LEGGINGS());
+		$stand1->getArmorInventory()->setBoots(VanillaItems::DIAMOND_BOOTS());
+
+		$nbt = CompoundTag::create();
+		$stand1->writeSaveData($nbt);
+
+		$armorTag = $nbt->getListTag(ArmorStand::TAG_ARMOR);
+		self::assertNotNull($armorTag);
+		self::assertCount(4, $armorTag);
+
+		$stand2 = $this->createArmorStand();
+		$stand2->readSaveData($nbt);
+
+		self::assertTrue($stand2->getArmorInventory()->getHelmet()->equalsExact(VanillaItems::DIAMOND_HELMET()));
+		self::assertTrue($stand2->getArmorInventory()->getChestplate()->equalsExact(VanillaItems::DIAMOND_CHESTPLATE()));
+		self::assertTrue($stand2->getArmorInventory()->getLeggings()->equalsExact(VanillaItems::DIAMOND_LEGGINGS()));
+		self::assertTrue($stand2->getArmorInventory()->getBoots()->equalsExact(VanillaItems::DIAMOND_BOOTS()));
+	}
+
+	public function testNbtStaleMainHandRemoval() : void{
+		$stand = $this->createArmorStand();
+		$nbt = CompoundTag::create();
+		$nbt->setTag(ArmorStand::TAG_MAIN_HAND, VanillaItems::DIAMOND_SWORD()->nbtSerialize());
+
+		$stand->setMainHandItem(VanillaItems::AIR());
+		$stand->writeSaveData($nbt);
+
+		self::assertNull($nbt->getTag(ArmorStand::TAG_MAIN_HAND));
+	}
+
+	public function testMaxHealthIsSix() : void{
+		$stand = (new ReflectionClass(ArmorStand::class))->newInstanceWithoutConstructor();
+		$this->markClosed($stand);
+		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($stand, new AttributeMap());
+		$method = (new ReflectionClass(ArmorStand::class))->getMethod("addAttributes");
+		$method->invoke($stand);
+
+		self::assertSame(6, $stand->getMaxHealth());
+		self::assertSame(6.0, $stand->getHealth());
 	}
 }

@@ -25,6 +25,7 @@ namespace pocketmine\entity\object;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Attribute;
 use pocketmine\entity\AttributeFactory;
 use pocketmine\entity\AttributeMap;
@@ -60,6 +61,10 @@ final class ArmorStandInteractionTest extends TestCase{
 	/** @var Entity[] */
 	private array $createdEntities = [];
 
+	public static function setUpBeforeClass() : void{
+		\pocketmine\timings\Timings::init();
+	}
+
 	protected function tearDown() : void{
 		HandlerListManager::global()->unregisterAll();
 		foreach($this->createdEntities as $entity){
@@ -80,16 +85,14 @@ final class ArmorStandInteractionTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($stand, new EntityMetadataCollection());
 		(new ReflectionProperty(Entity::class, "size"))->setValue($stand, new EntitySizeInfo(1.975, 0.5));
 		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($stand, new AttributeMap());
-		$healthAttr = AttributeFactory::getInstance()->mustGet(Attribute::HEALTH);
-		$healthAttr->setMaxValue(6)->setDefaultValue(6)->setValue(6);
-		(new ReflectionProperty(Living::class, "healthAttr"))->setValue($stand, $healthAttr);
-		(new ReflectionProperty(Entity::class, "health"))->setValue($stand, 6.0);
+		(new ReflectionClass(ArmorStand::class))->getMethod("addAttributes")->invoke($stand);
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($stand, new EffectManager($stand));
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($stand, new ArmorInventory($stand));
 		$world = $this->createMock(\pocketmine\world\World::class);
 		$world->method("isLoaded")->willReturn(true);
 		$world->updateEntities = [];
 		(new ReflectionProperty(Entity::class, "location"))->setValue($stand, new \pocketmine\entity\Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($stand, Vector3::zero());
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($stand, false);
 		$stand->setPose($initialPose);
 		$stand->setLocked($locked);
@@ -565,5 +568,58 @@ final class ArmorStandInteractionTest extends TestCase{
 		$method->invoke($stand);
 
 		self::assertTrue($stand->isFlaggedForDespawn());
+	}
+
+	public function testWearableBlocksEquipToHeadSlot() : void{
+		$stand = $this->createArmorStand();
+
+		// Carved Pumpkin -> Head slot
+		$pumpkinPlayer = $this->createPlayer(heldItem: VanillaBlocks::CARVED_PUMPKIN()->asItem());
+		$result = $stand->onInteract($pumpkinPlayer, Vector3::zero());
+		self::assertTrue($result);
+		self::assertTrue($pumpkinPlayer->getInventory()->getItemInHand()->isNull());
+		self::assertTrue($stand->getArmorInventory()->getHelmet()->equalsExact(VanillaBlocks::CARVED_PUMPKIN()->asItem()));
+
+		// Mob Head / Skull -> Swaps with head slot
+		$skullPlayer = $this->createPlayer(heldItem: VanillaBlocks::MOB_HEAD()->asItem());
+		$result2 = $stand->onInteract($skullPlayer, Vector3::zero());
+		self::assertTrue($result2);
+		self::assertTrue($stand->getArmorInventory()->getHelmet()->equalsExact(VanillaBlocks::MOB_HEAD()->asItem()));
+		self::assertTrue($skullPlayer->getInventory()->getItemInHand()->equalsExact(VanillaBlocks::CARVED_PUMPKIN()->asItem()));
+	}
+
+	public function testAttackAndKnockbackApplyZeroKnockback() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer();
+		(new ReflectionProperty(Entity::class, "location"))->setValue($player, new \pocketmine\entity\Location(1.0, 0.0, 1.0, $stand->getWorld(), 0.0, 0.0));
+
+		$damageEv = $this->getMockBuilder(EntityDamageByEntityEvent::class)
+			->setConstructorArgs([$player, $stand, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 2.0])
+			->onlyMethods(["getDamager"])
+			->getMock();
+		$damageEv->method("getDamager")->willReturn($player);
+
+		$stand->attack($damageEv);
+
+		self::assertEquals(0.0, $stand->getMotion()->x);
+		self::assertEquals(0.0, $stand->getMotion()->y);
+		self::assertEquals(0.0, $stand->getMotion()->z);
+
+		$stand->knockBack(1.0, 1.0, 1.0, 1.0);
+		self::assertEquals(0.0, $stand->getMotion()->x);
+		self::assertEquals(0.0, $stand->getMotion()->y);
+		self::assertEquals(0.0, $stand->getMotion()->z);
+	}
+
+	public function testDamageArmorDoesNotDegradeEquippedArmor() : void{
+		$stand = $this->createArmorStand();
+		$helmet = VanillaItems::DIAMOND_HELMET();
+		$stand->getArmorInventory()->setHelmet($helmet);
+
+		$stand->damageArmor(10.0);
+
+		$currentHelmet = $stand->getArmorInventory()->getHelmet();
+		self::assertFalse($currentHelmet->isNull());
+		self::assertSame(0, $currentHelmet->getDamage());
 	}
 }
