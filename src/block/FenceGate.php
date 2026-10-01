@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\SupportType;
 use pocketmine\block\utils\WoodMaterial;
 use pocketmine\block\utils\WoodTypeTrait;
@@ -35,9 +36,10 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\DoorSound;
 
-class FenceGate extends Transparent implements HorizontalFacing, WoodMaterial{
+class FenceGate extends Transparent implements HorizontalFacing, WoodMaterial, RedstoneReceiver{
 	use WoodTypeTrait;
 	use HorizontalFacingTrait;
 
@@ -124,5 +126,12 @@ class FenceGate extends Transparent implements HorizontalFacing, WoodMaterial{
 
 	public function getFlammability() : int{
 		return $this->woodType->isFlammable() ? 20 : 0;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($engine->powerChanged($this->position, $powered) && $this->open !== $powered){
+			$engine->getWorld()->setBlock($this->position, $this->setOpen($powered));
+		}
 	}
 }

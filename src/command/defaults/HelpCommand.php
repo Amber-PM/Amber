@@ -25,16 +25,16 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
+use pocketmine\command\overload\GreedyStringArgumentParser;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Translatable;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\utils\TextFormat;
 use function array_chunk;
-use function array_pop;
 use function count;
 use function explode;
 use function implode;
-use function is_numeric;
 use function ksort;
 use function min;
 use function sort;
@@ -43,7 +43,7 @@ use const PHP_INT_MAX;
 use const SORT_FLAG_CASE;
 use const SORT_NATURAL;
 
-class HelpCommand extends VanillaCommand{
+class HelpCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -53,76 +53,66 @@ class HelpCommand extends VanillaCommand{
 			["?"]
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_HELP);
+
+		$this->addOverload(fn(CommandSender $sender) => $this->listCommands($sender, 1));
+		$this->addOverload(fn(CommandSender $sender, int $page) => $this->listCommands($sender, $page));
+		$this->addOverload(fn(CommandSender $sender, string $command, int $page) => $this->describeCommand($sender, $command));
+		$this->addOverload(fn(CommandSender $sender, string $command) => $this->describeCommand($sender, $command), null, ["command" => new GreedyStringArgumentParser()]);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			$commandName = "";
-			$pageNumber = 1;
-		}elseif(is_numeric($args[count($args) - 1])){
-			$pageNumber = (int) array_pop($args);
-			if($pageNumber <= 0){
-				$pageNumber = 1;
-			}
-			$commandName = implode(" ", $args);
-		}else{
-			$commandName = implode(" ", $args);
-			$pageNumber = 1;
-		}
-
+	private function listCommands(CommandSender $sender, int $pageNumber) : bool{
 		$pageHeight = $sender->getScreenLineHeight();
-
-		if($commandName === ""){
-			$commands = [];
-			foreach($sender->getServer()->getCommandMap()->getCommands() as $command){
-				if($command->testPermissionSilent($sender)){
-					$commands[$command->getLabel()] = $command;
-				}
+		$commands = [];
+		foreach($sender->getServer()->getCommandMap()->getCommands() as $command){
+			if($command->testPermissionSilent($sender)){
+				$commands[$command->getLabel()] = $command;
 			}
-			ksort($commands, SORT_NATURAL | SORT_FLAG_CASE);
-			$commands = array_chunk($commands, $pageHeight);
-			$pageNumber = min(count($commands), $pageNumber);
-			if($pageNumber < 1){
-				$pageNumber = 1;
-			}
-			$sender->sendMessage(KnownTranslationFactory::commands_help_header((string) $pageNumber, (string) count($commands)));
-			$lang = $sender->getLanguage();
-			if(isset($commands[$pageNumber - 1])){
-				foreach($commands[$pageNumber - 1] as $command){
-					$description = $command->getDescription();
-					$descriptionString = $description instanceof Translatable ? $lang->translate($description) : $description;
-					$sender->sendMessage(TextFormat::DARK_GREEN . "/" . $command->getLabel() . ": " . TextFormat::RESET . $descriptionString);
-				}
-			}
-
-			return true;
-		}else{
-			if(($cmd = $sender->getServer()->getCommandMap()->getCommand(strtolower($commandName))) instanceof Command){
-				if($cmd->testPermissionSilent($sender)){
-					$lang = $sender->getLanguage();
-					$description = $cmd->getDescription();
-					$descriptionString = $description instanceof Translatable ? $lang->translate($description) : $description;
-					$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_header($cmd->getLabel())
-						->format(TextFormat::YELLOW . "--------- " . TextFormat::RESET, TextFormat::YELLOW . " ---------"));
-					$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_description(TextFormat::RESET . $descriptionString)
-						->prefix(TextFormat::GOLD));
-
-					$usage = $cmd->getUsage();
-					$usageString = $usage instanceof Translatable ? $lang->translate($usage) : $usage;
-					$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_usage(TextFormat::RESET . implode("\n" . TextFormat::RESET, explode("\n", $usageString, limit: PHP_INT_MAX)))
-						->prefix(TextFormat::GOLD));
-
-					$aliases = $cmd->getAliases();
-					sort($aliases, SORT_NATURAL);
-					$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_aliases(TextFormat::RESET . implode(", ", $aliases))
-						->prefix(TextFormat::GOLD));
-
-					return true;
-				}
-			}
-			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_notFound($commandName, "/help")->prefix(TextFormat::RED));
-
-			return true;
 		}
+		ksort($commands, SORT_NATURAL | SORT_FLAG_CASE);
+		$commands = array_chunk($commands, $pageHeight);
+		$pageNumber = min(count($commands), $pageNumber);
+		if($pageNumber < 1){
+			$pageNumber = 1;
+		}
+		$sender->sendMessage(KnownTranslationFactory::commands_help_header((string) $pageNumber, (string) count($commands)));
+		$lang = $sender->getLanguage();
+		if(isset($commands[$pageNumber - 1])){
+			foreach($commands[$pageNumber - 1] as $command){
+				$description = $command->getDescription();
+				$descriptionString = $description instanceof Translatable ? $lang->translate($description) : $description;
+				$sender->sendMessage(TextFormat::DARK_GREEN . "/" . $command->getLabel() . ": " . TextFormat::RESET . $descriptionString);
+			}
+		}
+
+		return true;
+	}
+
+	private function describeCommand(CommandSender $sender, string $commandName) : bool{
+		if(($cmd = $sender->getServer()->getCommandMap()->getCommand(strtolower($commandName))) instanceof Command){
+			if($cmd->testPermissionSilent($sender)){
+				$lang = $sender->getLanguage();
+				$description = $cmd->getDescription();
+				$descriptionString = $description instanceof Translatable ? $lang->translate($description) : $description;
+				$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_header($cmd->getLabel())
+					->format(TextFormat::YELLOW . "--------- " . TextFormat::RESET, TextFormat::YELLOW . " ---------"));
+				$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_description(TextFormat::RESET . $descriptionString)
+					->prefix(TextFormat::GOLD));
+
+				$usage = $cmd->getUsage();
+				$usageString = $usage instanceof Translatable ? $lang->translate($usage) : $usage;
+				$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_usage(TextFormat::RESET . implode("\n" . TextFormat::RESET, explode("\n", $usageString, limit: PHP_INT_MAX)))
+					->prefix(TextFormat::GOLD));
+
+				$aliases = $cmd->getAliases();
+				sort($aliases, SORT_NATURAL);
+				$sender->sendMessage(KnownTranslationFactory::pocketmine_command_help_specificCommand_aliases(TextFormat::RESET . implode(", ", $aliases))
+					->prefix(TextFormat::GOLD));
+
+				return true;
+			}
+		}
+		$sender->sendMessage(KnownTranslationFactory::pocketmine_command_notFound($commandName, "/help")->prefix(TextFormat::RED));
+
+		return true;
 	}
 }

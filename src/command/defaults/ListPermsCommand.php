@@ -24,16 +24,15 @@ declare(strict_types=1);
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
-use function array_shift;
-use function count;
 use function implode;
 use function sort;
 
-class ListPermsCommand extends VanillaCommand{
+class ListPermsCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -43,19 +42,11 @@ class ListPermsCommand extends VanillaCommand{
 			["listpermissions"]
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_LISTPERMS);
+
+		$this->addOverload(fn(CommandSender $sender, ?Player $player = null) => $this->list($sender, $player ?? $sender));
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		$target = $sender;
-		if(count($args) > 0){
-			$targetName = array_shift($args);
-			$target = $sender->getServer()->getPlayerExact($targetName);
-			if($target === null){
-				$sender->sendMessage(KnownTranslationFactory::commands_generic_player_notFound()->prefix(TextFormat::RED));
-				return true;
-			}
-		}
-
+	private function list(CommandSender $sender, CommandSender $target) : bool{
 		$perms = [];
 		foreach($target->getEffectivePermissions() as $info){
 			$perms[] = $info->getPermission() . ": " . ($info->getValue() ? "true" : "false");
@@ -63,7 +54,6 @@ class ListPermsCommand extends VanillaCommand{
 		sort($perms);
 
 		$sender->sendMessage(TextFormat::GREEN . "Effective permissions for " . $target->getName() . ":\n" . TextFormat::RESET . implode("\n", $perms));
-
 		return true;
 	}
 }

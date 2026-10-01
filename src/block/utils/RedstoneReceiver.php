@@ -19,14 +19,18 @@
  *
  */
 
+
 declare(strict_types=1);
 
-namespace pocketmine\block;
+namespace pocketmine\block\utils;
 
-use pocketmine\block\utils\PoweredByRedstone;
-use pocketmine\block\utils\RailPoweredByRedstoneTrait;
-use pocketmine\block\utils\RedstoneReceiver;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class PoweredRail extends StraightOnlyRail implements PoweredByRedstone, RedstoneReceiver{
-	use RailPoweredByRedstoneTrait;
+/**
+ * A block that reacts to redstone power: lamps, doors, TNT, torches, repeaters, wire...
+ */
+interface RedstoneReceiver{
+
+	/** Called by the world's redstone engine when the power around the block may have changed. */
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void;
 }

@@ -24,9 +24,9 @@ declare(strict_types=1);
 
 namespace pocketmine\command\defaults;
 
-use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\StringArgumentParser;
 use pocketmine\permission\DefaultPermissions;
 use pocketmine\permission\Permission;
 use pocketmine\permission\PermissionManager;
@@ -38,37 +38,44 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\structure\Structure;
 use pocketmine\world\generator\structure\StructureLoot;
 use pocketmine\world\generator\structure\StructurePopulator;
+use pocketmine\world\World;
 use function array_keys;
-use function basename;
 use function count;
-use function floor;
 use function implode;
 use function intdiv;
-use function is_numeric;
 use function mt_rand;
 use function number_format;
 use function round;
 use function sprintf;
 
-final class AmberCommand extends Command{
+final class AmberCommand extends OverloadedCommand{
 	public const PERMISSION = "pocketmine.command.amber";
 
 	public function __construct(){
-		parent::__construct("amber", "AmberPM tools", "/amber <perf|backup [world]|structure <name> [x z [world]]>");
+		parent::__construct("amber", "AmberPM tools: performance and structures");
 		$operator = PermissionManager::getInstance()->getPermission(DefaultPermissions::ROOT_OPERATOR);
 		if(PermissionManager::getInstance()->getPermission(self::PERMISSION) === null && $operator !== null){
 			DefaultPermissions::registerPermission(new Permission(self::PERMISSION, "Allows the user to use /amber"), [$operator]);
 		}
 		$this->setPermission(self::PERMISSION);
-	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args) : bool{
-		return match($args[0] ?? "perf"){
-			"perf" => $this->perf($sender),
-			"backup" => $this->backup($sender, $args[1] ?? null),
-			"structure" => $this->structure($sender, $args),
-			default => throw new InvalidCommandSyntaxException(),
-		};
+		$structures = new StringArgumentParser(array_keys(StructurePopulator::defaultStructures()));
+		$this->addOverload(fn(CommandSender $sender) => $this->perf($sender));
+		$this->addOverload(
+			fn(CommandSender $sender, string $action) => $action === "perf" ? $this->perf($sender) : $this->listStructures($sender),
+			null,
+			["action" => new StringArgumentParser(["perf", "structure"])]
+		);
+		$this->addOverload(
+			fn(Player $sender, string $action, string $structure) => $this->placeStructure($sender, $structure, $sender->getPosition()->getFloorX(), $sender->getPosition()->getFloorZ(), $sender->getWorld()),
+			null,
+			["action" => new StringArgumentParser(["structure"]), "structure" => $structures]
+		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $action, string $structure, int $x, int $z, ?string $world = null) => $this->placeStructureInWorld($sender, $structure, $x, $z, $world),
+			null,
+			["action" => new StringArgumentParser(["structure"]), "structure" => $structures]
+		);
 	}
 
 	private function perf(CommandSender $sender) : bool{
@@ -123,56 +130,24 @@ final class AmberCommand extends Command{
 		return true;
 	}
 
-	private function backup(CommandSender $sender, ?string $worldName) : bool{
-		$server = $sender->getServer();
-		$worlds = $worldName !== null ? [$server->getWorldManager()->getWorldByName($worldName)] : $server->getWorldManager()->getWorlds();
-		foreach($worlds as $world){
-			if($world === null){
-				$sender->sendMessage(TF::RED . "No loaded world is called $worldName");
-				return true;
-			}
-			$name = $world->getFolderName();
-			$started = $server->getBackupManager()->backup($world, function(?string $file, ?string $error) use ($sender, $name) : void{
-				if($sender instanceof Player && !$sender->isConnected()){
-					return;
-				}
-				$sender->sendMessage($file !== null ? TF::GREEN . "Backed up $name to " . basename($file) : TF::RED . "Backup of $name failed: $error");
-			});
-			$sender->sendMessage($started ? TF::GRAY . "Backing up $name..." : TF::YELLOW . "A backup of $name is already running");
-		}
+
+	private function listStructures(CommandSender $sender) : bool{
+		$sender->sendMessage(TF::GRAY . "Structures: " . implode(", ", array_keys(StructurePopulator::defaultStructures())));
 		return true;
 	}
 
-	/**
-	 * @param string[] $args
-	 */
-	private function structure(CommandSender $sender, array $args) : bool{
-		$structures = StructurePopulator::defaultStructures();
-		$structure = $structures[$args[1] ?? ""] ?? null;
-		if($structure === null){
-			$sender->sendMessage(TF::GRAY . "Structures: " . implode(", ", array_keys($structures)));
-			return true;
-		}
-		if(isset($args[2], $args[3])){
-			if(!is_numeric($args[2]) || !is_numeric($args[3])){
-				throw new InvalidCommandSyntaxException();
-			}
-			$x = (int) floor((float) $args[2]);
-			$z = (int) floor((float) $args[3]);
-			$world = isset($args[4]) ? $sender->getServer()->getWorldManager()->getWorldByName($args[4]) : ($sender instanceof Player ? $sender->getWorld() : $sender->getServer()->getWorldManager()->getDefaultWorld());
-		}elseif($sender instanceof Player){
-			$position = $sender->getPosition();
-			$x = $position->getFloorX();
-			$z = $position->getFloorZ();
-			$world = $sender->getWorld();
-		}else{
-			throw new InvalidCommandSyntaxException();
-		}
+	private function placeStructureInWorld(CommandSender $sender, string $structure, int $x, int $z, ?string $worldName) : bool{
+		$worldManager = $sender->getServer()->getWorldManager();
+		$world = $worldName !== null ? $worldManager->getWorldByName($worldName) : ($sender instanceof Player ? $sender->getWorld() : $worldManager->getDefaultWorld());
 		if($world === null){
-			$sender->sendMessage(TF::RED . "No loaded world is called " . ($args[4] ?? ""));
+			$sender->sendMessage(TF::RED . "No loaded world is called " . ($worldName ?? ""));
 			return true;
 		}
+		return $this->placeStructure($sender, $structure, $x, $z, $world);
+	}
 
+	private function placeStructure(CommandSender $sender, string $name, int $x, int $z, World $world) : bool{
+		$structure = StructurePopulator::defaultStructures()[$name];
 		$reach = Structure::MAX_RADIUS;
 		for($chunkX = ($x - $reach) >> Chunk::COORD_BIT_SIZE; $chunkX <= ($x + $reach) >> Chunk::COORD_BIT_SIZE; ++$chunkX){
 			for($chunkZ = ($z - $reach) >> Chunk::COORD_BIT_SIZE; $chunkZ <= ($z + $reach) >> Chunk::COORD_BIT_SIZE; ++$chunkZ){
@@ -184,12 +159,12 @@ final class AmberCommand extends Command{
 		}
 		$random = new Random(mt_rand());
 		if($structure->place($world, $x, $z, $random)){
-			if(StructureLoot::hasLoot($structure->getName())){
-				StructureLoot::fillChests($world, $x, $z, $structure->getName(), $random, true);
+			if(StructureLoot::hasLoot($name)){
+				StructureLoot::fillChests($world, $x, $z, $name, $random, true);
 			}
-			$sender->sendMessage(TF::GREEN . "Placed " . $structure->getName() . " at $x, $z");
+			$sender->sendMessage(TF::GREEN . "Placed $name at $x, $z");
 		}else{
-			$sender->sendMessage(TF::YELLOW . "The ground at $x, $z does not suit " . $structure->getName());
+			$sender->sendMessage(TF::YELLOW . "The ground at $x, $z does not suit $name");
 		}
 		return true;
 	}

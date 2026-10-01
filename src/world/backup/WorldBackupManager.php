@@ -33,6 +33,7 @@ use function basename;
 use function copy;
 use function count;
 use function date;
+use function file_exists;
 use function glob;
 use function in_array;
 use function is_dir;
@@ -128,6 +129,10 @@ final class WorldBackupManager{
 		}
 
 		$target = Path::join($this->backupPath, $name, $name . "-" . $stamp . ".zip");
+		for($n = 2; file_exists($target); ++$n){
+			//a second backup in the same second; "_" sorts after ".", so names still sort in the order they were made
+			$target = Path::join($this->backupPath, $name, $name . "-" . $stamp . "_" . $n . ".zip");
+		}
 		$isLevelDB = $world->getProvider() instanceof LevelDB;
 		$this->server->getAsyncPool()->submitTask(new WorldBackupTask($staging, $target, $isLevelDB, function(?string $error) use ($world, $name, $target, $attempt, $onDone, $logger) : void{
 			if($error !== null && $attempt < self::MAX_ATTEMPTS && $world->isLoaded()){

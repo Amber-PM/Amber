@@ -31,8 +31,10 @@ use pocketmine\lang\Translatable;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\Server;
+use pocketmine\utils\TextFormat;
 use pocketmine\world\WorldException;
 use Symfony\Component\Filesystem\Path;
+use function basename;
 use function count;
 use function implode;
 use function is_dir;
@@ -64,6 +66,32 @@ class WorldCommand extends OverloadedCommand{
 			DefaultPermissionNames::COMMAND_WORLD,
 			["action" => new StringArgumentParser(["load", "unload", "tp"])]
 		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $action, ?string $world = null) => $this->backup($sender, $world),
+			DefaultPermissionNames::COMMAND_WORLD,
+			["action" => new StringArgumentParser(["backup"])]
+		);
+	}
+
+	/** Backs up one world, or every loaded world. */
+	private function backup(CommandSender $sender, ?string $worldName) : bool{
+		$server = $sender->getServer();
+		$worlds = $worldName !== null ? [$server->getWorldManager()->getWorldByName($worldName)] : $server->getWorldManager()->getWorlds();
+		foreach($worlds as $world){
+			if($world === null){
+				$sender->sendMessage(TextFormat::RED . "No loaded world is called $worldName");
+				return true;
+			}
+			$name = $world->getFolderName();
+			$started = $server->getBackupManager()->backup($world, function(?string $file, ?string $error) use ($sender, $name) : void{
+				if($sender instanceof Player && !$sender->isConnected()){
+					return;
+				}
+				$sender->sendMessage($file !== null ? TextFormat::GREEN . "Backed up $name to " . basename($file) : TextFormat::RED . "Backup of $name failed: $error");
+			});
+			$sender->sendMessage($started ? TextFormat::GRAY . "Backing up $name..." : TextFormat::YELLOW . "A backup of $name is already running");
+		}
+		return true;
 	}
 
 	public function getUsage() : Translatable|string{

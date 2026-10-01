@@ -26,10 +26,13 @@ namespace pocketmine\block;
 use pocketmine\block\tile\Comparator;
 use pocketmine\block\utils\AnalogRedstoneSignalEmitter;
 use pocketmine\block\utils\AnalogRedstoneSignalEmitterTrait;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
+use pocketmine\block\utils\RedstoneDiodeTrait;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\block\utils\StaticSupportTrait;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
@@ -39,10 +42,13 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use function assert;
+use function max;
 
-class RedstoneComparator extends Flowable implements AnalogRedstoneSignalEmitter, PoweredByRedstone, HorizontalFacing{
+class RedstoneComparator extends Flowable implements AnalogRedstoneSignalEmitter, PoweredByRedstone, HorizontalFacing, RedstoneSource, DelayedRedstoneReceiver{
 	use HorizontalFacingTrait;
+	use RedstoneDiodeTrait;
 	use AnalogRedstoneSignalEmitterTrait;
 	use PoweredByRedstoneTrait;
 	use StaticSupportTrait;
@@ -104,4 +110,37 @@ class RedstoneComparator extends Flowable implements AnalogRedstoneSignalEmitter
 	}
 
 	//TODO: redstone functionality
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $face === Facing::opposite($this->facing) ? $this->signalStrength : 0;
+	}
+
+	/** Compares (or subtracts) the power from the sides with the power from behind, or the container behind. */
+	private function computeOutput(RedstoneEngine $engine) : int{
+		$rear = $this->getRedstoneInput($engine);
+		$containerSignal = $engine->getContainerWatch()->readContainer($this->position->getSide($this->facing));
+		$engine->getContainerWatch()->watch($this->position, $containerSignal);
+		if($containerSignal !== null){
+			$rear = max($rear, $containerSignal);
+		}
+		$side = max(
+			$this->getRedstoneSideInput($engine, Facing::rotateY($this->facing, true)),
+			$this->getRedstoneSideInput($engine, Facing::rotateY($this->facing, false))
+		);
+		return $this->isSubtractMode ? max(0, $rear - $side) : ($rear >= $side ? $rear : 0);
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if($this->computeOutput($engine) !== $this->signalStrength){
+			$engine->schedule($this->position, RedstoneEngine::REDSTONE_TICK);
+		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$output = $this->computeOutput($engine);
+		if($output !== $this->signalStrength){
+			$engine->getWorld()->setBlock($this->position, $this->setOutputSignalStrength($output)->setPowered($output > 0));
+			$engine->requestAround($this->position);
+		}
+	}
 }

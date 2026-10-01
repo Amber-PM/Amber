@@ -24,15 +24,17 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\tile\Note as TileNote;
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\NoteInstrument;
 use pocketmine\world\sound\NoteSound;
 use function assert;
 
-class Note extends Opaque{
+class Note extends Opaque implements RedstoneReceiver{
 	public const MIN_PITCH = 0;
 	public const MAX_PITCH = 24;
 
@@ -129,5 +131,13 @@ class Note extends Opaque{
 			return NoteInstrument::BASS_DRUM;
 		}
 		return NoteInstrument::PIANO;
+	}
+
+	/** Plays when power is switched on. */
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($engine->powerChanged($this->position, $powered) && $powered){
+			$this->play();
+		}
 	}
 }

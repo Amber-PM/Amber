@@ -23,10 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
+use pocketmine\block\utils\RedstoneDiodeTrait;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\block\utils\StaticSupportTrait;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
@@ -36,9 +39,11 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class RedstoneRepeater extends Flowable implements PoweredByRedstone, HorizontalFacing{
+class RedstoneRepeater extends Flowable implements PoweredByRedstone, HorizontalFacing, RedstoneSource, DelayedRedstoneReceiver{
 	use HorizontalFacingTrait;
+	use RedstoneDiodeTrait;
 	use PoweredByRedstoneTrait;
 	use StaticSupportTrait;
 
@@ -89,4 +94,33 @@ class RedstoneRepeater extends Flowable implements PoweredByRedstone, Horizontal
 	}
 
 	//TODO: redstone functionality
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $this->powered && $face === Facing::opposite($this->facing) ? 15 : 0;
+	}
+
+	/** A repeater is locked while a powered repeater or comparator points into its side. */
+	private function isLocked(RedstoneEngine $engine) : bool{
+		foreach([Facing::rotateY($this->facing, true), Facing::rotateY($this->facing, false)] as $side){
+			$block = $this->getSide($side);
+			if(($block instanceof RedstoneRepeater || $block instanceof RedstoneComparator) && $engine->getOutput($block, Facing::opposite($side), false) > 0){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if(!$this->isLocked($engine) && ($this->getRedstoneInput($engine) > 0) !== $this->powered){
+			$engine->schedule($this->position, $this->delay * RedstoneEngine::REDSTONE_TICK);
+		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$powered = $this->getRedstoneInput($engine) > 0;
+		if(!$this->isLocked($engine) && $powered !== $this->powered){
+			$engine->getWorld()->setBlock($this->position, $this->setPowered($powered));
+			$engine->requestAround($this->position);
+		}
+	}
 }

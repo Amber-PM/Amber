@@ -177,7 +177,7 @@ web:
   log-lines: 1000
 
 backups:
-  #Automatic world backups, as zip files in backups/<world>/. /amber backup [world] makes one any time.
+  #Automatic world backups, as zip files in backups/<world>/. /world backup [world] makes one any time.
   #To restore one, stop the server and unzip it into worlds/<world>/ in place of the world's folder.
   enabled: false
   #Minutes between automatic backups.
