@@ -19,14 +19,21 @@
  *
  */
 
+
 declare(strict_types=1);
 
-namespace pocketmine\block;
+namespace pocketmine\block\utils;
 
-use pocketmine\block\utils\PoweredByRedstone;
-use pocketmine\block\utils\RailPoweredByRedstoneTrait;
-use pocketmine\block\utils\RedstoneReceiver;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class PoweredRail extends StraightOnlyRail implements PoweredByRedstone, RedstoneReceiver{
-	use RailPoweredByRedstoneTrait;
+/**
+ * A block that gives out redstone power: levers, buttons, plates, torches, repeaters, comparators, wire...
+ */
+interface RedstoneSource{
+
+	/**
+	 * Power sent out through the face $face (the direction from this block to the one receiving it). With
+	 * $strongOnly, only power that strongly powers the block on that side, so wire beside that block picks it up.
+	 */
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int;
 }

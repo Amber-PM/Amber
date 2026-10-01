@@ -19,14 +19,19 @@
  *
  */
 
+
 declare(strict_types=1);
 
-namespace pocketmine\block;
+namespace pocketmine\block\utils;
 
-use pocketmine\block\utils\PoweredByRedstone;
-use pocketmine\block\utils\RailPoweredByRedstoneTrait;
-use pocketmine\block\utils\RedstoneReceiver;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class PoweredRail extends StraightOnlyRail implements PoweredByRedstone, RedstoneReceiver{
-	use RailPoweredByRedstoneTrait;
+/**
+ * A redstone receiver that changes some time after its power does (torches, repeaters, comparators, lamps turning
+ * off): it asks for the delay with RedstoneEngine::schedule().
+ */
+interface DelayedRedstoneReceiver extends RedstoneReceiver{
+
+	/** Called when a change scheduled with RedstoneEngine::schedule() is due. */
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void;
 }

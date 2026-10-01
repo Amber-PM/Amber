@@ -23,11 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\Lightable;
 use pocketmine\block\utils\LightableTrait;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
+use pocketmine\math\Facing;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class RedstoneTorch extends Torch implements Lightable{
+class RedstoneTorch extends Torch implements Lightable, RedstoneSource, DelayedRedstoneReceiver{
 	use LightableTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, BlockTypeInfo $typeInfo){
@@ -42,5 +46,42 @@ class RedstoneTorch extends Torch implements Lightable{
 
 	public function getLightLevel() : int{
 		return $this->lit ? 7 : 0;
+	}
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		if(!$this->lit || $face === Facing::opposite($this->facing)){
+			return 0; //not into the block it is attached to
+		}
+		return !$strongOnly || $face === Facing::UP ? 15 : 0;
+	}
+
+	/** A torch is lit unless the block it is attached to is powered (or it is burnt out). */
+	private function shouldBeLit(RedstoneEngine $engine) : bool{
+		if($engine->getTorchBurnout()->isBurntOut($this->position, $engine->getCurrentTick())){
+			return false;
+		}
+		return $engine->getPowerIntoBlock($this->position->getSide(Facing::opposite($this->facing)), false) === 0;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if($this->shouldBeLit($engine) !== $this->lit){
+			$engine->schedule($this->position, RedstoneEngine::REDSTONE_TICK);
+		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$lit = $this->shouldBeLit($engine);
+		if($lit === $this->lit){
+			return;
+		}
+		$burnout = $engine->getTorchBurnout();
+		$burnout->recordToggle($this->position, $engine);
+		if($burnout->isBurntOut($this->position, $engine->getCurrentTick())){
+			$lit = false; //this toggle burnt it out: it stays off until the burnout ends
+		}
+		if($lit !== $this->lit){
+			$engine->getWorld()->setBlock($this->position, $this->setLit($lit));
+			$engine->requestAround($this->position);
+		}
 	}
 }

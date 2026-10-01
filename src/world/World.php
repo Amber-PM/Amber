@@ -109,11 +109,13 @@ use pocketmine\world\generator\PopulationTask;
 use pocketmine\world\light\BlockLightUpdate;
 use pocketmine\world\light\LightPopulationTask;
 use pocketmine\world\light\SkyLightUpdate;
+use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\particle\BlockParticle;
 use pocketmine\world\particle\ItemParticle;
 use pocketmine\world\particle\Particle;
 use pocketmine\world\particle\ProtocolParticle;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\BlockPlaceSound;
 use pocketmine\world\sound\BlockSound;
 use pocketmine\world\sound\ProtocolSound;
@@ -337,6 +339,8 @@ class World implements ChunkManager{
 
 	/** @phpstan-var \SplQueue<int> */
 	private \SplQueue $neighbourBlockUpdateQueue;
+	private ?RedstoneEngine $redstone = null;
+	private ?HopperTicker $hopperTicker = null;
 	/**
 	 * @var true[] blockhash => dummy
 	 * @phpstan-var array<BlockPosHash, true>
@@ -523,6 +527,10 @@ class World implements ChunkManager{
 
 		$cfg = $this->server->getConfigGroup();
 		$this->damageY = $cfg->getPropertyInt(YmlServerProperties::LEVEL_SETTINGS_MIN_Y, 0);
+		$this->hopperTicker = new HopperTicker($this);
+		if($cfg->getPropertyBool(YmlServerProperties::REDSTONE_ENABLED, true)){
+			$this->redstone = new RedstoneEngine($this, max(1, $cfg->getPropertyInt(YmlServerProperties::REDSTONE_MAX_UPDATES_PER_TICK, 2000)));
+		}
 
 		$this->server->getLogger()->info($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_level_preparing($this->displayName)));
 		$generator = GeneratorManager::getInstance()->getGenerator($this->provider->getWorldData()->getGenerator()) ??
@@ -1103,6 +1111,14 @@ class World implements ChunkManager{
 		}
 	}
 
+	public function getRedstoneEngine() : ?RedstoneEngine{
+		return $this->redstone;
+	}
+
+	public function getHopperTicker() : ?HopperTicker{
+		return $this->hopperTicker;
+	}
+
 	protected function actuallyDoTick(int $currentTick) : void{
 		if(!$this->stopTime){
 			//this simulates an overflow, as would happen in any language which doesn't do stupid things to var types
@@ -1171,7 +1187,10 @@ class World implements ChunkManager{
 				$entity->onNearbyBlockChange();
 			}
 			$block->onNearbyBlockChange();
+			$this->redstone?->onNeighbourUpdate($block);
 		}
+		$this->redstone?->tick($currentTick);
+		$this->hopperTicker?->tick($currentTick);
 
 		$this->timings->neighbourBlockUpdates->stopTiming();
 
@@ -3094,6 +3113,7 @@ class World implements ChunkManager{
 
 		if(isset($this->chunks[$hash = World::chunkHash($chunkX, $chunkZ)])){
 			$this->chunks[$hash]->addTile($tile);
+			$this->hopperTicker?->onTileAdded($tile);
 		}else{
 			throw new \InvalidArgumentException("Attempted to create tile " . get_class($tile) . " in unloaded chunk $chunkX $chunkZ");
 		}

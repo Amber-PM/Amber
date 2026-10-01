@@ -23,12 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\Lightable;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
 use pocketmine\data\runtime\RuntimeDataDescriber;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class RedstoneLamp extends Opaque implements PoweredByRedstone, Lightable{
+class RedstoneLamp extends Opaque implements PoweredByRedstone, Lightable, DelayedRedstoneReceiver{
 	use PoweredByRedstoneTrait;
 
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
@@ -47,5 +49,20 @@ class RedstoneLamp extends Opaque implements PoweredByRedstone, Lightable{
 	public function setLit(bool $lit = true) : self{
 		$this->powered = $lit;
 		return $this;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($powered && !$this->isLit()){
+			$engine->getWorld()->setBlock($this->position, $this->setLit(true));
+		}elseif(!$powered && $this->isLit()){
+			$engine->schedule($this->position, 2 * RedstoneEngine::REDSTONE_TICK); //lamps turn off with a delay
+		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		if($this->isLit() && $engine->getReceivedPower($this->position) === 0){
+			$engine->getWorld()->setBlock($this->position, $this->setLit(false));
+		}
 	}
 }

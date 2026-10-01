@@ -130,6 +130,14 @@ chunk-ticking:
     #- ice
     #- fire
 
+redstone:
+  #Redstone wire, torches, repeaters, comparators, and what they power (lamps, copper bulbs, doors,
+  #trapdoors, fence gates, TNT, powered and activator rails, note blocks, and hopper locking).
+  #Pistons, droppers, dispensers and observers are not simulated.
+  enabled: true
+  #Redstone positions evaluated per tick in each world. Busy circuits past this slow down instead of lagging the server.
+  max-updates-per-tick: 2000
+
 chunk-generation:
   #Max. amount of chunks in the waiting queue to be populated
   population-queue-size: 32
