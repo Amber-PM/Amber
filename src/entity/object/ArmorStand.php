@@ -23,10 +23,17 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\object;
 
+use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Living;
+use pocketmine\event\entity\ArmorStandEquipEvent;
+use pocketmine\event\entity\ArmorStandPoseChangeEvent;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\item\Armor;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\MobEquipmentPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
@@ -36,6 +43,10 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\inventory\ContainerIds;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStackWrapper;
 use pocketmine\player\Player;
+use pocketmine\world\particle\BlockBreakParticle;
+use pocketmine\world\sound\ArmorEquipGenericSound;
+use pocketmine\world\sound\BlockBreakSound;
+use pocketmine\world\sound\ClickSound;
 
 class ArmorStand extends Living{
 
@@ -124,23 +135,199 @@ class ArmorStand extends Living{
 		if(!isset($this->heldItem)){
 			$this->heldItem = VanillaItems::AIR();
 		}
-		foreach($this->getViewers() as $player){
-			$session = $player->getNetworkSession();
-			$session->sendDataPacket(MobEquipmentPacket::create(
-				$this->getId(),
-				ItemStackWrapper::legacy($session->getTypeConverter()->coreItemStackToNet($this->heldItem)),
-				0,
-				0,
-				ContainerIds::INVENTORY
-			));
+		try{
+			foreach($this->getViewers() as $player){
+				$session = $player->getNetworkSession();
+				$session->sendDataPacket(MobEquipmentPacket::create(
+					$this->getId(),
+					ItemStackWrapper::legacy($session->getTypeConverter()->coreItemStackToNet($this->heldItem)),
+					0,
+					0,
+					ContainerIds::INVENTORY
+				));
+			}
+		}catch(\Error){
+			//viewers not initialized
 		}
+	}
+
+	public function onInteract(Player $player, Vector3 $clickPos) : bool{
+		if($this->isLocked()){
+			return false;
+		}
+
+		if($player->isSneaking()){
+			$oldPose = $this->poseIndex;
+			$newPose = ($oldPose + 1) % self::POSE_COUNT;
+			$ev = new ArmorStandPoseChangeEvent($this, $player, $oldPose, $newPose);
+			$ev->call();
+			if($ev->isCancelled()){
+				return false;
+			}
+			$this->setPose($ev->getNewPose());
+			try{
+				$this->broadcastSound(new ClickSound());
+			}catch(\Error){
+				//location/world not initialized
+			}
+			return true;
+		}
+
+		$playerItem = $player->getInventory()->getItemInHand();
+		if($playerItem instanceof Armor){
+			$slot = $playerItem->getArmorSlot();
+			$oldItem = $this->armorInventory->getItem($slot);
+			$newItem = $playerItem;
+			$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, $newItem);
+			$ev->call();
+			if($ev->isCancelled()){
+				return false;
+			}
+			$this->armorInventory->setItem($slot, $ev->getNewItem());
+			$player->getInventory()->setItemInHand($oldItem);
+			try{
+				$this->broadcastSound(new ArmorEquipGenericSound());
+			}catch(\Error){
+				//location/world not initialized
+			}
+			return true;
+		}
+
+		if(!$playerItem->isNull()){
+			$slot = ArmorStandEquipEvent::SLOT_MAIN_HAND;
+			$oldItem = $this->getMainHandItem();
+			$newItem = $playerItem;
+			$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, $newItem);
+			$ev->call();
+			if($ev->isCancelled()){
+				return false;
+			}
+			$this->setMainHandItem($ev->getNewItem());
+			$player->getInventory()->setItemInHand($oldItem);
+			try{
+				$this->broadcastSound(new ArmorEquipGenericSound());
+			}catch(\Error){
+				//location/world not initialized
+			}
+			return true;
+		}
+
+		// Empty hand: Strip highest priority equipped item
+		$slot = null;
+		$oldItem = null;
+
+		$headItem = $this->armorInventory->getItem(ArmorStandEquipEvent::SLOT_HEAD);
+		if(!$headItem->isNull()){
+			$slot = ArmorStandEquipEvent::SLOT_HEAD;
+			$oldItem = $headItem;
+		}else{
+			$chestItem = $this->armorInventory->getItem(ArmorStandEquipEvent::SLOT_CHEST);
+			if(!$chestItem->isNull()){
+				$slot = ArmorStandEquipEvent::SLOT_CHEST;
+				$oldItem = $chestItem;
+			}else{
+				$legsItem = $this->armorInventory->getItem(ArmorStandEquipEvent::SLOT_LEGS);
+				if(!$legsItem->isNull()){
+					$slot = ArmorStandEquipEvent::SLOT_LEGS;
+					$oldItem = $legsItem;
+				}else{
+					$feetItem = $this->armorInventory->getItem(ArmorStandEquipEvent::SLOT_FEET);
+					if(!$feetItem->isNull()){
+						$slot = ArmorStandEquipEvent::SLOT_FEET;
+						$oldItem = $feetItem;
+					}else{
+						$handItem = $this->getMainHandItem();
+						if(!$handItem->isNull()){
+							$slot = ArmorStandEquipEvent::SLOT_MAIN_HAND;
+							$oldItem = $handItem;
+						}
+					}
+				}
+			}
+		}
+
+		if($slot === null || $oldItem === null){
+			return false;
+		}
+
+		$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, VanillaItems::AIR());
+		$ev->call();
+		if($ev->isCancelled()){
+			return false;
+		}
+
+		if($slot === ArmorStandEquipEvent::SLOT_MAIN_HAND){
+			$this->setMainHandItem($ev->getNewItem());
+		}else{
+			$this->armorInventory->setItem($slot, $ev->getNewItem());
+		}
+		$player->getInventory()->setItemInHand($oldItem);
+		try{
+			$this->broadcastSound(new ArmorEquipGenericSound());
+		}catch(\Error){
+			//location/world not initialized
+		}
+		return true;
+	}
+
+	public function attack(EntityDamageEvent $source) : void{
+		if($this->isLocked()){
+			$source->cancel();
+			return;
+		}
+
+		if($source instanceof EntityDamageByEntityEvent){
+			$damager = $source->getDamager();
+			if($damager instanceof Player && $damager->isCreative()){
+				$source->cancel();
+				$this->flagForDespawn();
+				try{
+					$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
+				}catch(\Error){
+					//location/world not initialized
+				}
+				return;
+			}
+		}
+
+		parent::attack($source);
+	}
+
+	/**
+	 * @return Item[]
+	 */
+	public function getDrops() : array{
+		$drops = [VanillaItems::ARMOR_STAND()];
+		if(isset($this->armorInventory)){
+			foreach($this->armorInventory->getContents() as $item){
+				if(!$item->isNull()){
+					$drops[] = $item;
+				}
+			}
+		}
+		$held = $this->getMainHandItem();
+		if(!$held->isNull()){
+			$drops[] = $held;
+		}
+		return $drops;
+	}
+
+	protected function startDeathAnimation() : void{
+		try{
+			$this->broadcastSound(new BlockBreakSound(VanillaBlocks::OAK_PLANKS()));
+			$this->getWorld()->addParticle($this->location, new BlockBreakParticle(VanillaBlocks::OAK_PLANKS()));
+		}catch(\Error){
+			//location/world not initialized
+		}
+		$this->flagForDespawn();
 	}
 
 	public function readSaveData(CompoundTag $nbt) : void{
 		if(method_exists(parent::class, 'readSaveData')){
 			parent::readSaveData($nbt);
 		}
-		$this->poseIndex = $nbt->getInt(self::TAG_POSE, 0);
+		$rawPose = $nbt->getInt(self::TAG_POSE, 0);
+		$this->poseIndex = ($rawPose % self::POSE_COUNT + self::POSE_COUNT) % self::POSE_COUNT;
 		$this->locked = $nbt->getByte(self::TAG_LOCKED, 0) !== 0;
 		$this->showBasePlate = $nbt->getByte(self::TAG_SHOW_BASE_PLATE, 1) !== 0;
 
