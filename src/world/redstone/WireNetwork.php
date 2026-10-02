@@ -25,6 +25,7 @@ namespace pocketmine\world\redstone;
 
 use pocketmine\block\Block;
 use pocketmine\block\RedstoneRepeater;
+use pocketmine\block\RedstoneTorch;
 use pocketmine\block\RedstoneWire;
 use pocketmine\block\Slab;
 use pocketmine\block\utils\RedstoneSource;
@@ -44,18 +45,23 @@ use function max;
 use function min;
 
 /**
- * Power along redstone wire: a change to one wire recomputes its whole connected network at once, so a long line
- * settles in one step instead of one wire per tick.
+ * Directed wire settling, continuation merging and reclamation share the engine tick budget.
  *
  * @phpstan-type MergingSource array{
  *     phase?: int,
  *     wires: array<int, array{int, int, int}>,
  *     edges?: array<int, list<int>>,
  *     pending?: list<int>,
+ *     sourceQueue?: list<int>,
+ *     power?: array<int, int>,
+ *     buckets?: array<int, list<int>>,
+ *     applyQueue?: list<int>,
  *     mergingSources?: array<int, mixed>
  * }
  * @phpstan-type ContinuationState array{
  *     phase: int,
+ *     aliasPending?: int,
+ *     cleanupMode?: int,
  *     wires: array<int, array{int, int, int}>,
  *     edges?: array<int, list<int>>,
  *     pending: list<int>,
@@ -77,6 +83,9 @@ final class WireNetwork{
 	public const PHASE_PROPAGATE = 2;
 	public const PHASE_APPLY = 3;
 	public const PHASE_MERGE = 4;
+	public const PHASE_CLEANUP = 5;
+	public const CLEANUP_SETTLED = 0;
+	public const CLEANUP_INVALIDATED = 1;
 
 	/** @var array<int, true> wires whose network was already recomputed this tick */
 	private array $done = [];
@@ -88,6 +97,9 @@ final class WireNetwork{
 
 	/** @var array<int, int> continuationId => aliased continuationId */
 	private array $continuationAliases = [];
+
+	/** @var array<int, array<int, true>> target => alias sources */
+	private array $continuationAliasSources = [];
 
 	/**
 	 * @var array<int, ContinuationState> continuationId => state
@@ -115,13 +127,24 @@ final class WireNetwork{
 	}
 
 	public function getContinuationOwner(int $hash) : ?int{
-		return $this->continuationOwner[$hash] ?? null;
+		$owner = $this->continuationOwner[$hash] ?? null;
+		if($owner === null){
+			return null;
+		}
+		$id = $this->resolveContinuationId($owner);
+		if(!isset($this->continuations[$id])){
+			return null;
+		}
+		$c = &$this->continuations[$id];
+		return $c["phase"] !== self::PHASE_CLEANUP || $c["cleanupMode"] === self::CLEANUP_SETTLED ? $owner : null;
 	}
 
 	public function getContinuationCount() : int{
-		$count = count($this->continuations);
+		$count = 0;
 		foreach($this->continuations as $c){
-			$count += count($c["mergingSources"] ?? []);
+			if($c["phase"] !== self::PHASE_CLEANUP){
+				$count += 1 + count($c["mergingSources"]);
+			}
 		}
 		return $count;
 	}
@@ -131,6 +154,7 @@ final class WireNetwork{
 		$this->continuations = [];
 		$this->continuationOwner = [];
 		$this->continuationAliases = [];
+		$this->continuationAliasSources = [];
 	}
 
 	public function invalidate(int $hash) : void{
@@ -155,27 +179,9 @@ final class WireNetwork{
 			return;
 		}
 
-		foreach($continuation["wires"] as $wHash => $_){
-			unset($this->continuationOwner[$wHash]);
-		}
-		$sourcesToClean = isset($continuation["mergingSources"]) ? array_values($continuation["mergingSources"]) : [];
-		while($sourcesToClean !== []){
-			$source = array_pop($sourcesToClean);
-			foreach($source["wires"] as $wHash => $_){
-				unset($this->continuationOwner[$wHash]);
-			}
-			if(isset($source["mergingSources"])){
-				foreach($source["mergingSources"] as $subSource){
-					$sourcesToClean[] = $subSource;
-				}
-			}
-		}
-		unset($this->continuations[$id]);
-		foreach($this->continuationAliases as $aliasSource => $aliasTarget){
-			if($aliasTarget === $id || $aliasSource === $id){
-				unset($this->continuationAliases[$aliasSource]);
-			}
-		}
+		$continuation["phase"] = self::PHASE_CLEANUP;
+		$continuation["cleanupMode"] = self::CLEANUP_INVALIDATED;
+		$continuation["mutated"] = false;
 		$this->done = [];
 	}
 
@@ -196,6 +202,7 @@ final class WireNetwork{
 				$current = $this->continuations[$id];
 				unset($this->continuations[$id]);
 				$this->continuations[$id] = $current;
+				unset($current);
 			}
 
 			if($consumed === 0){
@@ -215,7 +222,7 @@ final class WireNetwork{
 		$y = $pos->getFloorY();
 		$z = $pos->getFloorZ();
 		$startHash = World::blockHash($x, $y, $z);
-		if(isset($this->done[$startHash]) || isset($this->continuationOwner[$startHash])){
+		if(isset($this->done[$startHash]) || $this->getContinuationOwner($startHash) !== null){
 			return;
 		}
 
@@ -246,11 +253,6 @@ final class WireNetwork{
 			$this->engine->consumeBudget($consumed);
 		}
 
-		if(isset($this->continuations[$id])){
-			foreach($this->continuations[$id]["wires"] as $hash => $_){
-				$this->done[$hash] = true;
-			}
-		}
 	}
 
 	/**
@@ -299,12 +301,20 @@ final class WireNetwork{
 					}
 					break;
 
+				case self::PHASE_CLEANUP:
+					$consumed = $this->stepCleanup($id, $continuation, $slice);
+					$steps += $consumed;
+					if(!isset($this->continuations[$id])){
+						return $steps;
+					}
+					break;
+
 				case self::PHASE_APPLY:
 					$consumed = $this->stepApply($continuation, $slice);
 					$steps += $consumed;
 					if($continuation["applyQueue"] === []){
-						$this->finalizeContinuation($id, $continuation);
-						return $steps;
+						$continuation["phase"] = self::PHASE_CLEANUP;
+						$continuation["cleanupMode"] = self::CLEANUP_SETTLED;
 					}
 					break;
 			}
@@ -323,30 +333,38 @@ final class WireNetwork{
 		$steps = 0;
 		while($c["pending"] !== [] && $steps < $budget){
 			$hash = array_pop($c["pending"]);
+			++$steps;
 			if(isset($c["edges"][$hash])){
 				continue;
 			}
-			++$steps;
 			[$wx, $wy, $wz] = $c["wires"][$hash];
 			foreach($this->connectedWires($wx, $wy, $wz) as [$nx, $ny, $nz]){
 				$next = World::blockHash($nx, $ny, $nz);
-				if($this->canTransmit($wx, $wy, $wz, $nx, $ny, $nz)){
-					$c["edges"][$hash][] = $next;
-				}
-				if(isset($this->continuationOwner[$next])){
-					$owner = $this->resolveContinuationId($this->continuationOwner[$next]);
-					if($owner !== $id && isset($this->continuations[$owner])){
+				$rawOwner = $this->getContinuationOwner($next);
+				if($rawOwner !== null){
+					$owner = $this->resolveContinuationId($rawOwner);
+					if($owner !== $id){
+						// Finish alias flattening before another merge can add a forwarding hop.
+						if(isset($this->continuations[$owner]["aliasPending"]) || $this->continuations[$owner]["phase"] === self::PHASE_CLEANUP){
+							$c["pending"][] = $hash;
+							unset($c["edges"][$hash]);
+							return $steps;
+						}
 						$c["mergingSources"][$owner] = $this->continuations[$owner];
 						unset($this->continuations[$owner]);
 						$this->continuationAliases[$owner] = $id;
-						foreach($this->continuationAliases as $src => $dst){
-							if($dst === $owner){
-								$this->continuationAliases[$src] = $id;
-							}
-						}
+						$this->continuationAliasSources[$id][$owner] = true;
+						$c["aliasPending"] = $owner;
 						$c["phase"] = self::PHASE_MERGE;
+						$c["pending"][] = $hash;
+						unset($c["edges"][$hash]);
 						return $steps;
 					}
+				}
+				if($this->canTransmit($wx, $wy, $wz, $nx, $ny, $nz)){
+					$c["edges"][$hash][] = $next;
+				}
+				if($rawOwner !== null){
 					continue;
 				}
 				if(!isset($c["wires"][$next])){
@@ -364,58 +382,46 @@ final class WireNetwork{
 	 */
 	private function stepMerge(int $id, array &$c, int $budget) : int{
 		$steps = 0;
-		while($c["mergingSources"] !== [] && $steps < $budget){
-			$sourceId = array_key_first($c["mergingSources"]);
-			if($sourceId === null){
+		while(isset($c["aliasPending"]) && $steps < $budget){
+			$owner = $c["aliasPending"];
+			$alias = array_key_last($this->continuationAliasSources[$owner] ?? []);
+			if($alias === null){
+				unset($this->continuationAliasSources[$owner], $c["aliasPending"]);
 				break;
 			}
+			$this->continuationAliases[$alias] = $id;
+			$this->continuationAliasSources[$id][$alias] = true;
+			unset($this->continuationAliasSources[$owner][$alias]);
+			++$steps;
+		}
+		while(!isset($c["aliasPending"]) && $c["mergingSources"] !== [] && $steps < $budget){
+			$sourceId = array_key_first($c["mergingSources"]);
 			$source = &$c["mergingSources"][$sourceId];
-
-			while($source["wires"] !== [] && $steps < $budget){
+			if($source["wires"] !== []){
 				$wHash = array_key_last($source["wires"]);
 				$coords = $source["wires"][$wHash];
 				unset($source["wires"][$wHash]);
-
 				$c["wires"][$wHash] = $coords;
 				$this->continuationOwner[$wHash] = $id;
-
 				if(isset($source["edges"][$wHash])){
 					$c["edges"][$wHash] = $source["edges"][$wHash];
 					unset($source["edges"][$wHash]);
 				}else{
 					$c["pending"][] = $wHash;
 				}
-
-				++$steps;
-			}
-
-			if($source["wires"] === []){
-				if(isset($source["pending"])){
-					foreach($source["pending"] as $pHash){
-						if(!isset($c["wires"][$pHash])){
-							$c["pending"][] = $pHash;
-						}
-					}
-				}
-				if(isset($source["mergingSources"])){
-					foreach($source["mergingSources"] as $subSourceId => $subSourceData){
-						$c["mergingSources"][$subSourceId] = $subSourceData;
-						$this->continuationAliases[$subSourceId] = $id;
-						foreach($this->continuationAliases as $src => $dst){
-							if($dst === $subSourceId){
-								$this->continuationAliases[$src] = $id;
-							}
-						}
-					}
-				}
+			}elseif(($source["mergingSources"] ?? []) !== []){
+				$subId = array_key_last($source["mergingSources"]);
+				$c["mergingSources"][$subId] = $source["mergingSources"][$subId];
+				unset($source["mergingSources"][$subId]);
+			}elseif(!$this->discardSourceData($source)){
 				unset($c["mergingSources"][$sourceId]);
 			}
+			unset($source);
+			++$steps;
 		}
-
-		if($c["mergingSources"] === []){
+		if($c["mergingSources"] === [] && !isset($c["aliasPending"])){
 			$c["phase"] = self::PHASE_DISCOVER;
 		}
-
 		return $steps;
 	}
 
@@ -494,39 +500,84 @@ final class WireNetwork{
 		return $steps;
 	}
 
-	/**
-	 * @param ContinuationState $c
-	 */
-	private function finalizeContinuation(int $id, array $c) : void{
-		foreach($c["wires"] as $hash => $_){
-			unset($this->continuationOwner[$hash]);
-			$this->done[$hash] = true;
-		}
-		$sourcesToClean = isset($c["mergingSources"]) ? array_values($c["mergingSources"]) : [];
-		while($sourcesToClean !== []){
-			$source = array_pop($sourcesToClean);
-			foreach($source["wires"] as $hash => $_){
-				unset($this->continuationOwner[$hash]);
-				$this->done[$hash] = true;
-			}
-			if(isset($source["mergingSources"])){
-				foreach($source["mergingSources"] as $subSource){
-					$sourcesToClean[] = $subSource;
-				}
+	/** @param MergingSource $source */
+	private function discardSourceData(array &$source) : bool{
+		foreach(["edges", "pending", "sourceQueue", "power", "applyQueue"] as $field){
+			if(($source[$field] ?? []) !== []){
+				array_pop($source[$field]);
+				return true;
 			}
 		}
-		unset($this->continuations[$id]);
-		foreach($this->continuationAliases as $aliasSource => $aliasTarget){
-			if($aliasTarget === $id || $aliasSource === $id){
-				unset($this->continuationAliases[$aliasSource]);
+		if(($source["buckets"] ?? []) !== []){
+			$key = array_key_last($source["buckets"]);
+			if($source["buckets"][$key] !== []){
+				array_pop($source["buckets"][$key]);
+			}else{
+				unset($source["buckets"][$key]);
 			}
+			return true;
 		}
+		return false;
+	}
 
-		if($c["mutated"]){
-			foreach($c["wires"] as $hash => [$wx, $wy, $wz]){
-				$this->engine->request($wx, $wy, $wz);
+	/** @param ContinuationState $c */
+	private function stepCleanup(int $id, array &$c, int $budget) : int{
+		$steps = 0;
+		while($steps < $budget){
+			if($c["wires"] !== []){
+				$hash = array_key_last($c["wires"]);
+				[$x, $y, $z] = $c["wires"][$hash];
+				unset($c["wires"][$hash]);
+				if($this->releaseOwner($hash, $id) && $c["cleanupMode"] === self::CLEANUP_SETTLED){
+					$this->done[$hash] = true;
+				}
+				if($c["mutated"]){
+					$this->engine->request($x, $y, $z);
+				}
+			}elseif($c["mergingSources"] !== []){
+				$sourceId = array_key_first($c["mergingSources"]);
+				$source = &$c["mergingSources"][$sourceId];
+				if($source["wires"] !== []){
+					$hash = array_key_last($source["wires"]);
+					unset($source["wires"][$hash]);
+					if($this->releaseOwner($hash, $id) && $c["cleanupMode"] === self::CLEANUP_SETTLED){
+						$this->done[$hash] = true;
+					}
+				}elseif(($source["mergingSources"] ?? []) !== []){
+					$subId = array_key_last($source["mergingSources"]);
+					$c["mergingSources"][$subId] = $source["mergingSources"][$subId];
+					unset($source["mergingSources"][$subId]);
+				}elseif(!$this->discardSourceData($source)){
+					unset($c["mergingSources"][$sourceId]);
+				}
+				unset($source);
+			}elseif($this->discardSourceData($c)){
+			}elseif(($this->continuationAliasSources[$id] ?? []) !== []){
+				$alias = array_key_last($this->continuationAliasSources[$id]);
+				// A pending merge may still have aliases forwarding through this source.
+				$subAlias = array_key_last($this->continuationAliasSources[$alias] ?? []);
+				if($subAlias !== null){
+					unset($this->continuationAliases[$subAlias], $this->continuationAliasSources[$alias][$subAlias]);
+				}else{
+					unset($this->continuationAliases[$alias], $this->continuationAliasSources[$id][$alias], $this->continuationAliasSources[$alias]);
+				}
+			}else{
+				unset($this->continuations[$id], $this->continuationAliasSources[$id]);
+				++$steps;
+				break;
 			}
+			++$steps;
 		}
+		return $steps;
+	}
+
+	private function releaseOwner(int $hash, int $id) : bool{
+		$owner = $this->continuationOwner[$hash] ?? null;
+		if($owner !== null && $this->resolveContinuationId($owner) === $id){
+			unset($this->continuationOwner[$hash]);
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -605,6 +656,54 @@ final class WireNetwork{
 			}
 		}
 		return $connected;
+	}
+
+	/** @return list<Vector3> */
+	public function getTransmittedWireNeighbours(Vector3 $pos) : array{
+		$x = $pos->getFloorX();
+		$y = $pos->getFloorY();
+		$z = $pos->getFloorZ();
+		$result = [];
+		foreach($this->connectedWires($x, $y, $z) as [$nx, $ny, $nz]){
+			if($this->canTransmit($x, $y, $z, $nx, $ny, $nz)){
+				$result[] = new Vector3($nx, $ny, $nz);
+			}
+		}
+		return $result;
+	}
+
+	public function isWireAreaLoaded(Vector3 $pos) : bool{
+		$x = $pos->getFloorX();
+		$z = $pos->getFloorZ();
+		foreach([[$x, $z], [$x - 1, $z], [$x + 1, $z], [$x, $z - 1], [$x, $z + 1]] as [$nx, $nz]){
+			if(!$this->world->isChunkLoaded($nx >> 4, $nz >> 4)){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return list<Vector3> */
+	public function getTorchSeedWires(RedstoneTorch $torch) : array{
+		$result = [];
+		foreach(Facing::ALL as $face){
+			$pos = $torch->getPosition()->getSide($face);
+			$block = $this->world->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+			if($torch->getRedstoneOutput($face, false, $this->engine) === 0){
+				continue;
+			}
+			if($block instanceof RedstoneWire){
+				$result[] = $pos;
+			}elseif(RedstoneEngine::isConductor($block) && $torch->getRedstoneOutput($face, true, $this->engine) > 0){
+				foreach(Facing::ALL as $side){
+					$next = $pos->getSide($side);
+					if($this->world->getBlockAt($next->getFloorX(), $next->getFloorY(), $next->getFloorZ()) instanceof RedstoneWire){
+						$result[] = $next;
+					}
+				}
+			}
+		}
+		return $result;
 	}
 
 	/** Power a wire gets from anything but other wire: sources beside it, and strongly powered blocks. */

@@ -31,6 +31,160 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 
 final class WireContinuationBudgetTest extends TestCase{
+	public function testSettledCleanupPreventsDuplicateContinuation() : void{
+		[$engine, $world] = $this->createEnvironment();
+		$network = $engine->getWires();
+		$this->enterSettledCleanup($network, $world);
+		$network->startTick();
+		$idBefore = (new \ReflectionProperty(WireNetwork::class, "nextContinuationId"))->getValue($network);
+		$budget = 0;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		self::assertSame($idBefore, (new \ReflectionProperty(WireNetwork::class, "nextContinuationId"))->getValue($network));
+	}
+
+	public function testSettledCleanupMarksReleasedNodesDone() : void{
+		[$engine, $world] = $this->createEnvironment();
+		$network = $engine->getWires();
+		$this->enterSettledCleanup($network, $world);
+		$network->startTick();
+		self::assertSame(1, $network->processDeferred(1));
+		$done = (new \ReflectionProperty(WireNetwork::class, "done"))->getValue($network);
+		self::assertTrue($done[World::blockHash(2, 64, 0)] ?? false);
+		$idBefore = (new \ReflectionProperty(WireNetwork::class, "nextContinuationId"))->getValue($network);
+		$budget = 0;
+		$network->update($world->getBlockAt(2, 64, 0), $budget);
+		self::assertSame($idBefore, (new \ReflectionProperty(WireNetwork::class, "nextContinuationId"))->getValue($network));
+	}
+
+	private function enterSettledCleanup(WireNetwork $network, World $world) : void{
+		for($x = 0; $x < 3; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$budget = 0;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		$states = new \ReflectionProperty(WireNetwork::class, "continuations");
+		for($i = 0; $i < 100; ++$i){
+			$network->processDeferred(1);
+			foreach($states->getValue($network) as $state){
+				if($state["phase"] === WireNetwork::PHASE_CLEANUP){
+					return;
+				}
+			}
+		}
+		self::fail("Fixture must enter settled cleanup before reclaiming its wires");
+	}
+
+	public function testNestedMergesFlattenAliasesWithinBudget() : void{
+		[$engine, $world] = $this->createEnvironment();
+		for($x = 0; $x < 600; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$network = $engine->getWires();
+		foreach([0, 100, 200, 300, 400, 599] as $x){
+			$budget = 0;
+			$network->update($world->getBlockAt($x, 64, 0), $budget);
+		}
+		$aliasesProperty = new \ReflectionProperty(WireNetwork::class, "continuationAliases");
+		$statesProperty = new \ReflectionProperty(WireNetwork::class, "continuations");
+		$nested = false;
+		for($i = 0; $i < 15000 && $network->hasDeferred(); ++$i){
+			$before = $aliasesProperty->getValue($network);
+			self::assertSame(1, $network->processDeferred(1));
+			$after = $aliasesProperty->getValue($network);
+			$redirected = 0;
+			foreach($before as $source => $target){
+				if(isset($after[$source]) && $after[$source] !== $target){
+					++$redirected;
+				}
+			}
+			self::assertLessThanOrEqual(1, $redirected, "A single step may redirect at most one existing alias");
+			foreach($statesProperty->getValue($network) as $state){
+				foreach($state["mergingSources"] as $source){
+					$nested = $nested || ($source["mergingSources"] ?? []) !== [];
+				}
+			}
+		}
+		self::assertTrue($nested, "Fixture must exercise a merge whose source is already merging");
+		self::assertFalse($network->hasDeferred());
+		self::assertSame([], $aliasesProperty->getValue($network));
+		for($x = 0; $x < 600; ++$x){
+			self::assertNull($network->getContinuationOwner(World::blockHash($x, 64, 0)));
+		}
+	}
+
+	public function testReassignedOwnershipSurvivesOldCleanup() : void{
+		[$engine, $world] = $this->createEnvironment();
+		for($x = 0; $x < 300; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$network = $engine->getWires();
+		foreach([0, 100, 299] as $x){
+			$budget = 0;
+			$network->update($world->getBlockAt($x, 64, 0), $budget);
+		}
+		$statesProperty = new \ReflectionProperty(WireNetwork::class, "continuations");
+		$found = false;
+		for($i = 0; $i < 3000 && !$found; ++$i){
+			$network->processDeferred(1);
+			foreach($statesProperty->getValue($network) as $state){
+				foreach($state["mergingSources"] as $source){
+					if(($source["mergingSources"] ?? []) !== []){
+						$found = true;
+					}
+				}
+			}
+		}
+		self::assertTrue($found);
+		$hash = World::blockHash(0, 64, 0);
+		$ownersProperty = new \ReflectionProperty(WireNetwork::class, "continuationOwner");
+		$ownersBefore = $ownersProperty->getValue($network);
+		$network->invalidate($hash);
+		self::assertNull($network->getContinuationOwner($hash));
+		self::assertSame($ownersBefore, $ownersProperty->getValue($network), "Nested invalidation must not scan and erase owner entries synchronously");
+		$budget = 0;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		$newOwner = $network->getContinuationOwner($hash);
+		self::assertNotNull($newOwner);
+		for($i = 0; $i < 300; ++$i){
+			self::assertLessThanOrEqual(1, $network->processDeferred(1));
+		}
+		self::assertSame($newOwner, $network->getContinuationOwner($hash));
+		$network->invalidate($hash);
+		for($i = 0; $i < 6000 && $network->hasDeferred(); ++$i){
+			self::assertLessThanOrEqual(1, $network->processDeferred(1));
+		}
+		self::assertFalse($network->hasDeferred());
+		self::assertSame([], (new \ReflectionProperty(WireNetwork::class, "continuationOwner"))->getValue($network));
+		self::assertSame([], (new \ReflectionProperty(WireNetwork::class, "continuationAliases"))->getValue($network));
+	}
+	public function testInvalidatedCleanupAllowsFreshTraversal() : void{
+		[$engine, $world] = $this->createEnvironment();
+		for($x = 0; $x < 100; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$network = $engine->getWires();
+		$budget = 90;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		$hash = World::blockHash(0, 64, 0);
+		$farHash = World::blockHash(90, 64, 0);
+		$network->invalidate($hash);
+		self::assertNull($network->getContinuationOwner($farHash));
+		self::assertTrue($network->hasDeferred(), "Invalidation must leave physical cleanup for the shared budget");
+		$budget = 0;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		$newOwner = $network->getContinuationOwner($hash);
+		self::assertNotNull($newOwner);
+		self::assertSame(1, $network->processDeferred(1));
+		self::assertSame($newOwner, $network->getContinuationOwner($hash));
+		for($i = 0; $i < 1000 && $network->hasDeferred(); ++$i){
+			self::assertLessThanOrEqual(1, $network->processDeferred(1));
+		}
+		self::assertFalse($network->hasDeferred());
+	}
 
 	/**
 	 * @return array{RedstoneEngine, World, array<string, Block>}
@@ -192,7 +346,7 @@ final class WireContinuationBudgetTest extends TestCase{
 
 		$world->setBlockAt(10, 64, 0, VanillaBlocks::AIR(), true);
 		self::assertNull($engine->getWires()->getContinuationOwner($hash0), "Ownership must be released upon mutation invalidation");
-		self::assertFalse($engine->getWires()->hasDeferred(), "Invalidated continuation must be removed");
+		self::assertTrue($engine->getWires()->hasDeferred(), "Physical cleanup must remain budgeted after logical invalidation");
 
 		$engine->getWires()->update($wire0);
 		while($engine->getWires()->hasDeferred()){

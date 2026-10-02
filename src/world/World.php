@@ -2296,6 +2296,8 @@ class World implements ChunkManager{
 		}
 		$this->changedBlocks[$chunkHash][$relativeBlockHash] = $pos;
 
+		$this->redstone?->getTorchBurnout()->onBlockChanged($block);
+
 		foreach($this->getChunkListeners($chunkX, $chunkZ) as $listener){
 			$listener->onBlockChanged($pos);
 		}

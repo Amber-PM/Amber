@@ -54,6 +54,10 @@ final class RedstoneEngine{
 	private array $queued = [];
 	/** @var array<int, list<int>> tick => block hashes whose delayed change is due */
 	private array $delayed = [];
+	/** @var array<int, int> due tick => offset index of next element to process */
+	private array $delayedCursor = [];
+	/** @var \SplMinHeap<int> */
+	private \SplMinHeap $delayedTicksHeap;
 	/** @var array<int, int> block hash => tick its delayed change is due */
 	private array $delayedIndex = [];
 	/** @var array<int, int> block hash => state ID of block when scheduled */
@@ -68,6 +72,7 @@ final class RedstoneEngine{
 	private int $currentTick = 0;
 	private int $currentBudget = 0;
 	private bool $isTicking = false;
+	private bool $feedbackTurn = false;
 
 	private WireNetwork $wires;
 	private TorchBurnout $torchBurnout;
@@ -78,6 +83,7 @@ final class RedstoneEngine{
 		private int $maxUpdatesPerTick
 	){
 		$this->queue = new \SplQueue();
+		$this->delayedTicksHeap = new \SplMinHeap();
 		$this->wires = new WireNetwork($this, $world);
 		$this->torchBurnout = new TorchBurnout();
 		$this->containerWatch = new ContainerWatch($world);
@@ -108,6 +114,8 @@ final class RedstoneEngine{
 		$this->queue = new \SplQueue();
 		$this->queued = [];
 		$this->delayed = [];
+		$this->delayedCursor = [];
+		$this->delayedTicksHeap = new \SplMinHeap();
 		$this->delayedIndex = [];
 		$this->delayedState = [];
 		$this->unloadedDelayed = [];
@@ -142,10 +150,14 @@ final class RedstoneEngine{
 	 */
 	public function onNeighbourUpdate(Block $block) : void{
 		$pos = $block->getPosition();
+		$this->torchBurnout->invalidateFeedbackAt($block);
 		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		$this->wires->invalidate($hash);
 		if(self::isComponent($block)){
 			$this->active = true;
+			if($block instanceof RedstoneTorch){
+				$this->torchBurnout->forgetIfReplaced($pos, $block->getStateId());
+			}
 			if(isset($this->delayedState[$hash]) && $this->delayedState[$hash] !== $block->getStateId()){
 				$this->cancelSchedule($pos);
 				$this->torchBurnout->forget($hash);
@@ -157,12 +169,12 @@ final class RedstoneEngine{
 			return;
 		}
 		$this->cancelSchedule($pos);
+		$this->torchBurnout->forget($hash);
 		if(!$this->active){
 			return;
 		}
 		//whatever was here is gone: forget its state
 		unset($this->lastPowered[$hash]);
-		$this->torchBurnout->forget($hash);
 		if(self::isConductor($block)){
 			$this->requestComponentsAround($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		}
@@ -232,7 +244,7 @@ final class RedstoneEngine{
 		$this->delayedState[$hash] = $stateId;
 		if(!isset($this->delayed[$due])){
 			$this->delayed[$due] = [];
-			ksort($this->delayed);
+			$this->delayedTicksHeap->insert($due);
 		}
 		$this->delayed[$due][] = $hash;
 	}
@@ -275,6 +287,17 @@ final class RedstoneEngine{
 		$this->currentBudget = $this->maxUpdatesPerTick;
 		$this->isTicking = true;
 		try{
+			$otherWork = $this->delayed !== [] || $this->unloadedDelayed !== [] || $this->wires->hasDeferred() || !$this->queue->isEmpty();
+			$feedbackBudget = $this->currentBudget;
+			if($otherWork){
+				if($feedbackBudget === 1){
+					$this->feedbackTurn = !$this->feedbackTurn;
+					$feedbackBudget = $this->feedbackTurn ? 0 : 1;
+				}else{
+					$feedbackBudget = max(1, (int) ($feedbackBudget / 4));
+				}
+			}
+			$this->currentBudget -= $this->torchBurnout->processFeedback($this, $feedbackBudget);
 			if($this->unloadedDelayed !== [] && $this->currentBudget > 0){
 				$chunkCheckLimit = min(count($this->unloadedDelayed), max(32, $this->currentBudget));
 				$checked = 0;
@@ -292,6 +315,8 @@ final class RedstoneEngine{
 						continue;
 					}
 
+					$staleChecks = 0;
+					$staleLimit = min(count($events), max(32, $this->currentBudget));
 					foreach($events as $hash => $dueTick){
 						if($this->currentBudget <= 0){
 							break;
@@ -300,6 +325,9 @@ final class RedstoneEngine{
 						--$this->unloadedDelayedCount;
 
 						if(($this->delayedIndex[$hash] ?? null) !== $dueTick){
+							if(++$staleChecks >= $staleLimit){
+								break;
+							}
 							continue;
 						}
 
@@ -324,15 +352,21 @@ final class RedstoneEngine{
 				}
 			}
 
-			if($this->delayed !== []){
+			if(!$this->delayedTicksHeap->isEmpty()){
 				$staleChecks = 0;
 				$staleLimit = $this->maxUpdatesPerTick * 4;
-				foreach($this->delayed as $tick => $hashes){
+				while(!$this->delayedTicksHeap->isEmpty() && $this->currentBudget > 0){
+					$tick = $this->delayedTicksHeap->top();
 					if($tick > $currentTick){
 						break;
 					}
+					if(!isset($this->delayed[$tick])){
+						$this->delayedTicksHeap->extract();
+						continue;
+					}
+					$hashes = $this->delayed[$tick];
 					$count = count($hashes);
-					$idx = 0;
+					$idx = $this->delayedCursor[$tick] ?? 0;
 					while($idx < $count && $this->currentBudget > 0){
 						$hash = $hashes[$idx++];
 						if(($this->delayedIndex[$hash] ?? null) !== $tick){
@@ -361,16 +395,19 @@ final class RedstoneEngine{
 						}
 					}
 					if($idx >= $count){
-						unset($this->delayed[$tick]);
+						$this->delayedTicksHeap->extract();
+						unset($this->delayed[$tick], $this->delayedCursor[$tick]);
 					}else{
-						$this->delayed[$tick] = array_slice($hashes, $idx);
+						$this->delayedCursor[$tick] = $idx;
 						break;
 					}
 				}
 			}
 
-			if($currentTick % self::REDSTONE_TICK === 0){
-				$this->containerWatch->check($this);
+			if($this->currentBudget > 0 && $currentTick % self::REDSTONE_TICK === 0 && $this->containerWatch->getWatchedCount() > 0){
+				$limit = min($this->currentBudget, max(1, (int) ($this->currentBudget / 4)));
+				$consumed = $this->containerWatch->check($this, $limit);
+				$this->currentBudget -= $consumed;
 			}
 
 			$this->wires->startTick();
@@ -382,11 +419,16 @@ final class RedstoneEngine{
 				$this->currentBudget -= $consumed;
 			}
 
+			$unloadedSkips = 0;
+			$unloadedSkipLimit = max(1, $this->currentBudget);
 			while($this->currentBudget > 0 && !$this->queue->isEmpty()){
 				$hash = $this->queue->dequeue();
 				unset($this->queued[$hash]);
 				World::getBlockXYZ($hash, $x, $y, $z);
 				if(!$this->world->isChunkLoaded($x >> 4, $z >> 4)){
+					if(++$unloadedSkips >= $unloadedSkipLimit){
+						break;
+					}
 					continue;
 				}
 				++$this->processed;

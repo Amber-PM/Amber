@@ -64,13 +64,24 @@ final class ContainerWatch{
 		}
 	}
 
+	public function getWatchedCount() : int{
+		return count($this->watched);
+	}
+
 	public function clear() : void{
 		$this->watched = [];
 	}
 
-	/** Queues the comparators whose container changed. */
-	public function check(RedstoneEngine $engine) : void{
+	public function check(RedstoneEngine $engine, int $limit) : int{
+		$checked = 0;
 		foreach($this->watched as $hash => $signal){
+			if($checked >= $limit){
+				break;
+			}
+			++$checked;
+			unset($this->watched[$hash]);
+			$this->watched[$hash] = $signal;
+
 			World::getBlockXYZ($hash, $x, $y, $z);
 			if(!$this->world->isChunkLoaded($x >> 4, $z >> 4)){
 				continue;
@@ -88,6 +99,7 @@ final class ContainerWatch{
 				$engine->request($x, $y, $z);
 			}
 		}
+		return $checked;
 	}
 
 	/** The signal a comparator reads from a container: 0 when empty, 1-15 by how full it is. */

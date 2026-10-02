@@ -64,7 +64,12 @@ class RedstoneTorch extends Torch implements Lightable, RedstoneSource, DelayedR
 	}
 
 	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
-		if($this->shouldBeLit($engine) !== $this->lit){
+		$engine->getTorchBurnout()->onUpdate($this->position, $engine->getCurrentTick());
+		$lit = $this->shouldBeLit($engine);
+		if($lit !== $this->lit){
+			if($this->lit){
+				$engine->getTorchBurnout()->checkFeedback($this, $engine, false);
+			}
 			$engine->schedule($this->position, RedstoneEngine::REDSTONE_TICK);
 		}
 	}
@@ -72,18 +77,16 @@ class RedstoneTorch extends Torch implements Lightable, RedstoneSource, DelayedR
 	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
 		$lit = $this->shouldBeLit($engine);
 		if($lit === $this->lit){
+			$engine->getTorchBurnout()->cancelFeedback($this->position, false);
 			return;
 		}
-		if($this->lit && !$lit){
-			$burnout = $engine->getTorchBurnout();
-			$unlit = $this->setLit(false);
-			$burnout->recordToggle($this->position, $engine, $unlit->getStateId());
-			if($burnout->isBurntOut($this->position, $engine->getCurrentTick())){
-				$lit = false;
-			}
+		if($this->lit && !$lit && !$engine->getTorchBurnout()->isBurntOut($this->position, $engine->getCurrentTick())){
+			$engine->getTorchBurnout()->recordExtinguish($this, $engine);
 		}
 		if($lit !== $this->lit){
-			$engine->getWorld()->setBlock($this->position, $this->setLit($lit));
+			$changed = (clone $this)->setLit($lit);
+			$engine->getTorchBurnout()->expectState($this->position, $changed->getStateId());
+			$engine->getWorld()->setBlock($this->position, $changed);
 			$engine->requestAround($this->position);
 		}
 	}
