@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\AnalogRedstoneSignalEmitter;
 use pocketmine\block\utils\AnalogRedstoneSignalEmitterTrait;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
@@ -32,12 +33,13 @@ use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\world\redstone\RedstoneEngine;
 use function cos;
 use function max;
 use function round;
 use const M_PI;
 
-class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter{
+class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter, RedstoneSource{
 	use AnalogRedstoneSignalEmitterTrait;
 
 	protected bool $inverted = false;
@@ -100,4 +102,8 @@ class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter{
 	}
 
 	//TODO
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $strongOnly ? 0 : $this->signalStrength;
+	}
 }

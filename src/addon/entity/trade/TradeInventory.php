@@ -50,8 +50,12 @@ final class TradeInventory extends SimpleInventory implements TemporaryInventory
 	public function getPlayer() : Player{ return $this->player; }
 
 	public function getOffer(int $netId) : ?TradeOffer{
+		if(!$this->trader->canBeUsedBy($this->player)){
+			return null;
+		}
+		$tier = $this->trader->getTradeTier();
 		foreach($this->trader->getTradeOffers() as $offer){
-			if($offer->netId === $netId){
+			if($offer->netId === $netId && $offer->tier <= $tier){
 				return $offer;
 			}
 		}

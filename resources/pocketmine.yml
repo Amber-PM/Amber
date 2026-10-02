@@ -92,6 +92,13 @@ network:
   disabled-protocols: []
   #List of protocol IDs to accept exclusively (e.g. [2168]). If empty, all supported protocols except disabled-protocols are accepted.
   allowed-protocols: []
+  #Accept players through a WaterdogPE proxy. Set use_login_extras: true in WaterdogPE's config.yml.
+  #Players' IP and XUID are then taken from what the proxy sends, so nothing but the proxy may be able to connect:
+  #list its address in proxy-addresses and/or firewall this server's port.
+  waterdog-support: false
+  #Addresses allowed to connect while waterdog-support is on. Must contain your proxy's address; an empty list refuses every login.
+  proxy-addresses:
+    - 127.0.0.1
 
 debug:
   #If > 1, it will show debug messages in the console
@@ -103,6 +110,9 @@ player:
   #If true, checks that joining players' Xbox user ID (XUID) match what was previously recorded.
   #This also prevents non-XBL players using XBL players' usernames to steal their data on servers with xbox-auth=off.
   verify-xuid: true
+  #Use the game's own spectator mode for players in spectator. If false, spectators are shown to their client
+  #as creative players that fly through blocks, as PocketMine-MP has always done.
+  native-spectator: true
 
 level-settings:
   #The default format that worlds will use when created
@@ -130,6 +140,14 @@ chunk-ticking:
     #- ice
     #- fire
 
+redstone:
+  #Redstone wire, torches, repeaters, comparators, and what they power (lamps, copper bulbs, doors,
+  #trapdoors, fence gates, TNT, powered and activator rails, note blocks, and hopper locking).
+  #Pistons, droppers, dispensers and observers are not simulated.
+  enabled: true
+  #Redstone positions evaluated per tick in each world. Busy circuits past this slow down instead of lagging the server.
+  max-updates-per-tick: 2000
+
 chunk-generation:
   #Max. amount of chunks in the waiting queue to be populated
   population-queue-size: 32
@@ -137,9 +155,42 @@ chunk-generation:
 ticks-per:
   autosave: 6000
 
+web:
+  #Built-in web panel (players, console, add-ons, performance) at http(s)://<address>:<port>/, and Prometheus
+  #metrics at /metrics. The admin token can run any command: keep the panel on 127.0.0.1 unless it uses HTTPS
+  #(tls-certificate below, or a reverse proxy), and never share the token.
+  enabled: false
+  address: 127.0.0.1
+  port: 8080
+  #Admin token for the panel and its API (can run commands). Empty: a random token is generated into web-token.txt.
+  token: ""
+  #Tokens that can see the panel, console output and metrics but not run commands, e.g. for dashboards and monitoring.
+  #Each must be at least 16 characters.
+  read-only-tokens: []
+  #Whether /metrics needs a token too (Authorization: Bearer <token>).
+  metrics-require-token: false
+  #Serve the panel over HTTPS with this certificate and private key (PEM files, relative to the server folder).
+  #Both empty: plain HTTP.
+  tls-certificate: ""
+  tls-key: ""
+  #Console lines the panel keeps (100-10000).
+  log-lines: 1000
+
+backups:
+  #Automatic world backups, as zip files in backups/<world>/. /world backup [world] makes one any time.
+  #To restore one, stop the server and unzip it into worlds/<world>/ in place of the world's folder.
+  enabled: false
+  #Minutes between automatic backups.
+  interval-minutes: 360
+  #Backups to keep per world; older ones are deleted. 0 keeps them all.
+  keep: 7
+  #World folder names to back up automatically. Empty: every loaded world.
+  worlds: []
+
 auto-report:
-  #Send crash reports for processing
-  enabled: true
+  #Send crash reports to the crash archive at "host". Crash reports include server settings and the plugin list.
+  #crash.pmmp.io is PocketMine-MP's archive, for official PocketMine-MP builds: only enable this with a host of your own.
+  enabled: false
   send-code: true
   send-settings: true
   send-phpinfo: false
@@ -152,7 +203,8 @@ anonymous-statistics:
   host: stats.pocketmine.net
 
 auto-updater:
-  enabled: true
+  #update.pmmp.io announces PocketMine-MP releases, not AmberPM ones: only enable this with a host of your own.
+  enabled: false
   on-update:
     warn-console: true
   #Can be development, alpha, beta or stable.

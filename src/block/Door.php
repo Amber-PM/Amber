@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
@@ -33,9 +34,10 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\DoorSound;
 
-class Door extends Transparent implements HorizontalFacing{
+class Door extends Transparent implements HorizontalFacing, RedstoneReceiver{
 	use HorizontalFacingTrait;
 
 	protected bool $top = false;
@@ -173,5 +175,20 @@ class Door extends Transparent implements HorizontalFacing{
 
 	private function canBeSupportedAt(Block $block) : bool{
 		return $block->getAdjacentSupportType(Facing::DOWN)->hasEdgeSupport();
+	}
+
+	/** Power into either half opens the door, and taking it away closes it; a door opened by hand stays open. */
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$bottom = $this->top ? $this->position->getSide(Facing::DOWN) : $this->position;
+		$powered = $engine->getReceivedPower($bottom) > 0 || $engine->getReceivedPower($bottom->getSide(Facing::UP)) > 0;
+		if($engine->powerChanged($bottom, $powered) && $this->open !== $powered){
+			$world = $engine->getWorld();
+			foreach([$bottom, $bottom->getSide(Facing::UP)] as $partPos){
+				$part = $world->getBlock($partPos);
+				if($part instanceof Door){
+					$world->setBlock($partPos, $part->setOpen($powered));
+				}
+			}
+		}
 	}
 }

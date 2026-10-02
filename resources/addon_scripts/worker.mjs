@@ -13,6 +13,13 @@ delete globalThis.fetch;
 delete globalThis.WebSocket;
 delete globalThis.EventSource;
 
+// --permission does not cover sockets or signals, and getBuiltinModule() skips the import hooks
+for(const name of ["getBuiltinModule", "binding", "_linkedBinding", "dlopen", "kill", "chdir", "execve", "loadEnvFile", "setuid", "setgid", "seteuid", "setegid", "setgroups", "initgroups"]){
+	try{
+		Object.defineProperty(process, name, { value: undefined, writable: false, configurable: false });
+	}catch{}
+}
+
 let api, ui, bridge;
 
 function drain(){

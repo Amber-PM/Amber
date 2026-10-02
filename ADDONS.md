@@ -299,6 +299,21 @@ world.afterEvents.playerSpawn.subscribe(({ player }) => {
 plugins.expose("mypack:getLevel", (name) => world.getDynamicProperty(`level:${name}`) ?? 1);
 ```
 
+**TypeScript**: the server writes type definitions for `@amber/plugins` to `addons/types/amber-plugins.d.ts`.
+Add that file to your pack's TypeScript project, and declare the plugin functions you use to get them typed:
+
+```ts
+import { plugins } from "@amber/plugins";
+
+declare module "@amber/plugins" {
+	interface PluginFunctions {
+		"economy:balance": (player: string) => number;
+	}
+}
+
+const coins = plugins.call("economy:balance", player.name); // number
+```
+
 Scripts' `runCommand()` can also run any plugin command, so packs can use plugin features without any code.
 Plugins can call `exposeFunction()` in `onEnable()`; scripts start right after all plugins are enabled.
 
@@ -316,6 +331,8 @@ scripting:
   node: node           # path to the Node.js binary
   tick-budget-ms: 30   # script time per tick before the server stops waiting
   memory-mb: 256       # memory limit of the script host
+pathfinding:
+  async: true          # run mob path searches in async workers instead of the main thread
 spawning:
   enabled: true        # natural spawning from spawn rules
   interval-ticks: 40   # how often a spawn attempt is made per player
@@ -367,6 +384,7 @@ and custom block IDs in the client's own (FNV-1 64) order on every version.
 | `/addons items` · `blocks` · `entities` | Lists that content with identifiers |
 | `/addons give <id> [count] [player]` | Gives an add-on item or block |
 | `/addons spawn <id>` | Spawns an add-on entity at your position |
+| `/addons reload` | Restarts scripts from the pack files and reloads loot tables, structures, trade tables and spawn rules; lists changes (new packs, items, blocks, entities, recipes, resource packs) that need a restart |
 
 Permission: `pocketmine.command.addons` (operators by default).
 

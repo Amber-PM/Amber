@@ -216,6 +216,8 @@ final class ScriptHost{
 	private int $nestedDepth = 0;
 	private const MAX_NESTED_DEPTH = 5;
 	private int $asyncWorkBudget = 100;
+	/** Exponential moving average of the time scripts took per server tick, in milliseconds. */
+	private float $averageTickMs = 0.0;
 
 	private string $writeBuffer = "";
 	private const MAX_WRITE_BUFFER = 16 * 1024 * 1024; // 16MB limit
@@ -370,6 +372,17 @@ final class ScriptHost{
 		$this->drainStderr();
 		$this->logger->error("Add-on scripts: the script host stopped ($why)");
 		$this->stop();
+		$this->resetScriptState();
+		if(++$this->restarts <= 3){
+			$this->logger->info("Add-on scripts: restarting the script host (attempt {$this->restarts} of 3)");
+			$this->start();
+		}else{
+			$this->logger->error("Add-on scripts: giving up after 3 restarts; scripts are off until the server restarts");
+		}
+	}
+
+	/** Forgets everything the running scripts registered. */
+	private function resetScriptState() : void{
 		$this->subscriptions = [];
 		$this->queue = [];
 		$this->customComponents = [];
@@ -378,12 +391,17 @@ final class ScriptHost{
 		$this->busy = false;
 		$this->nestedDepth = 0;
 		$this->servicing = "";
-		if(++$this->restarts <= 3){
-			$this->logger->info("Add-on scripts: restarting the script host (attempt {$this->restarts} of 3)");
-			$this->start();
-		}else{
-			$this->logger->error("Add-on scripts: giving up after 3 restarts; scripts are off until the server restarts");
-		}
+	}
+
+	/**
+	 * Stops the scripts and starts them again from the pack files, picking up edits. Dynamic properties are kept.
+	 * Returns whether scripts are running afterwards.
+	 */
+	public function restart() : bool{
+		$this->stop();
+		$this->resetScriptState();
+		$this->restarts = 0;
+		return $this->start();
 	}
 
 	private function nodeVersion() : ?string{
@@ -615,6 +633,7 @@ final class ScriptHost{
 			return;
 		}
 		$this->lastTick = $currentTick;
+		$start = hrtime(true);
 		try{
 			if($this->busy){
 				if($this->pumpUntil(["done"], $this->tickBudgetMs) === null){
@@ -640,8 +659,16 @@ final class ScriptHost{
 			}
 		}catch(\RuntimeException $e){
 			$this->crashed($e->getMessage());
+		}finally{
+			$this->averageTickMs = $this->averageTickMs * 0.95 + ((hrtime(true) - $start) / 1_000_000) * 0.05;
 		}
 	}
+
+	public function getAverageTickMs() : float{ return $this->averageTickMs; }
+
+	public function getTickBudgetMs() : int{ return $this->tickBudgetMs; }
+
+	public function isBusy() : bool{ return $this->busy; }
 
 	/**
 	 * Whether any of the custom components defines the hook, so the server can skip a call scripts would ignore

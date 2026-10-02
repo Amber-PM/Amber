@@ -28,6 +28,7 @@ use pocketmine\addon\block\AddonBlockDefinition;
 use pocketmine\addon\entity\AddonEntity;
 use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\addon\entity\ai\MobBrain;
+use pocketmine\addon\entity\ai\Navigator;
 use pocketmine\addon\entity\trade\TradeTable;
 use pocketmine\addon\item\AddonArmorItem;
 use pocketmine\addon\item\AddonDurableItem;
@@ -105,6 +106,9 @@ use function basename;
 use function count;
 use function explode;
 use function file_get_contents;
+use function filemtime;
+use function filesize;
+use function hash;
 use function hash_file;
 use function hash_final;
 use function hash_init;
@@ -182,6 +186,10 @@ final class AddonManager{
 
 	/** @var array<string, int> */
 	private array $itemRuntimeIds = [];
+	/** @var array<string, true> */
+	private array $resourcePackIconsSet = [];
+	/** @var array<string, string> what needs a restart to change, as loaded => fingerprint */
+	private array $contentFingerprints = [];
 	/** @var array<string, int> */
 	private array $blockNumericIds = [];
 	/** @var array<string, array{0: ?CreativeGroup, 1: CreativeCategory}> */
@@ -249,9 +257,17 @@ final class AddonManager{
 				"Restart the server after adding or removing an add-on.\n");
 		}
 
+		//TypeScript definitions for pack authors writing scripts against @amber/plugins
+		$types = @file_get_contents(Path::join(\pocketmine\RESOURCE_PATH, "addon_scripts", "types", "amber-plugins.d.ts"));
+		$typesTarget = Path::join($this->path, "types", "amber-plugins.d.ts");
+		if($types !== false && @file_get_contents($typesTarget) !== $types){
+			@mkdir(Path::join($this->path, "types"), 0777, true);
+			Filesystem::safeFilePutContents($typesTarget, $types);
+		}
+
 		$entries = scandir($this->path);
 		foreach($entries === false ? [] : $entries as $entry){
-			if($entry === "." || $entry === ".." || $entry === ".cache" || $entry === "README.txt"){
+			if($entry === "." || $entry === ".." || $entry === ".cache" || $entry === "README.txt" || $entry === "types"){
 				continue;
 			}
 			$full = Path::join($this->path, $entry);
@@ -270,6 +286,11 @@ final class AddonManager{
 				$this->readBehaviorPack($pack);
 			}
 		}
+		foreach($this->packs as $pack){
+			if($pack->isResourcePack()){
+				$this->readResourcePackItemIcons($pack);
+			}
+		}
 
 		//register in identifier order so runtime IDs do not depend on file system order
 		ksort($this->itemDefinitions);
@@ -282,6 +303,7 @@ final class AddonManager{
 			$this->tryRegister("item", $definition->getIdentifier(), fn() => $this->registerItem($definition));
 		}
 		$this->assignBlockIds();
+		$this->shareBlocksWithWorkers();
 		$this->registerEntities();
 		$this->reportUnsentComponents();
 		$this->reportEntityFeatures();
@@ -307,6 +329,8 @@ final class AddonManager{
 			max(64, (int) ($scripting["memory-mb"] ?? 256)),
 			$this->logger
 		);
+
+		$this->contentFingerprints = $this->contentFingerprints();
 
 		$resourcePacks = count(array_filter($this->packs, fn(AddonPack $p) => $p->isResourcePack()));
 		if($this->packs !== []){
@@ -550,14 +574,7 @@ final class AddonManager{
 		if($pack->getScriptEntry() !== null){
 			$this->scriptPacks[] = $pack;
 		}
-		foreach($this->jsonFiles(Path::join($pack->getPath(), "spawn_rules")) as $file){
-			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
-			try{
-				$this->spawnRules[] = SpawnRule::fromJson(AddonJson::decode((string) file_get_contents($file), $relative), $relative);
-			}catch(AddonException $e){
-				$this->logger->error("Skipped spawn rules " . $e->getMessage());
-			}
-		}
+		$this->readSpawnRules($pack);
 
 		$vanillaOverrides = [];
 		foreach($this->jsonFiles(Path::join($pack->getPath(), "recipes")) as $file){
@@ -585,6 +602,127 @@ final class AddonManager{
 		if($vanillaOverrides !== []){
 			//behavior packs commonly redefine vanilla mobs or the player; the server keeps its own
 			$this->logger->warning("Add-on " . $pack->getName() . ": " . count($vanillaOverrides) . " vanilla override(s) not applied, the server's own are used (" . implode(", ", $vanillaOverrides) . ")");
+		}
+	}
+
+	/**
+	 * Fingerprints of what cannot change while the server runs: the add-ons folder (archives added, removed or
+	 * replaced), behavior pack items, blocks, entities, recipes and manifests (registered once), and resource
+	 * packs (players download them when they join).
+	 *
+	 * @return array<string, string>
+	 */
+	private function contentFingerprints() : array{
+		$prints = [];
+		$listing = [];
+		$entries = scandir($this->path);
+		foreach($entries === false ? [] : $entries as $entry){
+			if(in_array($entry, [".", "..", ".cache", ".runtime", "types", "README.txt", "config.yml"], true)){
+				continue;
+			}
+			$full = Path::join($this->path, $entry);
+			$listing[] = $entry . ":" . (is_file($full) ? filesize($full) . ":" . filemtime($full) : "dir");
+		}
+		$prints["the add-ons folder"] = hash("sha256", implode("\n", $listing));
+
+		foreach($this->packs as $pack){
+			$ctx = hash_init("sha256");
+			$parts = $pack->isBehaviorPack() ? ["manifest.json", "items", "blocks", "entities", "recipes"] : [""];
+			foreach($parts as $part){
+				$root = Path::join($pack->getPath(), $part);
+				if(is_file($root)){
+					hash_update($ctx, $part . "\0" . (string) hash_file("sha256", $root) . "\0");
+				}elseif(is_dir($root)){
+					$files = [];
+					foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file){
+						if($file instanceof \SplFileInfo && $file->isFile()){
+							$files[] = $file->getPathname();
+						}
+					}
+					sort($files);
+					foreach($files as $file){
+						hash_update($ctx, Path::makeRelative($file, $pack->getPath()) . "\0" . (string) hash_file("sha256", $file) . "\0");
+					}
+				}
+			}
+			$prints[$pack->getName() . " (" . ($pack->isBehaviorPack() ? "behavior pack items, blocks, entities or recipes" : "resource pack") . ")"] = hash_final($ctx);
+		}
+		return $prints;
+	}
+
+	/**
+	 * Reloads what can change while the server runs: scripts (restarted from the pack files), loot tables,
+	 * structures, trade tables and spawn rules. Functions are always read from disk.
+	 *
+	 * @return array{scripts: bool|null, restartNeeded: list<string>} scripts: whether they run again (null
+	 *         when no pack has scripts); restartNeeded: changes that only a restart applies
+	 */
+	public function reload() : array{
+		$restartNeeded = [];
+		$current = $this->contentFingerprints();
+		foreach($this->contentFingerprints as $label => $print){
+			if(($current[$label] ?? null) !== $print){
+				$restartNeeded[] = $label;
+			}
+		}
+		foreach($current as $label => $_){
+			if(!isset($this->contentFingerprints[$label])){
+				$restartNeeded[] = $label;
+			}
+		}
+
+		$this->lootTables = new LootTables($this->behaviorRoots, $this->logger);
+		$this->structures = new AddonStructures($this->behaviorRoots, $this->logger);
+		$this->tradeTables = [];
+
+		$this->spawnRules = [];
+		foreach($this->packs as $pack){
+			if($pack->isBehaviorPack()){
+				$this->readSpawnRules($pack);
+			}
+		}
+		$spawning = (array) $this->config()->get("spawning", []);
+		$this->spawner = (bool) ($spawning["enabled"] ?? true) && $this->spawnRules !== [] ? $this->createSpawner() : null;
+
+		$scripts = null;
+		if($this->scriptHost !== null && $this->scriptPacks !== []){
+			$scripts = $this->scriptHost->restart();
+		}
+		return ["scripts" => $scripts, "restartNeeded" => $restartNeeded];
+	}
+
+	/** Older-format add-ons only declare item icons in the resource pack. */
+	private function readResourcePackItemIcons(AddonPack $pack) : void{
+		foreach($this->jsonFiles(Path::join($pack->getPath(), "items")) as $file){
+			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
+			try{
+				$json = AddonJson::decode((string) file_get_contents($file), $relative);
+			}catch(AddonException $e){
+				$this->logger->debug("Skipped resource pack item " . $e->getMessage());
+				continue;
+			}
+			$item = is_array($json["minecraft:item"] ?? null) ? $json["minecraft:item"] : null;
+			$identifier = is_array($item["description"] ?? null) ? ($item["description"]["identifier"] ?? null) : null;
+			if(!is_string($identifier) || !isset($this->itemDefinitions[$identifier]) || isset($this->resourcePackIconsSet[$identifier])){
+				continue;
+			}
+			$components = is_array($item["components"] ?? null) ? $item["components"] : [];
+			$icon = AddonItemDefinition::iconFromComponent($components["minecraft:icon"] ?? null);
+			if($icon !== null){
+				$this->itemDefinitions[$identifier]->setResourcePackIcon($icon);
+				$this->resourcePackIconsSet[$identifier] = true;
+			}
+		}
+	}
+
+	private function readSpawnRules(AddonPack $pack) : void{
+		foreach($this->jsonFiles(Path::join($pack->getPath(), "spawn_rules")) as $file){
+			$relative = $pack->getName() . "/" . Path::makeRelative($file, $pack->getPath());
+			try{
+				$this->spawnRules[] = SpawnRule::fromJson(AddonJson::decode((string) file_get_contents($file), $relative), $relative);
+			}catch(AddonException $e){
+				$this->logger->error("Skipped spawn rules " . $e->getMessage());
+			}
 		}
 	}
 
@@ -692,6 +830,25 @@ final class AddonManager{
 		$this->blocks[$id] = $block;
 		[$group, $category] = $this->resolveCreativeGroup($definition->getCategory(), $definition->getGroup());
 		CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
+	}
+
+	/** Async workers serialize chunks and need the add-on block states too. */
+	private function shareBlocksWithWorkers() : void{
+		if($this->blocks === []){
+			return;
+		}
+		$serializer = GlobalBlockStateHandlers::getSerializer();
+		$stateData = [];
+		foreach($this->blocks as $block){
+			foreach($block->generateStatePermutations() as $state){
+				$stateData[$state->getStateId()] = $serializer->serialize($state->getStateId());
+			}
+		}
+		$payload = AddonWorkerData::encode($this->getNetworkBlockStates(), $stateData);
+		$pool = $this->server->getAsyncPool();
+		$pool->addWorkerStartHook(static function(int $worker) use ($pool, $payload) : void{
+			$pool->submitTaskToWorker(new AddonWorkerSetupTask($payload), $worker);
+		});
 	}
 
 	private function registerEntities() : void{
@@ -891,12 +1048,22 @@ final class AddonManager{
 
 	// ---------------------------------------------------------------- runtime
 
+	private function createSpawner() : AddonSpawner{
+		$spawning = (array) $this->config()->get("spawning", []);
+		$caps = [];
+		foreach((array) ($spawning["caps"] ?? []) as $category => $cap){
+			$caps[(string) $category] = (int) $cap;
+		}
+		return new AddonSpawner($this->server, $this, $this->spawnRules, max(1, (int) ($spawning["interval-ticks"] ?? 40)), $caps, array_map("strval", (array) ($spawning["worlds"] ?? [])));
+	}
+
 	/** addons/config.yml, created with defaults on first run. */
 	private function config() : Config{
 		if($this->config === null){
 			@mkdir($this->path, 0777, true);
 			$this->config = new Config(Path::join($this->path, "config.yml"), Config::YAML, [
 				"scripting" => ["enabled" => true, "node" => "node", "tick-budget-ms" => 30, "memory-mb" => 256],
+				"pathfinding" => ["async" => true],
 				"spawning" => ["enabled" => true, "interval-ticks" => 40, "worlds" => [], "caps" => ["monster" => 10, "animal" => 6, "water_animal" => 4, "ambient" => 3, "default" => 5]],
 			]);
 		}
@@ -911,6 +1078,8 @@ final class AddonManager{
 		if($this->entityDefinitions === [] && $this->scriptPacks === [] && $this->blocks === [] && $this->items === []){
 			return;
 		}
+		$pathfinding = (array) $this->config()->get("pathfinding", []);
+		Navigator::setAsync((bool) ($pathfinding["async"] ?? true));
 		$runtimeDir = Path::join($this->path, ".runtime");
 		@mkdir($runtimeDir, 0777, true);
 		try{
@@ -933,11 +1102,7 @@ final class AddonManager{
 		$config = $this->config();
 		$spawning = (array) $config->get("spawning", []);
 		if((bool) ($spawning["enabled"] ?? true) && $this->spawnRules !== []){
-			$caps = [];
-			foreach((array) ($spawning["caps"] ?? []) as $category => $cap){
-				$caps[(string) $category] = (int) $cap;
-			}
-			$this->spawner = new AddonSpawner($this->server, $this, $this->spawnRules, max(1, (int) ($spawning["interval-ticks"] ?? 40)), $caps, array_map("strval", (array) ($spawning["worlds"] ?? [])));
+			$this->spawner = $this->createSpawner();
 			if($this->spawner->hasRules()){
 				$this->logger->info("Natural spawning on for " . count($this->spawnRules) . " add-on spawn rule(s)");
 			}

@@ -24,15 +24,12 @@ declare(strict_types=1);
 namespace pocketmine\command\defaults;
 
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
-use pocketmine\utils\TextFormat;
-use function array_shift;
-use function count;
 
-class CheckPermCommand extends VanillaCommand{
+class CheckPermCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
@@ -41,32 +38,16 @@ class CheckPermCommand extends VanillaCommand{
 			KnownTranslationFactory::pocketmine_command_checkperm_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_CHECKPERM);
+
+		$this->addOverload(fn(CommandSender $sender, string $permission, ?Player $player = null) => $this->check($sender, $permission, $player ?? $sender));
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args){
-		if(count($args) === 0){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$permission = array_shift($args);
-
-		$target = $sender;
-		if(count($args) > 0){
-			$targetName = array_shift($args);
-			$target = $sender->getServer()->getPlayerExact($targetName);
-			if($target === null){
-				$sender->sendMessage(KnownTranslationFactory::commands_generic_player_notFound()->prefix(TextFormat::RED));
-				return true;
-			}
-		}
-
-		$hasPermission = $target->hasPermission($permission);
+	private function check(CommandSender $sender, string $permission, CommandSender $target) : bool{
 		$sender->sendMessage(KnownTranslationFactory::pocketmine_command_checkperm_success(
 			$permission,
 			$target->getName(),
-			$hasPermission ? "true" : "false"
+			$target->hasPermission($permission) ? "true" : "false"
 		));
-
 		return true;
 	}
 }

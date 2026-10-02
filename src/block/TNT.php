@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\entity\Location;
 use pocketmine\entity\object\PrimedTNT;
@@ -36,12 +37,13 @@ use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\Random;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\IgniteSound;
 use function cos;
 use function sin;
 use const M_PI;
 
-class TNT extends Opaque{
+class TNT extends Opaque implements RedstoneReceiver{
 	protected bool $unstable = false; //TODO: Usage unclear, seems to be a weird hack in vanilla
 	protected bool $worksUnderwater = false;
 
@@ -123,6 +125,12 @@ class TNT extends Opaque{
 
 	public function onProjectileHit(Projectile $projectile, RayTraceResult $hitResult) : void{
 		if($projectile->isOnFire()){
+			$this->ignite();
+		}
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if($engine->getReceivedPower($this->position) > 0){
 			$this->ignite();
 		}
 	}

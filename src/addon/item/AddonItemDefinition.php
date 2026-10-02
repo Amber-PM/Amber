@@ -211,20 +211,29 @@ final class AddonItemDefinition{
 		return self::KIND_ITEM;
 	}
 
-	public function getIconTexture() : string{
-		$icon = $this->components["minecraft:icon"] ?? null;
+	public static function iconFromComponent(mixed $icon) : ?string{
 		if(is_string($icon)){
-			return $icon;
+			return $icon !== "" ? $icon : null;
 		}
 		if(is_array($icon)){
-			if(is_string($icon["texture"] ?? null)){
+			if(is_string($icon["texture"] ?? null) && $icon["texture"] !== ""){
 				return $icon["texture"];
 			}
-			if(is_array($icon["textures"] ?? null) && is_string($icon["textures"]["default"] ?? null)){
+			if(is_array($icon["textures"] ?? null) && is_string($icon["textures"]["default"] ?? null) && $icon["textures"]["default"] !== ""){
 				return $icon["textures"]["default"];
 			}
 		}
-		return explode(":", $this->identifier, 2)[1];
+		return null;
+	}
+
+	public function setResourcePackIcon(string $icon) : void{
+		$this->resourcePackIcon = $icon;
+	}
+
+	public function getIconTexture() : string{
+		return self::iconFromComponent($this->components["minecraft:icon"] ?? null)
+			?? $this->resourcePackIcon
+			?? explode(":", $this->identifier, 2)[1];
 	}
 
 	/**
@@ -279,6 +288,7 @@ final class AddonItemDefinition{
 
 	/** @var list<string>|null */
 	private ?array $unsentComponents = null;
+	private ?string $resourcePackIcon = null;
 
 	/**
 	 * JSON components the client is not sent: server-only ones (tags, repairable, script components...) and

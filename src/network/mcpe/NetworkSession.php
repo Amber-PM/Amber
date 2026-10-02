@@ -34,6 +34,7 @@ use pocketmine\event\server\DataPacketDecodeEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\form\Form;
+use pocketmine\form\ProtocolAwareForm;
 use pocketmine\item\Item;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Translatable;
@@ -263,6 +264,15 @@ class NetworkSession{
 
 		$this->manager->add($this);
 		$this->logger->info($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_network_session_open()));
+	}
+
+	/**
+	 * Replaces the connection's address with the player's real one, as reported by a trusted proxy.
+	 * @internal
+	 */
+	public function setProxiedAddress(string $ip) : void{
+		$this->ip = $ip;
+		$this->logger->setPrefix($this->getLogPrefix());
 	}
 
 	private function getLogPrefix() : string{
@@ -1391,7 +1401,8 @@ class NetworkSession{
 	}
 
 	public function onFormSent(int $id, Form $form) : bool{
-		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($form, JSON_THROW_ON_ERROR)));
+		$data = $form instanceof ProtocolAwareForm ? $form->serializeFor($this->protocolId) : $form;
+		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($data, JSON_THROW_ON_ERROR)));
 	}
 
 	public function onCloseAllForms() : void{
@@ -1407,7 +1418,7 @@ class NetworkSession{
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
 			$shapes = $world->getChunkShapes($chunkX, $chunkZ);
-			if(count($shapes) > 0){
+			if(count($shapes) > 0 && $this->supportsShapes()){
 				$this->sendDataPacket(\pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create($shapes));
 			}
 		}finally{
@@ -1555,11 +1566,21 @@ class NetworkSession{
 		));
 	}
 
+	/** Whether the client can display primitive shapes (1.21.90+). */
+	public function supportsShapes() : bool{
+		return $this->protocolId >= ProtocolInfo::PROTOCOL_1_21_90;
+	}
+
 	public function sendShapes(array $shapes) : void{
-		$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		if($this->supportsShapes()){
+			$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		}
 	}
 
 	public function removeShapes(array $networkIds) : void{
+		if(!$this->supportsShapes()){
+			return;
+		}
 		$removes = [];
 		foreach($networkIds as $id){
 			$removes[] = PacketShapeData::remove($id);

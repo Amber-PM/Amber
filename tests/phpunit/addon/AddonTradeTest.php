@@ -131,6 +131,18 @@ final class AddonTradeTest extends TestCase{
 		TradeTransaction::check($this->offer(), 1, [VanillaItems::EMERALD()->setCount(2), VanillaItems::STICK()], [VanillaItems::BREAD()->setCount(4)]);
 	}
 
+	public function testCheckRejectsPayingSameItemIngredientsOnce() : void{
+		$offer = new TradeOffer(1, VanillaItems::EMERALD()->setCount(2), VanillaItems::EMERALD()->setCount(3), VanillaItems::BREAD(), 0, 4, 2, true);
+		$this->expectException(TransactionValidationException::class);
+		TradeTransaction::check($offer, 1, [VanillaItems::EMERALD()->setCount(3)], [VanillaItems::BREAD()]);
+	}
+
+	public function testCheckAcceptsSameItemIngredientsPaidInFull() : void{
+		$this->expectNotToPerformAssertions();
+		$offer = new TradeOffer(1, VanillaItems::EMERALD()->setCount(2), VanillaItems::EMERALD()->setCount(3), VanillaItems::BREAD(), 0, 4, 2, true);
+		TradeTransaction::check($offer, 1, [VanillaItems::EMERALD()->setCount(5)], [VanillaItems::BREAD()]);
+	}
+
 	public function testCheckRejectsUsedUpOffer() : void{
 		$this->expectException(TransactionValidationException::class);
 		TradeTransaction::check($this->offer(3), 2, [VanillaItems::EMERALD()->setCount(4), VanillaItems::STICK()->setCount(2)], [VanillaItems::BREAD()->setCount(6)]);

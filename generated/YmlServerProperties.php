@@ -53,6 +53,11 @@ final class YmlServerProperties{
 	public const AUTO_UPDATER_ON_UPDATE_WARN_CONSOLE = 'auto-updater.on-update.warn-console';
 	public const AUTO_UPDATER_PREFERRED_CHANNEL = 'auto-updater.preferred-channel';
 	public const AUTO_UPDATER_SUGGEST_CHANNELS = 'auto-updater.suggest-channels';
+	public const BACKUPS = 'backups';
+	public const BACKUPS_ENABLED = 'backups.enabled';
+	public const BACKUPS_INTERVAL_MINUTES = 'backups.interval-minutes';
+	public const BACKUPS_KEEP = 'backups.keep';
+	public const BACKUPS_WORLDS = 'backups.worlds';
 	public const CHUNK_GENERATION = 'chunk-generation';
 	public const CHUNK_GENERATION_POPULATION_QUEUE_SIZE = 'chunk-generation.population-queue-size';
 	public const CHUNK_SENDING = 'chunk-sending';
@@ -95,12 +100,19 @@ final class YmlServerProperties{
 	public const NETWORK_DISABLED_PROTOCOLS = 'network.disabled-protocols';
 	public const NETWORK_ENABLE_ENCRYPTION = 'network.enable-encryption';
 	public const NETWORK_MAX_MTU_SIZE = 'network.max-mtu-size';
+	public const NETWORK_PROXY_ADDRESSES = 'network.proxy-addresses';
+	public const NETWORK_PROXY_ADDRESSES_0 = 'network.proxy-addresses.0';
 	public const NETWORK_UPNP_FORWARDING = 'network.upnp-forwarding';
+	public const NETWORK_WATERDOG_SUPPORT = 'network.waterdog-support';
 	public const PLAYER = 'player';
+	public const PLAYER_NATIVE_SPECTATOR = 'player.native-spectator';
 	public const PLAYER_SAVE_PLAYER_DATA = 'player.save-player-data';
 	public const PLAYER_VERIFY_XUID = 'player.verify-xuid';
 	public const PLUGINS = 'plugins';
 	public const PLUGINS_LEGACY_DATA_DIR = 'plugins.legacy-data-dir';
+	public const REDSTONE = 'redstone';
+	public const REDSTONE_ENABLED = 'redstone.enabled';
+	public const REDSTONE_MAX_UPDATES_PER_TICK = 'redstone.max-updates-per-tick';
 	public const SETTINGS = 'settings';
 	public const SETTINGS_ASYNC_WORKERS = 'settings.async-workers';
 	public const SETTINGS_DEFAULT_DISABLE_VIBRANT_VISUALS = 'settings.default-disable-vibrant-visuals';
@@ -116,5 +128,15 @@ final class YmlServerProperties{
 	public const TICKS_PER_AUTOSAVE = 'ticks-per.autosave';
 	public const TIMINGS = 'timings';
 	public const TIMINGS_HOST = 'timings.host';
+	public const WEB = 'web';
+	public const WEB_ADDRESS = 'web.address';
+	public const WEB_ENABLED = 'web.enabled';
+	public const WEB_LOG_LINES = 'web.log-lines';
+	public const WEB_METRICS_REQUIRE_TOKEN = 'web.metrics-require-token';
+	public const WEB_PORT = 'web.port';
+	public const WEB_READ_ONLY_TOKENS = 'web.read-only-tokens';
+	public const WEB_TLS_CERTIFICATE = 'web.tls-certificate';
+	public const WEB_TLS_KEY = 'web.tls-key';
+	public const WEB_TOKEN = 'web.token';
 	public const WORLDS = 'worlds';
 }

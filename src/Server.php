@@ -91,6 +91,7 @@ use pocketmine\plugin\PluginOwned;
 use pocketmine\plugin\ScriptPluginLoader;
 use pocketmine\promise\Promise;
 use pocketmine\promise\PromiseResolver;
+use pocketmine\reload\PluginReloader;
 use pocketmine\resourcepacks\ResourcePackManager;
 use pocketmine\scheduler\AsyncPool;
 use pocketmine\scheduler\TimingsCollectionTask;
@@ -117,6 +118,7 @@ use pocketmine\utils\SignalHandler;
 use pocketmine\utils\Terminal;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
+use pocketmine\world\backup\WorldBackupManager;
 use pocketmine\world\format\io\WorldProviderManager;
 use pocketmine\world\format\io\WritableWorldProviderManagerEntry;
 use pocketmine\world\generator\Generator;
@@ -125,11 +127,13 @@ use pocketmine\world\generator\InvalidGeneratorOptionsException;
 use pocketmine\world\Position;
 use pocketmine\world\World;
 use pocketmine\world\WorldCreationOptions;
+use pocketmine\web\WebPanel;
 use pocketmine\world\WorldManager;
 use pocketmine\YmlServerProperties as Yml;
 use Ramsey\Uuid\UuidInterface;
 use Symfony\Component\Filesystem\Path;
 use function array_fill;
+use function array_map;
 use function array_sum;
 use function base64_encode;
 use function chr;
@@ -144,6 +148,7 @@ use function filemtime;
 use function fopen;
 use function get_class;
 use function gettype;
+use function in_array;
 use function ini_set;
 use function is_array;
 use function is_dir;
@@ -171,6 +176,7 @@ use function stripos;
 use function strlen;
 use function strrpos;
 use function strtolower;
+use function str_contains;
 use function strval;
 use function time;
 use function touch;
@@ -270,6 +276,9 @@ class Server{
 
 	private ResourcePackManager $resourceManager;
 	private \pocketmine\addon\AddonManager $addonManager;
+	private WorldBackupManager $backupManager;
+	private ?WebPanel $webPanel = null;
+	private ?PluginReloader $pluginReloader = null;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -477,6 +486,46 @@ class Server{
 
 	public function getResourcePackManager() : ResourcePackManager{
 		return $this->resourceManager;
+	}
+
+	/**
+	 * Loads resource_packs/ again, with the add-on resource packs. Players get the new stack when they next join.
+	 */
+	public function reloadResourcePacks() : void{
+		$manager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
+		$this->addonManager->registerResourcePacks($manager);
+		$this->resourceManager = $manager;
+	}
+
+	/**
+	 * Re-reads server.properties, pocketmine.yml, the operator and whitelist files and the ban lists, and applies the
+	 * settings the server keeps a copy of (maximum players, server name in the server list, operator status).
+	 */
+	public function reloadConfiguration() : void{
+		$this->configGroup->reload();
+		$this->maxPlayers = $this->configGroup->getConfigInt(ServerProperties::MAX_PLAYERS, self::DEFAULT_MAX_PLAYERS);
+		$this->network->setName($this->getMotd());
+
+		$this->operators->reload();
+		$this->whitelist->reload();
+		$this->banByName->load();
+		$this->banByIP->load();
+		foreach($this->getOnlinePlayers() as $player){
+			if($this->isOp($player->getName())){
+				$player->setBasePermission(DefaultPermissions::ROOT_OPERATOR, true);
+			}else{
+				$player->unsetBasePermission(DefaultPermissions::ROOT_OPERATOR);
+			}
+		}
+	}
+
+	/** Applies changes to the plugins folder while the server runs (/restart realtime); null until startup ends. */
+	public function getPluginReloader() : ?PluginReloader{
+		return $this->pluginReloader;
+	}
+
+	public function getBackupManager() : WorldBackupManager{
+		return $this->backupManager;
 	}
 
 	/** Bedrock add-ons (addons/ directory): resource packs, custom items, blocks and entities. */
@@ -919,6 +968,7 @@ class Server{
 				])
 			);
 			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
+			TypeConverter::setNativeSpectator($this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true));
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
@@ -1097,6 +1147,40 @@ class Server{
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
 			$this->addonManager->registerResourcePacks($this->resourceManager);
+
+			if($this->configGroup->getPropertyBool(Yml::NETWORK_WATERDOG_SUPPORT, false) && count((array) $this->configGroup->getProperty(Yml::NETWORK_PROXY_ADDRESSES, [])) === 0){
+				$this->logger->critical("network.waterdog-support is on but network.proxy-addresses is empty: every login is refused until your proxy's address is listed.");
+			}
+
+			if($this->configGroup->getPropertyBool(Yml::WEB_ENABLED, false)){
+				$address = $this->configGroup->getPropertyString(Yml::WEB_ADDRESS, "127.0.0.1");
+				$port = $this->configGroup->getPropertyInt(Yml::WEB_PORT, 8080);
+				$tlsCertificate = $this->configGroup->getPropertyString(Yml::WEB_TLS_CERTIFICATE, "");
+				$tlsKey = $this->configGroup->getPropertyString(Yml::WEB_TLS_KEY, "");
+				try{
+					if(($tlsCertificate === "") !== ($tlsKey === "")){
+						throw new \RuntimeException("set both web.tls-certificate and web.tls-key, or neither");
+					}
+					$this->webPanel = new WebPanel(
+						$this,
+						$address,
+						$port,
+						WebPanel::resolveToken($this->configGroup->getPropertyString(Yml::WEB_TOKEN, ""), $this->dataPath, $this->logger),
+						array_map(strval(...), (array) $this->configGroup->getProperty(Yml::WEB_READ_ONLY_TOKENS, [])),
+						$this->configGroup->getPropertyBool(Yml::WEB_METRICS_REQUIRE_TOKEN, false),
+						$this->configGroup->getPropertyInt(Yml::WEB_LOG_LINES, 1000),
+						$tlsCertificate !== "" ? Path::makeAbsolute($tlsCertificate, $this->dataPath) : null,
+						$tlsKey !== "" ? Path::makeAbsolute($tlsKey, $this->dataPath) : null
+					);
+					$scheme = $this->webPanel->isTls() ? "https" : "http";
+					$this->logger->info("Web panel running on $scheme://" . (str_contains($address, ":") ? "[$address]" : $address) . ":$port/");
+					if(!$this->webPanel->isTls() && !in_array($address, ["127.0.0.1", "::1", "localhost"], true)){
+						$this->logger->warning("The web panel is reachable from other machines over plain HTTP, so its token can be read on the way: set web.tls-certificate and web.tls-key, or put it behind an HTTPS reverse proxy.");
+					}
+				}catch(\RuntimeException $e){
+					$this->logger->error("Web panel could not start: " . $e->getMessage());
+				}
+			}
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
@@ -1130,6 +1214,14 @@ class Server{
 			$this->worldManager = new WorldManager($this, Path::join($this->dataPath, "worlds"), $providerManager);
 			$this->worldManager->setAutoSave($this->configGroup->getConfigBool(ServerProperties::AUTO_SAVE, $this->worldManager->getAutoSave()));
 			$this->worldManager->setAutoSaveInterval($this->configGroup->getPropertyInt(Yml::TICKS_PER_AUTOSAVE, $this->worldManager->getAutoSaveInterval()));
+			$this->backupManager = new WorldBackupManager(
+				$this,
+				Path::join($this->dataPath, "backups"),
+				$this->configGroup->getPropertyBool(Yml::BACKUPS_ENABLED, false),
+				max(1, $this->configGroup->getPropertyInt(Yml::BACKUPS_INTERVAL_MINUTES, 360)) * 60,
+				max(0, $this->configGroup->getPropertyInt(Yml::BACKUPS_KEEP, 7)),
+				array_map(strval(...), (array) $this->configGroup->getProperty(Yml::BACKUPS_WORLDS, []))
+			);
 
 			$this->updater = new UpdateChecker($this, $this->configGroup->getPropertyString(Yml::AUTO_UPDATER_HOST, "update.pmmp.io"));
 
@@ -1165,6 +1257,7 @@ class Server{
 
 			//add-on runtime: scripts, natural spawning and the event bridge, once worlds and plugins are up
 			$this->addonManager->start();
+			$this->pluginReloader = new PluginReloader($this);
 
 			CameraPresetRegistry::getInstance()->freeze();
 
@@ -1628,6 +1721,9 @@ class Server{
 
 			$this->shutdown();
 
+			$this->webPanel?->shutdown();
+			$this->webPanel = null;
+
 			if(isset($this->addonManager)){
 				$this->addonManager->shutdown();
 			}
@@ -1775,7 +1871,7 @@ class Server{
 
 			$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_crash_submit($crashDumpPath)));
 
-			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, true)){
+			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, false)){
 				$report = true;
 
 				$stamp = Path::join($this->dataPath, "crashdumps", ".last_crash");
@@ -1990,7 +2086,10 @@ class Server{
 		$this->network->tick();
 		Timings::$connection->stopTiming();
 
+		$this->webPanel?->tick();
+
 		if(($this->tickCounter % self::TARGET_TICKS_PER_SECOND) === 0){
+			$this->backupManager->tick();
 			if($this->doTitleTick){
 				$this->titleTick();
 			}

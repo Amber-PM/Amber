@@ -106,6 +106,14 @@ final class ScriptHostSecurityTest extends TestCase{
 		self::assertStringContainsString("ENV_LEAK:false", $err, "Environment variables leaked to script.");
 	}
 
+	public function testNodeBuiltinsUnreachable() : void{
+		$this->startNode('console.error("BUILTINS:" + typeof process.getBuiltinModule + ":" + typeof process.kill + ":" + typeof process.binding);');
+
+		[$type, $err] = $this->readUntilDone();
+		self::assertSame("done", $type);
+		self::assertStringContainsString("BUILTINS:undefined:undefined:undefined", $err, "Scripts can reach Node built-ins or signal processes.");
+	}
+
 	public function testIpcForgery() : void{
 		$this->startNode('process.stdout.write("{\"t\":\"forged\"}\n");');
 

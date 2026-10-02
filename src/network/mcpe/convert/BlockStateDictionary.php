@@ -26,6 +26,7 @@ namespace pocketmine\network\mcpe\convert;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\BlockTypeNames;
 use pocketmine\nbt\NbtDataException;
+use pocketmine\nbt\tag\Tag;
 use pocketmine\nbt\TreeRoot;
 use pocketmine\network\mcpe\protocol\serializer\NetworkNbtSerializer;
 use pocketmine\utils\Utils;
@@ -157,6 +158,35 @@ final class BlockStateDictionary{
 	}
 
 	/**
+	 * Returns the state of the named block whose properties best match the given ones (most properties with equal
+	 * values), or null if the block does not exist in this palette.
+	 *
+	 * @param Tag[] $properties
+	 * @phpstan-param array<string, Tag> $properties
+	 */
+	public function lookupClosestStateId(string $name, array $properties) : ?int{
+		$lookup = $this->stateDataToStateIdLookup[$name] ?? null;
+		if($lookup === null || is_int($lookup)){
+			return $lookup;
+		}
+		$best = null;
+		$bestScore = -1;
+		foreach($lookup as $stateId){
+			$score = 0;
+			foreach($this->states[$stateId]->generateCurrentStateData()->getStates() as $property => $value){
+				if(isset($properties[$property]) && $properties[$property]->equals($value)){
+					++$score;
+				}
+			}
+			if($score > $bestScore){
+				$best = $stateId;
+				$bestScore = $score;
+			}
+		}
+		return $best;
+	}
+
+	/**
 	 * Returns the blockstate meta value associated with the given blockstate runtime ID.
 	 * This is used for serializing crafting recipe inputs.
 	 */
@@ -208,7 +238,7 @@ final class BlockStateDictionary{
 	 * @return array{0: list<BlockStateData>, 1: mixed[], 2: int[]|null}
 	 */
 	private static function withAddonStates(array $palette, array $metaMap, ?array $networkIds) : array{
-		$addon = \pocketmine\addon\AddonManager::getInstance()?->getNetworkBlockStates() ?? [];
+		$addon = \pocketmine\addon\AddonWorkerData::getNetworkBlockStates();
 		if($addon === []){
 			return [$palette, $metaMap, $networkIds];
 		}

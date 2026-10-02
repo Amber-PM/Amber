@@ -68,6 +68,10 @@ final class TradeTransaction extends InventoryTransaction{
 			throw new TransactionValidationException("This trade is used up");
 		}
 		[$wantA, $wantB] = self::price($offer, $repetitions);
+		if($wantB !== null && $wantB->canStackWith($wantA)){
+			$wantA->setCount($wantA->getCount() + $wantB->getCount());
+			$wantB = null;
+		}
 		foreach([$wantA, $wantB] as $want){
 			if($want === null){
 				continue;

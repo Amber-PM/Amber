@@ -86,7 +86,9 @@ use pocketmine\event\player\PlayerToggleSprintEvent;
 use pocketmine\event\player\PlayerToggleSwimEvent;
 use pocketmine\event\player\PlayerTransferEvent;
 use pocketmine\event\player\PlayerViewDistanceChangeEvent;
+use pocketmine\form\ClosableForm;
 use pocketmine\form\Form;
+use pocketmine\form\FormCloseReason;
 use pocketmine\form\FormValidationException;
 use pocketmine\inventory\CallbackInventoryListener;
 use pocketmine\inventory\CreativeInventory;
@@ -2447,14 +2449,19 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		}
 	}
 
-	public function onFormSubmit(int $formId, mixed $responseData) : bool{
+	public function onFormSubmit(int $formId, mixed $responseData, ?FormCloseReason $closeReason = null) : bool{
 		if(!isset($this->forms[$formId])){
 			$this->logger->debug("Got unexpected response for form $formId");
 			return false;
 		}
 
 		try{
-			$this->forms[$formId]->handleResponse($this, $responseData);
+			$form = $this->forms[$formId];
+			if($responseData === null && $form instanceof ClosableForm){
+				$form->handleClose($this, $closeReason ?? FormCloseReason::CLOSED);
+			}else{
+				$form->handleResponse($this, $responseData);
+			}
 		}catch(FormValidationException $e){
 			$this->logger->critical("Failed to validate form " . get_class($this->forms[$formId]) . ": " . $e->getMessage());
 			$this->logger->logException($e);
