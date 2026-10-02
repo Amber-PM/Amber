@@ -275,4 +275,54 @@ final class WireContinuationBudgetTest extends TestCase{
 		$engine->tick(1);
 		self::assertTrue($engine->getWires()->hasDeferred(), "Network must remain deferred across settle phases when remaining budget is small");
 	}
+
+	public function testContinuationCollisionDoesNotPerformUnboundedSynchronousMerge() : void{
+		[$engine, $world] = $this->createEnvironment(100000);
+
+		for($x = 0; $x < 5000; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+
+		$wireA = $world->getBlockAt(0, 64, 0);
+		$wireB = $world->getBlockAt(4999, 64, 0);
+		self::assertInstanceOf(RedstoneWire::class, $wireA);
+		self::assertInstanceOf(RedstoneWire::class, $wireB);
+
+		$budgetA = 2499;
+		$engine->getWires()->update($wireA, $budgetA);
+
+		$budgetB = 2499;
+		$engine->getWires()->update($wireB, $budgetB);
+
+		$wires = $engine->getWires();
+		self::assertSame(2, $wires->getContinuationCount(), "Precondition: 2 independent continuations must exist");
+
+		$farBHash = World::blockHash(4999, 64, 0);
+		$boundaryAHash = World::blockHash(2499, 64, 0);
+		$boundaryBHash = World::blockHash(2500, 64, 0);
+
+		$ownerA = $wires->getContinuationOwner($boundaryAHash);
+		$ownerB = $wires->getContinuationOwner($boundaryBHash);
+
+		self::assertNotNull($ownerA);
+		self::assertNotNull($ownerB);
+		self::assertNotSame($ownerA, $ownerB, "Precondition: boundary wires must belong to distinct continuations");
+		self::assertSame($ownerB, $wires->getContinuationOwner($farBHash), "Precondition: far wire belongs to continuation B");
+
+		$consumed = $wires->processDeferred(1);
+		self::assertLessThanOrEqual(1, $consumed, "Consumed steps must strictly respect the provided budget of 1");
+
+		self::assertSame(
+			$ownerB,
+			$wires->getContinuationOwner($farBHash),
+			"A merge of 2500 wires must not synchronously rewrite far wire ownership outside the budget"
+		);
+
+		self::assertGreaterThan(
+			1,
+			$wires->getContinuationCount(),
+			"Continuation B must not be completely dissolved in a single budget step"
+		);
+	}
 }

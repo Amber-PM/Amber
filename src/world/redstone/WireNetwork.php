@@ -34,8 +34,10 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 use function array_fill_keys;
 use function array_key_first;
+use function array_key_last;
 use function array_keys;
 use function array_pop;
+use function array_shift;
 use function count;
 use function in_array;
 use function max;
@@ -44,6 +46,27 @@ use function min;
 /**
  * Power along redstone wire: a change to one wire recomputes its whole connected network at once, so a long line
  * settles in one step instead of one wire per tick.
+ *
+ * @phpstan-type MergingSource array{
+ *     phase?: int,
+ *     wires: array<int, array{int, int, int}>,
+ *     edges?: array<int, list<int>>,
+ *     pending?: list<int>,
+ *     mergingSources?: array<int, mixed>
+ * }
+ * @phpstan-type ContinuationState array{
+ *     phase: int,
+ *     wires: array<int, array{int, int, int}>,
+ *     edges?: array<int, list<int>>,
+ *     pending: list<int>,
+ *     sourceQueue: list<int>,
+ *     power: array<int, int>,
+ *     buckets?: array<int, list<int>>,
+ *     propagateLevel: int,
+ *     applyQueue: list<int>,
+ *     mutated: bool,
+ *     mergingSources: array<int, MergingSource>
+ * }
  */
 final class WireNetwork{
 	private const MAX_WIRES = 4096;
@@ -53,6 +76,7 @@ final class WireNetwork{
 	public const PHASE_SOURCES = 1;
 	public const PHASE_PROPAGATE = 2;
 	public const PHASE_APPLY = 3;
+	public const PHASE_MERGE = 4;
 
 	/** @var array<int, true> wires whose network was already recomputed this tick */
 	private array $done = [];
@@ -62,19 +86,11 @@ final class WireNetwork{
 	/** @var array<int, int> blockHash => continuationId */
 	private array $continuationOwner = [];
 
+	/** @var array<int, int> continuationId => aliased continuationId */
+	private array $continuationAliases = [];
+
 	/**
-	 * @var array<int, array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * }> continuationId => state
+	 * @var array<int, ContinuationState> continuationId => state
 	 */
 	private array $continuations = [];
 
@@ -91,25 +107,37 @@ final class WireNetwork{
 		return $this->continuations !== [];
 	}
 
+	private function resolveContinuationId(int $id) : int{
+		while(isset($this->continuationAliases[$id])){
+			$id = $this->continuationAliases[$id];
+		}
+		return $id;
+	}
+
 	public function getContinuationOwner(int $hash) : ?int{
 		return $this->continuationOwner[$hash] ?? null;
 	}
 
 	public function getContinuationCount() : int{
-		return count($this->continuations);
+		$count = count($this->continuations);
+		foreach($this->continuations as $c){
+			$count += count($c["mergingSources"] ?? []);
+		}
+		return $count;
 	}
 
 	public function clear() : void{
 		$this->done = [];
 		$this->continuations = [];
 		$this->continuationOwner = [];
+		$this->continuationAliases = [];
 	}
 
 	public function invalidate(int $hash) : void{
 		if(!isset($this->continuationOwner[$hash])){
 			return;
 		}
-		$id = $this->continuationOwner[$hash];
+		$id = $this->resolveContinuationId($this->continuationOwner[$hash]);
 		if(!isset($this->continuations[$id])){
 			unset($this->continuationOwner[$hash]);
 			return;
@@ -129,6 +157,13 @@ final class WireNetwork{
 
 		foreach($continuation["wires"] as $wHash => $_){
 			unset($this->continuationOwner[$wHash]);
+		}
+		if(isset($continuation["mergingSources"])){
+			foreach($continuation["mergingSources"] as $source){
+				foreach($source["wires"] as $wHash => $_){
+					unset($this->continuationOwner[$wHash]);
+				}
+			}
 		}
 		unset($this->continuations[$id]);
 		$this->done = [];
@@ -187,7 +222,8 @@ final class WireNetwork{
 			"buckets" => [],
 			"propagateLevel" => 15,
 			"applyQueue" => [],
-			"mutated" => false
+			"mutated" => false,
+			"mergingSources" => []
 		];
 
 		$availableBudget = $budget ?? ($this->engine->isTicking() ? max(0, $this->engine->getRemainingBudget()) : self::MAX_WIRES);
@@ -208,18 +244,7 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $continuation
+	 * @param ContinuationState $continuation
 	 */
 	private function stepContinuation(int $id, array &$continuation, int $budget) : int{
 		$steps = 0;
@@ -232,12 +257,17 @@ final class WireNetwork{
 				case self::PHASE_DISCOVER:
 					$consumed = $this->stepDiscover($continuation, $slice, $id);
 					$steps += $consumed;
-					if($continuation["pending"] === []){
+					if($continuation["phase"] === self::PHASE_DISCOVER && $continuation["pending"] === []){
 						$continuation["phase"] = self::PHASE_SOURCES;
 						$continuation["sourceQueue"] = array_keys($continuation["wires"]);
 						$continuation["power"] = [];
 						$continuation["buckets"] = [];
 					}
+					break;
+
+				case self::PHASE_MERGE:
+					$consumed = $this->stepMerge($id, $continuation, $slice);
+					$steps += $consumed;
 					break;
 
 				case self::PHASE_SOURCES:
@@ -277,23 +307,15 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $c
+	 * @param ContinuationState $c
 	 */
 	private function stepDiscover(array &$c, int $budget, int $id) : int{
 		$steps = 0;
 		while($c["pending"] !== [] && $steps < $budget){
 			$hash = array_pop($c["pending"]);
+			if(isset($c["edges"][$hash])){
+				continue;
+			}
 			++$steps;
 			[$wx, $wy, $wz] = $c["wires"][$hash];
 			foreach($this->connectedWires($wx, $wy, $wz) as [$nx, $ny, $nz]){
@@ -301,8 +323,15 @@ final class WireNetwork{
 				if($this->canTransmit($wx, $wy, $wz, $nx, $ny, $nz)){
 					$c["edges"][$hash][] = $next;
 				}
-				if(isset($this->continuationOwner[$next]) && $this->continuationOwner[$next] !== $id){
-					$this->mergeContinuations($id, $this->continuationOwner[$next], $c["wires"], $c["pending"], $c["edges"]);
+				if(isset($this->continuationOwner[$next])){
+					$owner = $this->resolveContinuationId($this->continuationOwner[$next]);
+					if($owner !== $id && isset($this->continuations[$owner])){
+						$c["mergingSources"][$owner] = $this->continuations[$owner];
+						unset($this->continuations[$owner]);
+						$this->continuationAliases[$owner] = $id;
+						$c["phase"] = self::PHASE_MERGE;
+						return $steps;
+					}
 					continue;
 				}
 				if(!isset($c["wires"][$next])){
@@ -316,18 +345,61 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $c
+	 * @param ContinuationState $c
+	 */
+	private function stepMerge(int $id, array &$c, int $budget) : int{
+		$steps = 0;
+		while($c["mergingSources"] !== [] && $steps < $budget){
+			$sourceId = array_key_first($c["mergingSources"]);
+			if($sourceId === null){
+				break;
+			}
+			$source = &$c["mergingSources"][$sourceId];
+
+			while($source["wires"] !== [] && $steps < $budget){
+				$wHash = array_key_last($source["wires"]);
+				$coords = $source["wires"][$wHash];
+				unset($source["wires"][$wHash]);
+
+				$c["wires"][$wHash] = $coords;
+				$this->continuationOwner[$wHash] = $id;
+
+				if(isset($source["edges"][$wHash])){
+					$c["edges"][$wHash] = $source["edges"][$wHash];
+					unset($source["edges"][$wHash]);
+				}else{
+					$c["pending"][] = $wHash;
+				}
+
+				++$steps;
+			}
+
+			if($source["wires"] === []){
+				if(isset($source["pending"])){
+					foreach($source["pending"] as $pHash){
+						if(!isset($c["wires"][$pHash])){
+							$c["pending"][] = $pHash;
+						}
+					}
+				}
+				if(isset($source["mergingSources"])){
+					foreach($source["mergingSources"] as $subSourceId => $subSourceData){
+						$c["mergingSources"][$subSourceId] = $subSourceData;
+					}
+				}
+				unset($c["mergingSources"][$sourceId]);
+			}
+		}
+
+		if($c["mergingSources"] === []){
+			$c["phase"] = self::PHASE_DISCOVER;
+		}
+
+		return $steps;
+	}
+
+	/**
+	 * @param ContinuationState $c
 	 */
 	private function stepSources(array &$c, int $budget) : int{
 		$steps = 0;
@@ -345,18 +417,7 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $c
+	 * @param ContinuationState $c
 	 */
 	private function stepPropagate(array &$c, int $budget) : int{
 		$steps = 0;
@@ -385,18 +446,7 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $c
+	 * @param ContinuationState $c
 	 */
 	private function stepApply(array &$c, int $budget) : int{
 		$steps = 0;
@@ -424,79 +474,31 @@ final class WireNetwork{
 	}
 
 	/**
-	 * @param array{
-	 *     phase: int,
-	 *     wires: array<int, array{int, int, int}>,
-	 *     edges: array<int, list<int>>,
-	 *     pending: list<int>,
-	 *     sourceQueue: list<int>,
-	 *     power: array<int, int>,
-	 *     buckets: array<int, list<int>>,
-	 *     propagateLevel: int,
-	 *     applyQueue: list<int>,
-	 *     mutated: bool
-	 * } $c
+	 * @param ContinuationState $c
 	 */
 	private function finalizeContinuation(int $id, array $c) : void{
 		foreach($c["wires"] as $hash => $_){
 			unset($this->continuationOwner[$hash]);
 			$this->done[$hash] = true;
 		}
+		if(isset($c["mergingSources"])){
+			foreach($c["mergingSources"] as $source){
+				foreach($source["wires"] as $hash => $_){
+					unset($this->continuationOwner[$hash]);
+					$this->done[$hash] = true;
+				}
+			}
+		}
 		unset($this->continuations[$id]);
+		foreach($this->continuationAliases as $aliasSource => $aliasTarget){
+			if($aliasTarget === $id || $aliasSource === $id){
+				unset($this->continuationAliases[$aliasSource]);
+			}
+		}
 
 		if($c["mutated"]){
 			foreach($c["wires"] as $hash => [$wx, $wy, $wz]){
 				$this->engine->request($wx, $wy, $wz);
-			}
-		}
-	}
-
-	/**
-	 * @param array<int, array{int, int, int}> $targetWires
-	 * @param list<int>                        $targetPending
-	 * @param array<int, list<int>>            $targetEdges
-	 */
-	private function mergeContinuations(
-		int $targetId,
-		int $sourceId,
-		array &$targetWires,
-		array &$targetPending,
-		array &$targetEdges
-	) : void{
-		if(!isset($this->continuations[$sourceId])){
-			return;
-		}
-		$source = $this->continuations[$sourceId];
-		unset($this->continuations[$sourceId]);
-
-		foreach($source["wires"] as $hash => $coords){
-			$targetWires[$hash] = $coords;
-			$this->continuationOwner[$hash] = $targetId;
-		}
-		$pendingLookup = array_fill_keys($targetPending, true);
-		foreach($source["pending"] as $hash){
-			if(!isset($pendingLookup[$hash])){
-				$targetPending[] = $hash;
-				$pendingLookup[$hash] = true;
-			}
-		}
-		foreach($source["wires"] as $hash => $_){
-			if(!isset($source["edges"][$hash]) && !isset($pendingLookup[$hash])){
-				$targetPending[] = $hash;
-				$pendingLookup[$hash] = true;
-			}
-		}
-		foreach($source["edges"] as $hash => $edgeList){
-			if(!isset($targetEdges[$hash])){
-				$targetEdges[$hash] = $edgeList;
-			}else{
-				$edgeLookup = array_fill_keys($targetEdges[$hash], true);
-				foreach($edgeList as $edgeHash){
-					if(!isset($edgeLookup[$edgeHash])){
-						$targetEdges[$hash][] = $edgeHash;
-						$edgeLookup[$edgeHash] = true;
-					}
-				}
 			}
 		}
 	}

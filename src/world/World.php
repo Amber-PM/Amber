@@ -692,6 +692,8 @@ class World implements ChunkManager{
 		$this->blockCacheSize = 0;
 		$this->blockCollisionBoxCache = [];
 
+		$this->redstone?->clear();
+
 		$this->unloaded = true;
 	}
 

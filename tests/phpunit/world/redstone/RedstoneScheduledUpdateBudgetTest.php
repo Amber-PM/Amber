@@ -34,6 +34,8 @@ use pocketmine\block\RedstoneWire;
 use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
+use pocketmine\world\format\io\WritableWorldProvider;
+use pocketmine\world\generator\executor\GeneratorExecutor;
 use pocketmine\world\World;
 
 final class RedstoneScheduledUpdateBudgetTest extends TestCase{
@@ -57,7 +59,9 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 			"setBlockAt",
 			"isInWorld",
 			"isChunkLoaded",
-			"notifyNeighbourBlockUpdate"
+			"notifyNeighbourBlockUpdate",
+			"save",
+			"unloadChunk"
 		])->getMock();
 
 		$world->method("isInWorld")->willReturn(true);
@@ -65,8 +69,19 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 			$key = "$chunkX:$chunkZ";
 			return $this->loadedChunks[$key] ?? true;
 		});
+		$world->method("save")->willReturn(true);
+		$world->method("unloadChunk")->willReturn(true);
 
 		$engine = new RedstoneEngine($world, $maxUpdatesPerTick);
+
+		$ref = new \ReflectionClass(World::class);
+		$genExec = $this->createMock(GeneratorExecutor::class);
+		$ref->getProperty("generatorExecutor")->setValue($world, $genExec);
+
+		$provider = $this->createMock(WritableWorldProvider::class);
+		$ref->getProperty("provider")->setValue($world, $provider);
+
+		$ref->getProperty("redstone")->setValue($world, $engine);
 
 		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
 			$key = "$x:$y:$z";
@@ -358,7 +373,8 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 
 		$engine->powerChanged(new Vector3(5, 64, 5), true);
 
-		$engine->clear();
+		$world->onUnload();
+		self::assertFalse($world->isLoaded(), "World must report unloaded after onUnload()");
 
 		self::assertTrue($queueProp->getValue($engine)->isEmpty(), "SplQueue must be empty after clear()");
 		$queuedProp = new \ReflectionProperty(RedstoneEngine::class, "queued");
@@ -382,5 +398,65 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 
 		$lastPoweredProp = new \ReflectionProperty(RedstoneEngine::class, "lastPowered");
 		self::assertSame([], $lastPoweredProp->getValue($engine), "Last powered map must be empty after clear()");
+	}
+
+	public function testParkedUnloadedChunksScanningIsBoundedByBudget() : void{
+		$isChunkLoadedCalls = 0;
+		$checkedChunkCoordinates = [];
+
+		$world = $this->getMockBuilder(World::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["isChunkLoaded", "isInWorld"])
+			->getMock();
+
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturnCallback(function(int $chunkX, int $chunkZ) use (&$isChunkLoadedCalls, &$checkedChunkCoordinates) : bool{
+			++$isChunkLoadedCalls;
+			$checkedChunkCoordinates[] = [$chunkX, $chunkZ];
+			return false;
+		});
+
+		$budget = 100;
+		$engine = new RedstoneEngine($world, $budget);
+
+		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
+		$countProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayedCount");
+
+		$buckets = [];
+		for($i = 0; $i < 5000; ++$i){
+			$chunkX = $i;
+			$chunkZ = 0;
+			$chunkHash = World::chunkHash($chunkX, $chunkZ);
+			$blockHash = World::blockHash($chunkX << 4, 64, $chunkZ << 4);
+			$buckets[$chunkHash] = [$blockHash => 1];
+		}
+		$unloadedProp->setValue($engine, $buckets);
+		$countProp->setValue($engine, 5000);
+
+		self::assertSame(5000, $engine->getUnloadedDelayedCount());
+		self::assertSame(5000, count($unloadedProp->getValue($engine)));
+
+		$isChunkLoadedCalls = 0;
+		$engine->tick(1);
+
+		self::assertLessThanOrEqual(
+			100,
+			$isChunkLoadedCalls,
+			"isChunkLoaded() must be bounded by min(count(unloadedDelayed), max(32, budget)) = 100"
+		);
+		self::assertSame(100, $isChunkLoadedCalls);
+		self::assertSame(5000, $engine->getUnloadedDelayedCount());
+
+		$isChunkLoadedCalls = 0;
+		$engine->tick(2);
+
+		self::assertLessThanOrEqual(100, $isChunkLoadedCalls);
+		self::assertSame(100, $isChunkLoadedCalls);
+		self::assertSame(5000, $engine->getUnloadedDelayedCount());
+
+		self::assertSame(0, $checkedChunkCoordinates[0][0]);
+		self::assertSame(99, $checkedChunkCoordinates[99][0]);
+		self::assertSame(100, $checkedChunkCoordinates[100][0]);
+		self::assertSame(199, $checkedChunkCoordinates[199][0]);
 	}
 }
