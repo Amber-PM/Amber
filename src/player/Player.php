@@ -2100,6 +2100,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if(!$this->canInteract($entity->getLocation(), self::MAX_REACH_DISTANCE_ENTITY_INTERACTION)){
 			$this->logger->debug("Cancelled interaction with entity " . $entity->getId() . " due to not currently being interactable");
 			$ev->cancel();
+		}elseif($this->isSpectator()){
+			$ev->cancel();
 		}
 
 		$ev->call();

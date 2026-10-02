@@ -37,7 +37,6 @@ use pocketmine\item\Armor;
 use pocketmine\item\Item;
 use pocketmine\item\ItemBlock;
 use pocketmine\item\NameTag;
-use pocketmine\item\Sword;
 use pocketmine\item\Tool;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
@@ -329,7 +328,17 @@ class ArmorStand extends Living{
 			return;
 		}
 
-		if($source instanceof EntityDamageByEntityEvent){
+		if($source->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
+			$source->call();
+			if($source->isCancelled()){
+				return;
+			}
+			$this->setLastDamageCause($source);
+			$this->kill();
+			return;
+		}
+
+		if($source instanceof EntityDamageByEntityEvent && $source->getCause() === EntityDamageEvent::CAUSE_ENTITY_ATTACK){
 			$damager = $source->getDamager();
 			if($damager instanceof Player){
 				if($damager->isCreative(true)){
@@ -354,7 +363,7 @@ class ArmorStand extends Living{
 
 				$this->setLastDamageCause($source);
 				$heldItem = $damager->getInventory()->getItemInHand();
-				$isToolOrWeapon = $heldItem instanceof Tool || $heldItem instanceof Sword || $heldItem->getAttackPoints() > 1;
+				$isToolOrWeapon = $heldItem instanceof Tool || $heldItem->getAttackPoints() > 1;
 
 				if($isToolOrWeapon || $this->punchTicks > 0){
 					$this->kill();
@@ -367,16 +376,6 @@ class ArmorStand extends Living{
 				}
 				return;
 			}
-		}
-
-		if($source->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
-			$source->call();
-			if($source->isCancelled()){
-				return;
-			}
-			$this->setLastDamageCause($source);
-			$this->kill();
-			return;
 		}
 
 		if($source->getCause() === EntityDamageEvent::CAUSE_BLOCK_EXPLOSION || $source->getCause() === EntityDamageEvent::CAUSE_ENTITY_EXPLOSION){
@@ -429,7 +428,7 @@ class ArmorStand extends Living{
 			$causeType = $cause->getCause();
 
 			// Creative player punch: no drops
-			if($cause instanceof EntityDamageByEntityEvent){
+			if($cause instanceof EntityDamageByEntityEvent && $cause->getCause() === EntityDamageEvent::CAUSE_ENTITY_ATTACK){
 				$damager = $cause->getDamager();
 				if($damager instanceof Player && $damager->isCreative(true)){
 					return [];
@@ -455,7 +454,10 @@ class ArmorStand extends Living{
 
 		$drops = [];
 		if($dropsStandItem){
-			$drops[] = $this->getPickedItem();
+			$standItem = $this->getPickedItem();
+			if($standItem !== null){
+				$drops[] = $standItem;
+			}
 		}
 
 		if(isset($this->armorInventory)){

@@ -32,9 +32,11 @@ use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
+use pocketmine\entity\Human;
 use pocketmine\entity\Living;
 use pocketmine\event\entity\ArmorStandEquipEvent;
 use pocketmine\event\entity\ArmorStandPoseChangeEvent;
+use pocketmine\event\entity\EntityDamageByChildEntityEvent;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\EventPriority;
@@ -109,7 +111,7 @@ final class ArmorStandInteractionTest extends TestCase{
 	private function createPlayer(bool $isSneaking = false, bool $isCreative = false, ?Item $heldItem = null, bool $isSpectator = false) : Player{
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["isSneaking", "isCreative", "isSpectator", "getInventory", "hasFiniteResources", "getViewers"])
+			->onlyMethods(["isSneaking", "isCreative", "isSpectator", "getInventory", "hasFiniteResources", "getViewers", "canInteract", "broadcastSound"])
 			->getMock();
 		$this->markClosed($player);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($player, 2);
@@ -119,6 +121,7 @@ final class ArmorStandInteractionTest extends TestCase{
 		if($heldItem !== null){
 			$inventory->setItemInHand($heldItem);
 		}
+		(new ReflectionProperty(Human::class, "inventory"))->setValue($player, $inventory);
 		$player->method("isSneaking")->willReturn($isSneaking);
 		$player->method("isCreative")->willReturnCallback(function(bool $literal = false) use ($isCreative, $isSpectator) : bool{
 			return $isCreative || (!$literal && $isSpectator);
@@ -127,6 +130,7 @@ final class ArmorStandInteractionTest extends TestCase{
 		$player->method("getInventory")->willReturn($inventory);
 		$player->method("hasFiniteResources")->willReturn(!$isCreative && !$isSpectator);
 		$player->method("getViewers")->willReturn([]);
+		$player->method("canInteract")->willReturn(true);
 		$this->createdEntities[] = $player;
 		return $player;
 	}
@@ -443,6 +447,7 @@ final class ArmorStandInteractionTest extends TestCase{
 			->onlyMethods(["getDamager"])
 			->getMock();
 		$damageEv->method("getDamager")->willReturn($creativePlayer);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
 
 		$stand->attack($damageEv);
 
@@ -633,7 +638,7 @@ final class ArmorStandInteractionTest extends TestCase{
 		$stand->damageArmor(10.0);
 
 		$currentHelmet = $stand->getArmorInventory()->getHelmet();
-		self::assertFalse($currentHelmet->isNull());
+		self::assertInstanceOf(Durable::class, $currentHelmet);
 		self::assertSame(0, $currentHelmet->getDamage());
 	}
 
@@ -654,6 +659,7 @@ final class ArmorStandInteractionTest extends TestCase{
 			->getMock();
 		$damageEv->method("getDamager")->willReturn($creativePlayer);
 		$damageEv->method("isCancelled")->willReturn(true);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
 
 		$stand->attack($damageEv);
 		self::assertFalse($stand->isFlaggedForDespawn());
@@ -668,6 +674,7 @@ final class ArmorStandInteractionTest extends TestCase{
 			->onlyMethods(["getDamager"])
 			->getMock();
 		$damageEv->method("getDamager")->willReturn($spectator);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
 
 		$stand->attack($damageEv);
 		self::assertFalse($stand->isFlaggedForDespawn());
@@ -765,11 +772,83 @@ final class ArmorStandInteractionTest extends TestCase{
 			->onlyMethods(["getDamager", "call"])
 			->getMock();
 		$damageEv->method("getDamager")->willReturn($player);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($damageEv, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
 
 		$stand->attack($damageEv);
 
 		/** @var Durable $equipped */
 		$equipped = $stand->getArmorInventory()->getChestplate();
 		self::assertSame(0, $equipped->getDamage());
+	}
+
+	public function testSpectatorInteractEntityRejectsNameTagRenaming() : void{
+		$stand = $this->createArmorStand();
+		$nameTag = VanillaItems::NAME_TAG()->setCustomName("Display Stand");
+		$spectator = $this->createPlayer(heldItem: $nameTag, isSpectator: true);
+
+		$result = $spectator->interactEntity($stand, Vector3::zero());
+		self::assertFalse($result, "Player::interactEntity() must return false for spectator");
+		self::assertSame("", $stand->getNameTag(), "Armor stand name must not be changed by spectator");
+		self::assertSame(1, $spectator->getInventory()->getItemInHand()->getCount(), "Spectator NameTag must not be consumed");
+		self::assertTrue($stand->getMainHandItem()->isNull(), "Spectator interaction must not equip the stand");
+	}
+
+	public function testSurvivalInteractEntityAppliesNameTagRenaming() : void{
+		$stand = $this->createArmorStand();
+		$nameTag = VanillaItems::NAME_TAG()->setCustomName("Display Stand");
+		$player = $this->createPlayer(heldItem: $nameTag, isSpectator: false);
+
+		$result = $player->interactEntity($stand, Vector3::zero());
+		self::assertTrue($result, "Player::interactEntity() should return true when item handles entity interaction");
+		self::assertSame("Display Stand", $stand->getNameTag(), "Armor stand name should be updated");
+		self::assertSame(0, $player->getInventory()->getItemInHand()->getCount(), "Survival NameTag should be consumed");
+		self::assertTrue($stand->getMainHandItem()->isNull(), "Stand main hand must not be equipped after renaming");
+	}
+
+	public function testPlayerShotProjectileBreaksStandRegardlessOfHeldItem() : void{
+		$arrow = $this->createMock(Entity::class);
+		$this->markClosed($arrow);
+		$arrow->method("getId")->willReturn(10);
+
+		// Case 1: Player holding AIR
+		$stand1 = $this->createArmorStand();
+		$playerHoldingAir = $this->createPlayer(heldItem: VanillaItems::AIR());
+		$event1 = new EntityDamageByChildEntityEvent($playerHoldingAir, $arrow, $stand1, EntityDamageEvent::CAUSE_PROJECTILE, 4.0);
+		$stand1->attack($event1);
+		self::assertFalse($stand1->isAlive(), "Stand should be destroyed in 1 hit by arrow when player holds AIR");
+		$dropIds1 = array_map(fn(Item $i) => $i->getTypeId(), $stand1->getDrops());
+		self::assertContains(VanillaItems::ARMOR_STAND()->getTypeId(), $dropIds1);
+
+		// Case 2: Player holding Diamond Sword
+		$stand2 = $this->createArmorStand();
+		$playerHoldingSword = $this->createPlayer(heldItem: VanillaItems::DIAMOND_SWORD());
+		$event2 = new EntityDamageByChildEntityEvent($playerHoldingSword, $arrow, $stand2, EntityDamageEvent::CAUSE_PROJECTILE, 4.0);
+		$stand2->attack($event2);
+		self::assertFalse($stand2->isAlive(), "Stand should be destroyed in 1 hit by arrow when player holds Sword");
+		$dropIds2 = array_map(fn(Item $i) => $i->getTypeId(), $stand2->getDrops());
+		self::assertContains(VanillaItems::ARMOR_STAND()->getTypeId(), $dropIds2);
+
+		// Case 3: Player in Creative mode
+		$stand3 = $this->createArmorStand();
+		$creativePlayer = $this->createPlayer(isCreative: true);
+		$event3 = new EntityDamageByChildEntityEvent($creativePlayer, $arrow, $stand3, EntityDamageEvent::CAUSE_PROJECTILE, 4.0);
+		$stand3->attack($event3);
+		self::assertFalse($stand3->isAlive(), "Stand should be destroyed in 1 hit by arrow when shooter is creative");
+		$dropIds3 = array_map(fn(Item $i) => $i->getTypeId(), $stand3->getDrops());
+		self::assertContains(VanillaItems::ARMOR_STAND()->getTypeId(), $dropIds3);
+	}
+
+	public function testPlayerShotProjectileEventCancellation() : void{
+		$stand = $this->createArmorStand();
+		$arrow = $this->createMock(Entity::class);
+		$this->markClosed($arrow);
+		$arrow->method("getId")->willReturn(11);
+		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND_SWORD());
+
+		$event = new EntityDamageByChildEntityEvent($player, $arrow, $stand, EntityDamageEvent::CAUSE_PROJECTILE, 4.0);
+		$event->cancel();
+
+		$stand->attack($event);
+		self::assertTrue($stand->isAlive(), "Cancelled projectile event must not destroy the stand");
 	}
 }
