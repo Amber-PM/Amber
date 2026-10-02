@@ -34,6 +34,7 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 use function array_fill_keys;
 use function array_key_first;
+use function array_keys;
 use function array_pop;
 use function count;
 use function in_array;
@@ -48,6 +49,11 @@ final class WireNetwork{
 	private const MAX_WIRES = 4096;
 	private const HORIZONTAL = [Facing::NORTH, Facing::SOUTH, Facing::WEST, Facing::EAST];
 
+	public const PHASE_DISCOVER = 0;
+	public const PHASE_SOURCES = 1;
+	public const PHASE_PROPAGATE = 2;
+	public const PHASE_APPLY = 3;
+
 	/** @var array<int, true> wires whose network was already recomputed this tick */
 	private array $done = [];
 
@@ -58,9 +64,16 @@ final class WireNetwork{
 
 	/**
 	 * @var array<int, array{
+	 *     phase: int,
 	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
 	 *     pending: list<int>,
-	 *     edges: array<int, list<int>>
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
 	 * }> continuationId => state
 	 */
 	private array $continuations = [];
@@ -97,15 +110,28 @@ final class WireNetwork{
 			return;
 		}
 		$id = $this->continuationOwner[$hash];
-		if(isset($this->continuations[$id])){
-			foreach($this->continuations[$id]["wires"] as $wHash => $_){
-				unset($this->continuationOwner[$wHash]);
-			}
-			unset($this->continuations[$id]);
-			$this->done = [];
-		}else{
+		if(!isset($this->continuations[$id])){
 			unset($this->continuationOwner[$hash]);
+			return;
 		}
+
+		$continuation = &$this->continuations[$id];
+		if($continuation["phase"] === self::PHASE_APPLY){
+			World::getBlockXYZ($hash, $x, $y, $z);
+			$block = $this->world->getBlockAt($x, $y, $z);
+			if($block instanceof RedstoneWire){
+				return;
+			}
+			unset($continuation["wires"][$hash], $this->continuationOwner[$hash]);
+			$continuation["mutated"] = true;
+			return;
+		}
+
+		foreach($continuation["wires"] as $wHash => $_){
+			unset($this->continuationOwner[$wHash]);
+		}
+		unset($this->continuations[$id]);
+		$this->done = [];
 	}
 
 	public function processDeferred(int $budget = self::MAX_WIRES) : int{
@@ -116,28 +142,19 @@ final class WireNetwork{
 			if($id === null){
 				break;
 			}
-			$continuation = $this->continuations[$id];
-			unset($this->continuations[$id]);
-
-			$wires = $continuation["wires"];
-			$pending = $continuation["pending"];
-			$edges = $continuation["edges"];
-
 			$slice = min($sliceSize, $budget - $steps);
-			$consumed = $this->advanceNetwork($wires, $pending, $edges, $slice, $id);
+			$continuation = &$this->continuations[$id];
+			$consumed = $this->stepContinuation($id, $continuation, $slice);
 			$steps += $consumed;
 
-			if($pending === []){
-				$this->settleNetwork($id, $wires, $edges);
-			}else{
-				$this->continuations[$id] = [
-					"wires" => $wires,
-					"pending" => $pending,
-					"edges" => $edges
-				];
-				if($consumed === 0){
-					break;
-				}
+			if(isset($this->continuations[$id])){
+				$current = $this->continuations[$id];
+				unset($this->continuations[$id]);
+				$this->continuations[$id] = $current;
+			}
+
+			if($consumed === 0){
+				break;
 			}
 		}
 		return $steps;
@@ -158,13 +175,24 @@ final class WireNetwork{
 		}
 
 		$id = $this->nextContinuationId++;
-		$wires = [$startHash => [$x, $y, $z]];
-		$pending = [$startHash];
-		$edges = [];
 		$this->continuationOwner[$startHash] = $id;
 
+		$this->continuations[$id] = [
+			"phase" => self::PHASE_DISCOVER,
+			"wires" => [$startHash => [$x, $y, $z]],
+			"edges" => [],
+			"pending" => [$startHash],
+			"sourceQueue" => [],
+			"power" => [],
+			"buckets" => [],
+			"propagateLevel" => 15,
+			"applyQueue" => [],
+			"mutated" => false
+		];
+
 		$availableBudget = $budget ?? ($this->engine->isTicking() ? max(0, $this->engine->getRemainingBudget()) : self::MAX_WIRES);
-		$consumed = $this->advanceNetwork($wires, $pending, $edges, $availableBudget, $id);
+		$continuation = &$this->continuations[$id];
+		$consumed = $this->stepContinuation($id, $continuation, $availableBudget);
 
 		if($budget !== null){
 			$budget -= $consumed;
@@ -172,48 +200,255 @@ final class WireNetwork{
 			$this->engine->consumeBudget($consumed);
 		}
 
-		if($pending === []){
-			$this->settleNetwork($id, $wires, $edges);
-		}else{
-			foreach($wires as $hash => $_){
+		if(isset($this->continuations[$id])){
+			foreach($this->continuations[$id]["wires"] as $hash => $_){
 				$this->done[$hash] = true;
 			}
-			$this->continuations[$id] = [
-				"wires" => $wires,
-				"pending" => $pending,
-				"edges" => $edges
-			];
 		}
 	}
 
 	/**
-	 * @param array<int, array{int, int, int}> $wires
-	 * @param list<int>                        $pending
-	 * @param array<int, list<int>>            $edges
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $continuation
 	 */
-	private function advanceNetwork(array &$wires, array &$pending, array &$edges, int $budget, int $continuationId) : int{
+	private function stepContinuation(int $id, array &$continuation, int $budget) : int{
 		$steps = 0;
-		while($pending !== [] && $steps < $budget){
-			$hash = array_pop($pending);
+		while($steps < $budget && isset($this->continuations[$id])){
+			$slice = $budget - $steps;
+			$consumed = 0;
+			$oldPhase = $continuation["phase"];
+
+			switch($continuation["phase"]){
+				case self::PHASE_DISCOVER:
+					$consumed = $this->stepDiscover($continuation, $slice, $id);
+					$steps += $consumed;
+					if($continuation["pending"] === []){
+						$continuation["phase"] = self::PHASE_SOURCES;
+						$continuation["sourceQueue"] = array_keys($continuation["wires"]);
+						$continuation["power"] = [];
+						$continuation["buckets"] = [];
+					}
+					break;
+
+				case self::PHASE_SOURCES:
+					$consumed = $this->stepSources($continuation, $slice);
+					$steps += $consumed;
+					if($continuation["sourceQueue"] === []){
+						$continuation["phase"] = self::PHASE_PROPAGATE;
+						$continuation["propagateLevel"] = 15;
+					}
+					break;
+
+				case self::PHASE_PROPAGATE:
+					$consumed = $this->stepPropagate($continuation, $slice);
+					$steps += $consumed;
+					if($continuation["propagateLevel"] < 2){
+						$continuation["phase"] = self::PHASE_APPLY;
+						$continuation["applyQueue"] = array_keys($continuation["wires"]);
+						unset($continuation["edges"], $continuation["buckets"]);
+					}
+					break;
+
+				case self::PHASE_APPLY:
+					$consumed = $this->stepApply($continuation, $slice);
+					$steps += $consumed;
+					if($continuation["applyQueue"] === []){
+						$this->finalizeContinuation($id, $continuation);
+						return $steps;
+					}
+					break;
+			}
+
+			if($consumed === 0 && $continuation["phase"] === $oldPhase){
+				break;
+			}
+		}
+		return $steps;
+	}
+
+	/**
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $c
+	 */
+	private function stepDiscover(array &$c, int $budget, int $id) : int{
+		$steps = 0;
+		while($c["pending"] !== [] && $steps < $budget){
+			$hash = array_pop($c["pending"]);
 			++$steps;
-			[$wx, $wy, $wz] = $wires[$hash];
+			[$wx, $wy, $wz] = $c["wires"][$hash];
 			foreach($this->connectedWires($wx, $wy, $wz) as [$nx, $ny, $nz]){
 				$next = World::blockHash($nx, $ny, $nz);
 				if($this->canTransmit($wx, $wy, $wz, $nx, $ny, $nz)){
-					$edges[$hash][] = $next;
+					$c["edges"][$hash][] = $next;
 				}
-				if(isset($this->continuationOwner[$next]) && $this->continuationOwner[$next] !== $continuationId){
-					$this->mergeContinuations($continuationId, $this->continuationOwner[$next], $wires, $pending, $edges);
+				if(isset($this->continuationOwner[$next]) && $this->continuationOwner[$next] !== $id){
+					$this->mergeContinuations($id, $this->continuationOwner[$next], $c["wires"], $c["pending"], $c["edges"]);
 					continue;
 				}
-				if(!isset($wires[$next])){
-					$wires[$next] = [$nx, $ny, $nz];
-					$pending[] = $next;
-					$this->continuationOwner[$next] = $continuationId;
+				if(!isset($c["wires"][$next])){
+					$c["wires"][$next] = [$nx, $ny, $nz];
+					$c["pending"][] = $next;
+					$this->continuationOwner[$next] = $id;
 				}
 			}
 		}
 		return $steps;
+	}
+
+	/**
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $c
+	 */
+	private function stepSources(array &$c, int $budget) : int{
+		$steps = 0;
+		while($c["sourceQueue"] !== [] && $steps < $budget){
+			$hash = array_pop($c["sourceQueue"]);
+			++$steps;
+			[$wx, $wy, $wz] = $c["wires"][$hash];
+			$p = $this->sourcePower($wx, $wy, $wz);
+			$c["power"][$hash] = $p;
+			if($p > 0){
+				$c["buckets"][$p][] = $hash;
+			}
+		}
+		return $steps;
+	}
+
+	/**
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $c
+	 */
+	private function stepPropagate(array &$c, int $budget) : int{
+		$steps = 0;
+		while($c["propagateLevel"] > 1 && $steps < $budget){
+			$level = $c["propagateLevel"];
+			if(!isset($c["buckets"][$level]) || $c["buckets"][$level] === []){
+				--$c["propagateLevel"];
+				continue;
+			}
+
+			$hash = array_pop($c["buckets"][$level]);
+			++$steps;
+
+			if(($c["power"][$hash] ?? 0) !== $level){
+				continue;
+			}
+
+			foreach($c["edges"][$hash] ?? [] as $next){
+				if(isset($c["power"][$next]) && $c["power"][$next] < $level - 1){
+					$c["power"][$next] = $level - 1;
+					$c["buckets"][$level - 1][] = $next;
+				}
+			}
+		}
+		return $steps;
+	}
+
+	/**
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $c
+	 */
+	private function stepApply(array &$c, int $budget) : int{
+		$steps = 0;
+		while($c["applyQueue"] !== [] && $steps < $budget){
+			$hash = array_pop($c["applyQueue"]);
+			++$steps;
+
+			if(!isset($c["wires"][$hash])){
+				continue;
+			}
+			[$wx, $wy, $wz] = $c["wires"][$hash];
+			$wire = $this->world->getBlockAt($wx, $wy, $wz);
+			if($wire instanceof RedstoneWire){
+				$targetPower = $c["power"][$hash] ?? 0;
+				if($wire->getOutputSignalStrength() !== $targetPower){
+					$pos = new Vector3($wx, $wy, $wz);
+					$this->world->setBlockAt($wx, $wy, $wz, $wire->setOutputSignalStrength($targetPower), false);
+					$this->world->notifyNeighbourBlockUpdate($pos);
+					$this->engine->requestAround($pos);
+				}
+			}
+			$this->done[$hash] = true;
+		}
+		return $steps;
+	}
+
+	/**
+	 * @param array{
+	 *     phase: int,
+	 *     wires: array<int, array{int, int, int}>,
+	 *     edges: array<int, list<int>>,
+	 *     pending: list<int>,
+	 *     sourceQueue: list<int>,
+	 *     power: array<int, int>,
+	 *     buckets: array<int, list<int>>,
+	 *     propagateLevel: int,
+	 *     applyQueue: list<int>,
+	 *     mutated: bool
+	 * } $c
+	 */
+	private function finalizeContinuation(int $id, array $c) : void{
+		foreach($c["wires"] as $hash => $_){
+			unset($this->continuationOwner[$hash]);
+			$this->done[$hash] = true;
+		}
+		unset($this->continuations[$id]);
+
+		if($c["mutated"]){
+			foreach($c["wires"] as $hash => [$wx, $wy, $wz]){
+				$this->engine->request($wx, $wy, $wz);
+			}
+		}
 	}
 
 	/**
@@ -245,6 +480,12 @@ final class WireNetwork{
 				$pendingLookup[$hash] = true;
 			}
 		}
+		foreach($source["wires"] as $hash => $_){
+			if(!isset($source["edges"][$hash]) && !isset($pendingLookup[$hash])){
+				$targetPending[] = $hash;
+				$pendingLookup[$hash] = true;
+			}
+		}
 		foreach($source["edges"] as $hash => $edgeList){
 			if(!isset($targetEdges[$hash])){
 				$targetEdges[$hash] = $edgeList;
@@ -257,54 +498,6 @@ final class WireNetwork{
 					}
 				}
 			}
-		}
-	}
-
-	/**
-	 * @param array<int, array{int, int, int}> $wires
-	 * @param array<int, list<int>>            $edges
-	 */
-	private function settleNetwork(int $id, array $wires, array $edges) : void{
-		foreach($wires as $hash => $_){
-			unset($this->continuationOwner[$hash]);
-		}
-		unset($this->continuations[$id]);
-
-		$power = [];
-		/** @var array<int, list<int>> $buckets */
-		$buckets = [];
-		foreach($wires as $hash => [$wx, $wy, $wz]){
-			$power[$hash] = $this->sourcePower($wx, $wy, $wz);
-			if($power[$hash] > 0){
-				$buckets[$power[$hash]][] = $hash;
-			}
-		}
-		for($level = 15; $level > 1; --$level){
-			foreach($buckets[$level] ?? [] as $hash){
-				if($power[$hash] !== $level){
-					continue;
-				}
-				foreach($edges[$hash] ?? [] as $next){
-					if(isset($power[$next]) && $power[$next] < $level - 1){
-						$power[$next] = $level - 1;
-						$buckets[$level - 1][] = $next;
-					}
-				}
-			}
-		}
-
-		foreach($wires as $hash => [$wx, $wy, $wz]){
-			$wire = $this->world->getBlockAt($wx, $wy, $wz);
-			if($wire instanceof RedstoneWire){
-				$powerChanged = $wire->getOutputSignalStrength() !== $power[$hash];
-				if($powerChanged){
-					$wirePos = new Vector3($wx, $wy, $wz);
-					$this->world->setBlockAt($wx, $wy, $wz, $wire->setOutputSignalStrength($power[$hash]), false);
-					$this->world->notifyNeighbourBlockUpdate($wirePos);
-					$this->engine->requestAround($wirePos);
-				}
-			}
-			$this->done[$hash] = true;
 		}
 	}
 

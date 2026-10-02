@@ -73,6 +73,11 @@ final class TorchBurnout{
 		unset($this->toggles[$hash], $this->burntOut[$hash]);
 	}
 
+	public function clear() : void{
+		$this->toggles = [];
+		$this->burntOut = [];
+	}
+
 	private static function hash(Vector3 $pos) : int{
 		return World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 	}

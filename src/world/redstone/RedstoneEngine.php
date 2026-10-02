@@ -57,8 +57,9 @@ final class RedstoneEngine{
 	private array $delayedIndex = [];
 	/** @var array<int, int> block hash => state ID of block when scheduled */
 	private array $delayedState = [];
-	/** @var array<int, list<array{int, int}>> chunkHash => list of [blockHash, dueTick] */
+	/** @var array<int, array<int, int>> chunkHash => [blockHash => dueTick] */
 	private array $unloadedDelayed = [];
+	private int $unloadedDelayedCount = 0;
 	/** @var array<int, true> positions last seen powered by blocks that react to changes of power (doors, TNT...) */
 	private array $lastPowered = [];
 	private bool $active = false;
@@ -98,11 +99,7 @@ final class RedstoneEngine{
 	}
 
 	public function getUnloadedDelayedCount() : int{
-		$count = 0;
-		foreach($this->unloadedDelayed as $events){
-			$count += count($events);
-		}
-		return $count;
+		return $this->unloadedDelayedCount;
 	}
 
 	public function clear() : void{
@@ -112,8 +109,11 @@ final class RedstoneEngine{
 		$this->delayedIndex = [];
 		$this->delayedState = [];
 		$this->unloadedDelayed = [];
+		$this->unloadedDelayedCount = 0;
 		$this->lastPowered = [];
 		$this->wires->clear();
+		$this->torchBurnout->clear();
+		$this->containerWatch->clear();
 	}
 
 	public function getWires() : WireNetwork{ return $this->wires; }
@@ -224,6 +224,10 @@ final class RedstoneEngine{
 		$due = $this->currentTick + max(1, $delay);
 		$this->delayedIndex[$hash] = $due;
 		$this->delayedState[$hash] = $stateId;
+		if(!isset($this->delayed[$due])){
+			$this->delayed[$due] = [];
+			ksort($this->delayed);
+		}
 		$this->delayed[$due][] = $hash;
 	}
 
@@ -232,12 +236,9 @@ final class RedstoneEngine{
 		unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
 
 		$chunkHash = World::chunkHash($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4);
-		if(isset($this->unloadedDelayed[$chunkHash])){
-			foreach($this->unloadedDelayed[$chunkHash] as $k => [$h, $dueTick]){
-				if($h === $hash){
-					unset($this->unloadedDelayed[$chunkHash][$k]);
-				}
-			}
+		if(isset($this->unloadedDelayed[$chunkHash][$hash])){
+			unset($this->unloadedDelayed[$chunkHash][$hash]);
+			--$this->unloadedDelayedCount;
 			if($this->unloadedDelayed[$chunkHash] === []){
 				unset($this->unloadedDelayed[$chunkHash]);
 			}
@@ -268,25 +269,56 @@ final class RedstoneEngine{
 		$this->currentBudget = $this->maxUpdatesPerTick;
 		$this->isTicking = true;
 		try{
-			if($this->unloadedDelayed !== []){
+			if($this->unloadedDelayed !== [] && $this->currentBudget > 0){
+				$chunkCheckLimit = min(count($this->unloadedDelayed), max(32, $this->currentBudget));
+				$checked = 0;
 				foreach($this->unloadedDelayed as $chunkHash => $events){
+					if($this->currentBudget <= 0 || ++$checked > $chunkCheckLimit){
+						break;
+					}
+
 					$chunkX = null;
 					$chunkZ = null;
 					World::getXZ($chunkHash, $chunkX, $chunkZ);
-					if($chunkX !== null && $chunkZ !== null && $this->world->isChunkLoaded($chunkX, $chunkZ)){
+					if($chunkX === null || $chunkZ === null || !$this->world->isChunkLoaded($chunkX, $chunkZ)){
 						unset($this->unloadedDelayed[$chunkHash]);
-						foreach($events as [$h, $dueTick]){
-							if(($this->delayedIndex[$h] ?? null) === $dueTick){
-								$this->delayedIndex[$h] = $currentTick;
-								$this->delayed[$currentTick][] = $h;
-							}
+						$this->unloadedDelayed[$chunkHash] = $events;
+						continue;
+					}
+
+					foreach($events as $hash => $dueTick){
+						if($this->currentBudget <= 0){
+							break;
 						}
+						unset($this->unloadedDelayed[$chunkHash][$hash]);
+						--$this->unloadedDelayedCount;
+
+						if(($this->delayedIndex[$hash] ?? null) !== $dueTick){
+							continue;
+						}
+
+						$expectedState = $this->delayedState[$hash] ?? null;
+						unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
+
+						--$this->currentBudget;
+						World::getBlockXYZ($hash, $x, $y, $z);
+						$block = $this->world->getBlockAt($x, $y, $z);
+						if($block instanceof DelayedRedstoneReceiver && ($expectedState === null || $block->getStateId() === $expectedState)){
+							$block->onRedstoneScheduledUpdate($this);
+						}
+					}
+
+					if($this->unloadedDelayed[$chunkHash] === []){
+						unset($this->unloadedDelayed[$chunkHash]);
+					}else{
+						$remaining = $this->unloadedDelayed[$chunkHash];
+						unset($this->unloadedDelayed[$chunkHash]);
+						$this->unloadedDelayed[$chunkHash] = $remaining;
 					}
 				}
 			}
 
 			if($this->delayed !== []){
-				ksort($this->delayed);
 				$staleChecks = 0;
 				$staleLimit = $this->maxUpdatesPerTick * 4;
 				foreach($this->delayed as $tick => $hashes){
@@ -309,7 +341,10 @@ final class RedstoneEngine{
 						$chunkZ = $z >> 4;
 						if(!$this->world->isChunkLoaded($chunkX, $chunkZ)){
 							$chunkHash = World::chunkHash($chunkX, $chunkZ);
-							$this->unloadedDelayed[$chunkHash][] = [$hash, $tick];
+							if(!isset($this->unloadedDelayed[$chunkHash][$hash])){
+								$this->unloadedDelayed[$chunkHash][$hash] = $tick;
+								++$this->unloadedDelayedCount;
+							}
 							continue;
 						}
 						unset($this->delayedIndex[$hash], $this->delayedState[$hash]);

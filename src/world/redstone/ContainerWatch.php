@@ -64,6 +64,10 @@ final class ContainerWatch{
 		}
 	}
 
+	public function clear() : void{
+		$this->watched = [];
+	}
+
 	/** Queues the comparators whose container changed. */
 	public function check(RedstoneEngine $engine) : void{
 		foreach($this->watched as $hash => $signal){

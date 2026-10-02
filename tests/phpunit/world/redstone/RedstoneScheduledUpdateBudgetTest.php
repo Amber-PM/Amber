@@ -30,6 +30,7 @@ use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\Opaque;
+use pocketmine\block\RedstoneWire;
 use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
@@ -213,5 +214,173 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 
 		self::assertSame(0, $fired, "Cancelled schedule must not fire upon chunk reload");
 		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Tombstoned parked event must be pruned");
+	}
+
+	public function testParkedEventsAwakeningIsMeteredUnderBudget() : void{
+		$tickBudget = 50;
+		[$engine, $world] = $this->createEnvironment($tickBudget);
+
+		$executions = 0;
+		$receiver = new class(new BlockIdentifier(BlockTypeIds::newId()), "Parked Metered Receiver", new BlockTypeInfo(BlockBreakInfo::indestructible())) extends Opaque implements DelayedRedstoneReceiver{
+			public static ?\Closure $handler = null;
+			public function onRedstoneUpdate(RedstoneEngine $engine) : void{}
+			public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+				if(self::$handler !== null){
+					(self::$handler)();
+				}
+			}
+		};
+		$className = get_class($receiver);
+		$className::$handler = function() use (&$executions) : void{
+			++$executions;
+		};
+
+		$chunkX = 10;
+		$chunkZ = 10;
+		$totalEvents = 200;
+
+		for($i = 0; $i < $totalEvents; ++$i){
+			$x = ($chunkX << 4) + ($i % 16);
+			$z = ($chunkZ << 4) + intdiv($i, 16);
+			$world->setBlockAt($x, 64, $z, $receiver, false);
+			$engine->schedule(new Vector3($x, 64, $z), 1);
+		}
+
+		$this->loadedChunks["$chunkX:$chunkZ"] = false;
+		$engine->tick(1);
+
+		self::assertSame(0, $executions, "No events should fire while chunk is unloaded");
+		self::assertSame(200, $engine->getUnloadedDelayedCount(), "All 200 events must be parked in unloadedDelayed collection");
+
+		$this->loadedChunks["$chunkX:$chunkZ"] = true;
+
+		$engine->tick(2);
+		self::assertSame(50, $executions, "Tick 1 after load must execute only up to tick budget (50 updates)");
+		self::assertSame(150, $engine->getUnloadedDelayedCount(), "Remaining 150 events must remain parked when awakening is metered under budget");
+
+		$engine->tick(3);
+		self::assertSame(100, $executions, "Tick 2 after load must execute next 50 updates");
+		self::assertSame(100, $engine->getUnloadedDelayedCount());
+
+		$engine->tick(4);
+		self::assertSame(150, $executions, "Tick 3 after load must execute next 50 updates");
+		self::assertSame(50, $engine->getUnloadedDelayedCount());
+
+		$engine->tick(5);
+		self::assertSame(200, $executions, "Tick 4 after load must execute final 50 updates");
+		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Parked events collection must be completely drained");
+
+		$engine->tick(6);
+		self::assertSame(200, $executions, "No further updates should fire once drained");
+	}
+
+	public function testParkedEventCancellationIsO1() : void{
+		[$engine, $world] = $this->createEnvironment(1000);
+
+		$receiver = new class(new BlockIdentifier(BlockTypeIds::newId()), "O1 Cancel Receiver", new BlockTypeInfo(BlockBreakInfo::indestructible())) extends Opaque implements DelayedRedstoneReceiver{
+			public function onRedstoneUpdate(RedstoneEngine $engine) : void{}
+			public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{}
+		};
+
+		$chunkX = 10;
+		$chunkZ = 10;
+		$chunkKey = "$chunkX:$chunkZ";
+		$chunkHash = World::chunkHash($chunkX, $chunkZ);
+
+		$pos = new Vector3(160, 64, 160);
+		$blockHash = World::blockHash(160, 64, 160);
+		$world->setBlockAt(160, 64, 160, $receiver, false);
+		$engine->schedule($pos, 1);
+
+		$this->loadedChunks[$chunkKey] = false;
+		$engine->tick(1);
+
+		self::assertSame(1, $engine->getUnloadedDelayedCount(), "Event must be parked in unloaded collection");
+		self::assertTrue($engine->isScheduled($pos), "Position must remain marked as scheduled");
+
+		$prop = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
+		/** @var array<int, mixed> $parkedBefore */
+		$parkedBefore = $prop->getValue($engine);
+		self::assertArrayHasKey($chunkHash, $parkedBefore, "Chunk entry must exist in unloadedDelayed");
+		self::assertArrayHasKey(
+			$blockHash,
+			$parkedBefore[$chunkHash],
+			"Parked chunk events must be stored in an associative map keyed by block hash for O(1) pruning"
+		);
+
+		$engine->cancelSchedule($pos);
+
+		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Parked event count must drop to 0 immediately upon cancellation");
+		self::assertFalse($engine->isScheduled($pos), "Position must not be scheduled after cancellation");
+
+		/** @var array<int, mixed> $parkedAfter */
+		$parkedAfter = $prop->getValue($engine);
+		self::assertArrayNotHasKey($chunkHash, $parkedAfter, "Chunk entry must be immediately pruned from map in O(1)");
+	}
+
+	public function testWorldClearLifecycle() : void{
+		[$engine, $world] = $this->createEnvironment(100);
+
+		$receiver = new class(new BlockIdentifier(BlockTypeIds::newId()), "Clear Receiver", new BlockTypeInfo(BlockBreakInfo::indestructible())) extends Opaque implements DelayedRedstoneReceiver{
+			public function onRedstoneUpdate(RedstoneEngine $engine) : void{}
+			public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{}
+		};
+
+		$schedPos = new Vector3(10, 64, 10);
+		$world->setBlockAt(10, 64, 10, $receiver, false);
+		$engine->schedule($schedPos, 20);
+		self::assertTrue($engine->isScheduled($schedPos));
+
+		$engine->request(20, 64, 20);
+		$engine->request(21, 64, 21);
+
+		$queueProp = new \ReflectionProperty(RedstoneEngine::class, "queue");
+		self::assertFalse($queueProp->getValue($engine)->isEmpty(), "Engine queue must have entries");
+
+		for($x = 0; $x < 100; ++$x){
+			$world->setBlockAt($x, 63, 50, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 50, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$startWire = $world->getBlockAt(0, 64, 50);
+		self::assertInstanceOf(RedstoneWire::class, $startWire);
+		$budget = 10;
+		$engine->getWires()->update($startWire, $budget);
+		self::assertTrue($engine->getWires()->hasDeferred(), "Wire continuations must exist before clear");
+		self::assertGreaterThan(0, $engine->getWires()->getContinuationCount());
+
+		$chunkKey = "30:30";
+		$this->loadedChunks[$chunkKey] = false;
+		$parkedPos = new Vector3(480, 64, 480);
+		$world->setBlockAt(480, 64, 480, $receiver, false);
+		$engine->schedule($parkedPos, 1);
+		$engine->tick(1);
+		self::assertGreaterThan(0, $engine->getUnloadedDelayedCount(), "Parked chunk events must exist before clear");
+
+		$engine->powerChanged(new Vector3(5, 64, 5), true);
+
+		$engine->clear();
+
+		self::assertTrue($queueProp->getValue($engine)->isEmpty(), "SplQueue must be empty after clear()");
+		$queuedProp = new \ReflectionProperty(RedstoneEngine::class, "queued");
+		self::assertSame([], $queuedProp->getValue($engine), "Queued map must be empty after clear()");
+
+		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine), "Delayed array must be empty after clear()");
+		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
+		self::assertSame([], $delayedIndexProp->getValue($engine), "Delayed index must be empty after clear()");
+		$delayedStateProp = new \ReflectionProperty(RedstoneEngine::class, "delayedState");
+		self::assertSame([], $delayedStateProp->getValue($engine), "Delayed state must be empty after clear()");
+		self::assertFalse($engine->isScheduled($schedPos), "Scheduled position must no longer be scheduled");
+
+		self::assertFalse($engine->getWires()->hasDeferred(), "WireNetwork must have no deferred continuations after clear()");
+		self::assertSame(0, $engine->getWires()->getContinuationCount(), "WireNetwork continuation count must be 0 after clear()");
+		self::assertNull($engine->getWires()->getContinuationOwner(World::blockHash(0, 64, 50)), "Continuation owner map must be empty after clear()");
+
+		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Unloaded delayed count must be 0 after clear()");
+		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
+		self::assertSame([], $unloadedProp->getValue($engine), "Unloaded delayed collection must be empty after clear()");
+
+		$lastPoweredProp = new \ReflectionProperty(RedstoneEngine::class, "lastPowered");
+		self::assertSame([], $lastPoweredProp->getValue($engine), "Last powered map must be empty after clear()");
 	}
 }

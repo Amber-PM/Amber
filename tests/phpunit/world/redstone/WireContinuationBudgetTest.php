@@ -221,4 +221,58 @@ final class WireContinuationBudgetTest extends TestCase{
 		self::assertInstanceOf(RedstoneWire::class, $farWire);
 		self::assertSame(0, $farWire->getOutputSignalStrength(), "Far wire must not have settled in tick 1 due to zero budget");
 	}
+
+	public function testSettlePhaseRespectsBudgetAndSlicesWork() : void{
+		[$engine, $world] = $this->createEnvironment(50);
+
+		$wireCount = 500;
+		for($x = 0; $x < $wireCount; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+
+		$startWire = $world->getBlockAt(0, 64, 0);
+		self::assertInstanceOf(RedstoneWire::class, $startWire);
+
+		$budget = 50;
+		$engine->getWires()->update($startWire, $budget);
+
+		self::assertSame(0, $budget, "Initial budget reference of 50 must be fully consumed by the first slice");
+		self::assertTrue($engine->getWires()->hasDeferred(), "Network must not settle in a single step under budget constraint");
+		self::assertGreaterThan(0, $engine->getWires()->getContinuationCount(), "Continuation must be registered in WireNetwork");
+
+		$startHash = World::blockHash(0, 64, 0);
+		self::assertNotNull($engine->getWires()->getContinuationOwner($startHash), "Continuation ownership must be active");
+
+		$ticks = 0;
+		$maxTicks = 100;
+		while($engine->getWires()->hasDeferred() && $ticks < $maxTicks){
+			++$ticks;
+			$engine->tick($ticks);
+		}
+
+		self::assertFalse($engine->getWires()->hasDeferred(), "Wire network must eventually settle fully");
+		self::assertGreaterThan(20, $ticks, "Settle phases must slice work across multiple ticks under budget constraint rather than settling in 1 burst");
+		self::assertNull($engine->getWires()->getContinuationOwner($startHash), "Continuation ownership must be released upon completion");
+	}
+
+	public function testSettlePhaseCannotEvadeBudget() : void{
+		[$engine, $world] = $this->createEnvironment(10);
+
+		$wireCount = 200;
+		for($x = 0; $x < $wireCount; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+
+		$startWire = $world->getBlockAt(0, 64, 0);
+		self::assertInstanceOf(RedstoneWire::class, $startWire);
+
+		$budget = $wireCount - 1;
+		$engine->getWires()->update($startWire, $budget);
+		self::assertTrue($engine->getWires()->hasDeferred());
+
+		$engine->tick(1);
+		self::assertTrue($engine->getWires()->hasDeferred(), "Network must remain deferred across settle phases when remaining budget is small");
+	}
 }
