@@ -693,6 +693,7 @@ class World implements ChunkManager{
 		$this->blockCollisionBoxCache = [];
 
 		$this->redstone?->clear();
+		$this->redstone = null;
 
 		$this->unloaded = true;
 	}
@@ -1191,10 +1192,13 @@ class World implements ChunkManager{
 			$block->onNearbyBlockChange();
 			$this->redstone?->onNeighbourUpdate($block);
 		}
-		$this->redstone?->tick($currentTick);
-		$this->hopperTicker?->tick($currentTick);
-
 		$this->timings->neighbourBlockUpdates->stopTiming();
+
+		$this->timings->redstone->startTiming();
+		$this->redstone?->tick($currentTick);
+		$this->timings->redstone->stopTiming();
+
+		$this->hopperTicker?->tick($currentTick);
 
 		$this->timings->entityTick->startTiming();
 		//Update entities that need update

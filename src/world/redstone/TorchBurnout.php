@@ -50,8 +50,8 @@ final class TorchBurnout{
 		return false;
 	}
 
-	/** Records a toggle of the torch; when it burns out, it is re-evaluated once the burnout ends. */
-	public function recordToggle(Vector3 $pos, RedstoneEngine $engine) : void{
+	/** Records an extinguish of the torch; when it burns out, it is re-evaluated once the burnout ends. */
+	public function recordToggle(Vector3 $pos, RedstoneEngine $engine, ?int $expectedStateId = null) : void{
 		$hash = self::hash($pos);
 		$currentTick = $engine->getCurrentTick();
 		$recent = [];
@@ -61,12 +61,16 @@ final class TorchBurnout{
 			}
 		}
 		$recent[] = $currentTick;
-		if(count($recent) > self::TOGGLES){
+		if(count($recent) >= self::TOGGLES){
 			$this->burntOut[$hash] = $currentTick + self::DURATION;
 			$recent = [];
-			$engine->schedule($pos, self::DURATION + 1);
+			$engine->schedule($pos, self::DURATION, $expectedStateId);
 		}
-		$this->toggles[$hash] = $recent;
+		if($recent === []){
+			unset($this->toggles[$hash]);
+		}else{
+			$this->toggles[$hash] = $recent;
+		}
 	}
 
 	public function forget(int $hash) : void{

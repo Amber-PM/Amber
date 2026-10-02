@@ -74,10 +74,13 @@ class RedstoneTorch extends Torch implements Lightable, RedstoneSource, DelayedR
 		if($lit === $this->lit){
 			return;
 		}
-		$burnout = $engine->getTorchBurnout();
-		$burnout->recordToggle($this->position, $engine);
-		if($burnout->isBurntOut($this->position, $engine->getCurrentTick())){
-			$lit = false; //this toggle burnt it out: it stays off until the burnout ends
+		if($this->lit && !$lit){
+			$burnout = $engine->getTorchBurnout();
+			$unlit = $this->setLit(false);
+			$burnout->recordToggle($this->position, $engine, $unlit->getStateId());
+			if($burnout->isBurntOut($this->position, $engine->getCurrentTick())){
+				$lit = false;
+			}
 		}
 		if($lit !== $this->lit){
 			$engine->getWorld()->setBlock($this->position, $this->setLit($lit));

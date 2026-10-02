@@ -26,6 +26,7 @@ namespace pocketmine\world\redstone;
 
 use pocketmine\block\Block;
 use pocketmine\block\Redstone;
+use pocketmine\block\RedstoneTorch;
 use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\RedstoneSource;
@@ -103,6 +104,7 @@ final class RedstoneEngine{
 	}
 
 	public function clear() : void{
+		$this->active = false;
 		$this->queue = new \SplQueue();
 		$this->queued = [];
 		$this->delayed = [];
@@ -145,12 +147,16 @@ final class RedstoneEngine{
 		if(self::isComponent($block)){
 			$this->active = true;
 			if(isset($this->delayedState[$hash]) && $this->delayedState[$hash] !== $block->getStateId()){
-				unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
+				$this->cancelSchedule($pos);
+				$this->torchBurnout->forget($hash);
+			}
+			if(!$block instanceof RedstoneTorch){
+				$this->torchBurnout->forget($hash);
 			}
 			$this->request($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 			return;
 		}
-		unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
+		$this->cancelSchedule($pos);
 		if(!$this->active){
 			return;
 		}

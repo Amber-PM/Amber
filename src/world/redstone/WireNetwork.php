@@ -158,14 +158,24 @@ final class WireNetwork{
 		foreach($continuation["wires"] as $wHash => $_){
 			unset($this->continuationOwner[$wHash]);
 		}
-		if(isset($continuation["mergingSources"])){
-			foreach($continuation["mergingSources"] as $source){
-				foreach($source["wires"] as $wHash => $_){
-					unset($this->continuationOwner[$wHash]);
+		$sourcesToClean = isset($continuation["mergingSources"]) ? array_values($continuation["mergingSources"]) : [];
+		while($sourcesToClean !== []){
+			$source = array_pop($sourcesToClean);
+			foreach($source["wires"] as $wHash => $_){
+				unset($this->continuationOwner[$wHash]);
+			}
+			if(isset($source["mergingSources"])){
+				foreach($source["mergingSources"] as $subSource){
+					$sourcesToClean[] = $subSource;
 				}
 			}
 		}
 		unset($this->continuations[$id]);
+		foreach($this->continuationAliases as $aliasSource => $aliasTarget){
+			if($aliasTarget === $id || $aliasSource === $id){
+				unset($this->continuationAliases[$aliasSource]);
+			}
+		}
 		$this->done = [];
 	}
 
@@ -329,6 +339,11 @@ final class WireNetwork{
 						$c["mergingSources"][$owner] = $this->continuations[$owner];
 						unset($this->continuations[$owner]);
 						$this->continuationAliases[$owner] = $id;
+						foreach($this->continuationAliases as $src => $dst){
+							if($dst === $owner){
+								$this->continuationAliases[$src] = $id;
+							}
+						}
 						$c["phase"] = self::PHASE_MERGE;
 						return $steps;
 					}
@@ -385,6 +400,12 @@ final class WireNetwork{
 				if(isset($source["mergingSources"])){
 					foreach($source["mergingSources"] as $subSourceId => $subSourceData){
 						$c["mergingSources"][$subSourceId] = $subSourceData;
+						$this->continuationAliases[$subSourceId] = $id;
+						foreach($this->continuationAliases as $src => $dst){
+							if($dst === $subSourceId){
+								$this->continuationAliases[$src] = $id;
+							}
+						}
 					}
 				}
 				unset($c["mergingSources"][$sourceId]);
@@ -481,11 +502,16 @@ final class WireNetwork{
 			unset($this->continuationOwner[$hash]);
 			$this->done[$hash] = true;
 		}
-		if(isset($c["mergingSources"])){
-			foreach($c["mergingSources"] as $source){
-				foreach($source["wires"] as $hash => $_){
-					unset($this->continuationOwner[$hash]);
-					$this->done[$hash] = true;
+		$sourcesToClean = isset($c["mergingSources"]) ? array_values($c["mergingSources"]) : [];
+		while($sourcesToClean !== []){
+			$source = array_pop($sourcesToClean);
+			foreach($source["wires"] as $hash => $_){
+				unset($this->continuationOwner[$hash]);
+				$this->done[$hash] = true;
+			}
+			if(isset($source["mergingSources"])){
+				foreach($source["mergingSources"] as $subSource){
+					$sourcesToClean[] = $subSource;
 				}
 			}
 		}

@@ -325,4 +325,44 @@ final class WireContinuationBudgetTest extends TestCase{
 			"Continuation B must not be completely dissolved in a single budget step"
 		);
 	}
+
+	public function testContinuationInvalidationFreesAllOwnedNodesAcrossMerges() : void{
+		[$engine, $world] = $this->createEnvironment(100000);
+
+		for($x = 0; $x < 200; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+
+		$wireA = $world->getBlockAt(0, 64, 0);
+		$wireB = $world->getBlockAt(199, 64, 0);
+		self::assertInstanceOf(RedstoneWire::class, $wireA);
+		self::assertInstanceOf(RedstoneWire::class, $wireB);
+
+		$budgetA = 99;
+		$engine->getWires()->update($wireA, $budgetA);
+
+		$budgetB = 99;
+		$engine->getWires()->update($wireB, $budgetB);
+
+		$wires = $engine->getWires();
+		self::assertSame(2, $wires->getContinuationCount());
+
+		// Step 1 to trigger collision and merge
+		$wires->processDeferred(1);
+
+		// Now break a wire to trigger invalidation
+		$breakHash = World::blockHash(50, 64, 0);
+		$wires->invalidate($breakHash);
+
+		// Every single wire must be freed from continuationOwner
+		for($x = 0; $x < 200; ++$x){
+			$h = World::blockHash($x, 64, 0);
+			self::assertNull(
+				$wires->getContinuationOwner($h),
+				"Wire at x=$x must have its continuation ownership released after invalidation"
+			);
+		}
+		self::assertSame(0, $wires->getContinuationCount());
+	}
 }
