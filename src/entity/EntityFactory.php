@@ -200,6 +200,10 @@ final class EntityFactory{
 			'ThrownTrident' //as above
 		]);
 
+		$this->register(Cat::class, function(World $world, CompoundTag $nbt) : Cat{
+			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Cat', 'minecraft:cat']);
+
 		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
 			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Skeleton', 'minecraft:skeleton']);
