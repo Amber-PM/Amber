@@ -763,4 +763,19 @@ final class CatTest extends TestCase{
 		self::assertSame(DyeColor::RED, $cat->getCollarColor());
 		self::assertSame(3, $owner->getInventory()->getItemInHand()->getCount());
 	}
+
+	public function testHoldingBannerDoesNotDyeCatCollar() : void{
+		$cat = $this->createCat();
+		$owner = $this->createPlayer("Owner");
+		$cat->tame($owner);
+		self::assertSame(DyeColor::RED, $cat->getCollarColor());
+
+		$banner = VanillaItems::BANNER()->setColor(DyeColor::BLUE)->setCount(1);
+		$owner->getInventory()->setItemInHand($banner);
+
+		$success = $cat->onInteract($owner, Vector3::zero());
+		self::assertTrue($success); // Falls through to sit toggle
+		self::assertSame(DyeColor::RED, $cat->getCollarColor());
+		self::assertSame(1, $owner->getInventory()->getItemInHand()->getCount());
+	}
 }

@@ -139,7 +139,7 @@ class Wolf extends TameableAnimal{
 
 	public function getTargetEntity() : ?Entity{
 		if($this->combatTarget !== null){
-			if($this->combatTarget->isClosed() || !$this->combatTarget->isAlive()){
+			if(!$this->isValidTarget($this->combatTarget)){
 				$this->combatTarget = null;
 				$this->targetId = null;
 				return null;
@@ -154,6 +154,9 @@ class Wolf extends TameableAnimal{
 
 	public function isValidTarget(?Entity $target) : bool{
 		if($target === null || $target->isClosed() || !$target->isAlive() || $target === $this){
+			return false;
+		}
+		if($target->getWorld() !== $this->getWorld()){
 			return false;
 		}
 		$typeId = $target::getNetworkTypeId();
@@ -294,7 +297,9 @@ class Wolf extends TameableAnimal{
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
-		if($source instanceof EntityDamageByEntityEvent){
+		parent::attack($source);
+
+		if(!$source->isCancelled() && $source instanceof EntityDamageByEntityEvent){
 			$damager = $source->getDamager();
 			if($this->isValidTarget($damager)){
 				$this->setTargetEntity($damager);
@@ -304,8 +309,6 @@ class Wolf extends TameableAnimal{
 				}
 			}
 		}
-
-		parent::attack($source);
 	}
 
 	public function alertNearbyWolves(?Entity $attacker) : void{

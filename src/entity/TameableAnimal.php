@@ -571,12 +571,6 @@ abstract class TameableAnimal extends Living implements Ageable{
 		if($item instanceof Dye){
 			return $item->getColor();
 		}
-		if(method_exists($item, "getColor")){
-			$color = $item->getColor();
-			if($color instanceof DyeColor){
-				return $color;
-			}
-		}
 		return null;
 	}
 

@@ -90,6 +90,7 @@ final class WolfTest extends TestCase{
 
 	/** @var Entity[] */
 	private array $createdEntities = [];
+	private ?World $defaultWorld = null;
 
 	protected function tearDown() : void{
 		HandlerListManager::global()->unregisterAll();
@@ -97,7 +98,17 @@ final class WolfTest extends TestCase{
 			(new ReflectionProperty(Entity::class, "closed"))->setValue($entity, true);
 		}
 		$this->createdEntities = [];
+		$this->defaultWorld = null;
 		parent::tearDown();
+	}
+
+	private function getDefaultWorld() : World{
+		if($this->defaultWorld === null){
+			$this->defaultWorld = $this->createMock(World::class);
+			$this->defaultWorld->method("isLoaded")->willReturn(true);
+			$this->defaultWorld->method("getPlayers")->willReturn([]);
+		}
+		return $this->defaultWorld;
 	}
 
 	private function createWolf(?World $world = null, ?Vector3 $pos = null) : Wolf{
@@ -112,9 +123,7 @@ final class WolfTest extends TestCase{
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($wolf, new EffectManager($wolf));
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($wolf, new ArmorInventory($wolf));
 		if($world === null){
-			$world = $this->createMock(World::class);
-			$world->method("isLoaded")->willReturn(true);
-			$world->method("getPlayers")->willReturn([]);
+			$world = $this->getDefaultWorld();
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($wolf, $location);
@@ -147,9 +156,7 @@ final class WolfTest extends TestCase{
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($player, new ArmorInventory($player));
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($player, new EntityMetadataCollection());
 		if($world === null){
-			$world = $this->createMock(World::class);
-			$world->method("isLoaded")->willReturn(true);
-			$world->method("getPlayers")->willReturn([]);
+			$world = $this->getDefaultWorld();
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $location);
@@ -193,8 +200,7 @@ final class WolfTest extends TestCase{
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($creeper, new EffectManager($creeper));
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($creeper, new ArmorInventory($creeper));
 		if($world === null){
-			$world = $this->createMock(World::class);
-			$world->method("isLoaded")->willReturn(true);
+			$world = $this->getDefaultWorld();
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($creeper, $location);
@@ -223,8 +229,7 @@ final class WolfTest extends TestCase{
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($target, new EffectManager($target));
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($target, new ArmorInventory($target));
 		if($world === null){
-			$world = $this->createMock(World::class);
-			$world->method("isLoaded")->willReturn(true);
+			$world = $this->getDefaultWorld();
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($target, $location);
@@ -392,19 +397,19 @@ final class WolfTest extends TestCase{
 	}
 
 	public function testAlertNearbyWildWolvesOnAttack() : void{
-		$wolf1 = $this->createWolf(null, new Vector3(0, 0, 0));
-		$wolf2 = $this->createWolf(null, new Vector3(5, 0, 0));
-		$tamedWolf = $this->createWolf(null, new Vector3(8, 0, 0));
-		$owner = $this->createPlayer("Owner");
-		$tamedWolf->tame($owner);
-
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("getPlayers")->willReturn([]);
+
+		$wolf1 = $this->createWolf($world, new Vector3(0, 0, 0));
+		$wolf2 = $this->createWolf($world, new Vector3(5, 0, 0));
+		$tamedWolf = $this->createWolf($world, new Vector3(8, 0, 0));
+		$owner = $this->createPlayer("Owner", null, null, true, $world);
+		$tamedWolf->tame($owner);
+
 		$world->method("getNearbyEntities")->willReturn([$wolf2, $tamedWolf]);
 
-		(new ReflectionProperty(Entity::class, "location"))->setValue($wolf1, new Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
-
-		$attacker = $this->createPlayer("Hunter");
+		$attacker = $this->createPlayer("Hunter", null, null, true, $world);
 		$damageEv = $this->createDamageByEntityEvent($attacker, $wolf1, 1.0);
 		$wolf1->attack($damageEv);
 
@@ -704,10 +709,16 @@ final class WolfTest extends TestCase{
 		$wolf = $this->createWolf();
 		$nonLiving = (new ReflectionClass(TestNonLivingEntity::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($nonLiving, false);
-		$world = $this->createMock(World::class);
-		$world->method("isLoaded")->willReturn(true);
+		$world = $wolf->getWorld();
 		(new ReflectionProperty(Entity::class, "location"))->setValue($nonLiving, new Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
 		self::assertTrue($wolf->isValidTarget($nonLiving));
+
+		// Reject target whose world differs
+		$otherWorld = $this->createMock(World::class);
+		$otherWorld->method("isLoaded")->willReturn(true);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($nonLiving, new Location(0.0, 0.0, 0.0, $otherWorld, 0.0, 0.0));
+		self::assertFalse($wolf->isValidTarget($nonLiving));
+
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($nonLiving, true);
 	}
 
@@ -810,5 +821,66 @@ final class WolfTest extends TestCase{
 		self::assertFalse($eventDispatched);
 		self::assertSame(DyeColor::RED, $wolf->getCollarColor());
 		self::assertSame(2, $owner->getInventory()->getItemInHand()->getCount());
+	}
+
+	public function testCancelledDamageEventDoesNotTriggerAggressionOrAlert() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getPlayers")->willReturn([]);
+
+		$wolf1 = $this->createWolf($world, new Vector3(0, 0, 0));
+		$wolf2 = $this->createWolf($world, new Vector3(5, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$wolf2]);
+
+		$attacker = $this->createPlayer("Attacker", null, null, true, $world);
+		$damageEv = $this->createDamageByEntityEvent($attacker, $wolf1, 2.0);
+		$damageEv->cancel();
+
+		$wolf1->attack($damageEv);
+
+		self::assertFalse($wolf1->isAngry());
+		self::assertNull($wolf1->getTargetEntity());
+		self::assertFalse($wolf2->isAngry());
+		self::assertNull($wolf2->getTargetEntity());
+	}
+
+	public function testHoldingBannerDoesNotDyeCollarOrConsumeBanner() : void{
+		$wolf = $this->createWolf();
+		$owner = $this->createPlayer("Owner");
+		$wolf->tame($owner);
+		self::assertSame(DyeColor::RED, $wolf->getCollarColor());
+
+		$banner = VanillaItems::BANNER()->setColor(DyeColor::BLUE)->setCount(1);
+		$owner->getInventory()->setItemInHand($banner);
+
+		$success = $wolf->onInteract($owner, Vector3::zero());
+		self::assertTrue($success); // Falls through to sit toggle
+		self::assertSame(DyeColor::RED, $wolf->getCollarColor());
+		self::assertSame(1, $owner->getInventory()->getItemInHand()->getCount());
+	}
+
+	public function testCombatTargetInDifferentWorldCleared() : void{
+		$world1 = $this->createMock(World::class);
+		$world1->method("isLoaded")->willReturn(true);
+		$world1->method("getPlayers")->willReturn([]);
+
+		$world2 = $this->createMock(World::class);
+		$world2->method("isLoaded")->willReturn(true);
+		$world2->method("getPlayers")->willReturn([]);
+
+		$wolf = $this->createWolf($world1, new Vector3(0, 0, 0));
+		$target = $this->createPlayer("Target", null, null, true, $world1, new Vector3(5, 0, 0));
+
+		self::assertTrue($wolf->isValidTarget($target));
+		$wolf->setTargetEntity($target);
+		self::assertSame($target, $wolf->getTargetEntity());
+
+		// Target teleports to a different world
+		(new ReflectionProperty(Entity::class, "location"))->setValue($target, new Location(5.0, 0.0, 0.0, $world2, 0.0, 0.0));
+		self::assertFalse($wolf->isValidTarget($target));
+
+		// tickFollowMovement must clear target and not pursue across worlds
+		$wolf->tickFollowMovement();
+		self::assertNull($wolf->getTargetEntity());
 	}
 }
