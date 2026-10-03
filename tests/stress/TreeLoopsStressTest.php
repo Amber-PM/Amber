@@ -9,7 +9,6 @@ require_once __DIR__ . '/../phpunit/world/redstone/WireContinuationBudgetTest.ph
 require_once __DIR__ . '/LineStressTest.php';
 
 use pocketmine\block\VanillaBlocks;
-use pocketmine\world\World;
 
 function runTreeStress(int $ribsCount, int $ribLength, int $budget, int $maxTicks) : array {
 	$initialBudget = $budget;

@@ -149,6 +149,7 @@ function runPhaseMutationStress(int $targetPhase, int $size, int $budget, int $m
 }
 
 echo "[info] Running Phase Mutation stress tests...\n";
+$failed = false;
 foreach ([
 	WireNetwork::PHASE_DISCOVER,
 	WireNetwork::PHASE_SOURCES,
@@ -158,6 +159,9 @@ foreach ([
 	WireNetwork::PHASE_CLEANUP,
 ] as $phase) {
 	$res = runPhaseMutationStress($phase, 300, 500, 100);
+	$failed = $failed || $res['Result'] !== "PASS";
 	echo sprintf("  %-25s | Size %4d | Budget %4d | Ticks %2d | Peak Cont %2d | Peak Owners %4d | %s\n",
 		$res['Workload'], $res['Size'], $res['Budget'], $res['Ticks to settle'], $res['Peak continuation count'], $res['Peak owner count'], $res['Result']);
 }
+
+exit($failed ? 1 : 0);

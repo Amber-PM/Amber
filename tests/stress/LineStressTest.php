@@ -8,14 +8,12 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/../phpunit/world/redstone/WireContinuationBudgetTest.php';
 
 use pocketmine\block\VanillaBlocks;
-use pocketmine\world\World;
 
 class StressHarness {
 	private \ReflectionProperty $propContinuations;
 	private \ReflectionProperty $propOwner;
 	private \ReflectionProperty $propAliases;
 	private \ReflectionProperty $propAliasSources;
-	private \ReflectionProperty $propDone;
 
 	public int $peakContinuations = 0;
 	public int $peakOwners = 0;
@@ -26,7 +24,6 @@ class StressHarness {
 		$this->propOwner = new \ReflectionProperty(WireNetwork::class, 'continuationOwner');
 		$this->propAliases = new \ReflectionProperty(WireNetwork::class, 'continuationAliases');
 		$this->propAliasSources = new \ReflectionProperty(WireNetwork::class, 'continuationAliasSources');
-		$this->propDone = new \ReflectionProperty(WireNetwork::class, 'done');
 	}
 
 	public function resolveId(int $id, array $aliases) : int {
@@ -46,7 +43,6 @@ class StressHarness {
 		$continuations = $this->propContinuations->getValue($this->network);
 		$owners = $this->propOwner->getValue($this->network);
 		$aliases = $this->propAliases->getValue($this->network);
-		$aliasSources = $this->propAliasSources->getValue($this->network);
 
 		$curContCount = $this->network->getContinuationCount();
 		$rawContCount = count($continuations);

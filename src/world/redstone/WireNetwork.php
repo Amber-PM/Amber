@@ -33,14 +33,10 @@ use pocketmine\block\utils\SlabType;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
-use function array_fill_keys;
 use function array_key_first;
 use function array_key_last;
-use function array_keys;
 use function array_pop;
-use function array_shift;
 use function count;
-use function in_array;
 use function max;
 use function min;
 
@@ -234,11 +230,11 @@ final class WireNetwork{
 			"wires" => [$startHash => [$x, $y, $z]],
 			"edges" => [],
 			"pending" => [$startHash],
-			"sourceQueue" => [],
+			"sourceQueue" => [$startHash],
 			"power" => [],
 			"buckets" => [],
 			"propagateLevel" => 15,
-			"applyQueue" => [],
+			"applyQueue" => [$startHash],
 			"mutated" => false,
 			"mergingSources" => []
 		];
@@ -271,7 +267,6 @@ final class WireNetwork{
 					$steps += $consumed;
 					if($continuation["phase"] === self::PHASE_DISCOVER && $continuation["pending"] === []){
 						$continuation["phase"] = self::PHASE_SOURCES;
-						$continuation["sourceQueue"] = array_keys($continuation["wires"]);
 						$continuation["power"] = [];
 						$continuation["buckets"] = [];
 					}
@@ -296,8 +291,7 @@ final class WireNetwork{
 					$steps += $consumed;
 					if($continuation["propagateLevel"] < 2){
 						$continuation["phase"] = self::PHASE_APPLY;
-						$continuation["applyQueue"] = array_keys($continuation["wires"]);
-						unset($continuation["edges"], $continuation["buckets"]);
+						// Retain topology for metered cleanup instead of destroying the whole network here.
 					}
 					break;
 
@@ -332,7 +326,12 @@ final class WireNetwork{
 	private function stepDiscover(array &$c, int $budget, int $id) : int{
 		$steps = 0;
 		while($c["pending"] !== [] && $steps < $budget){
-			$hash = array_pop($c["pending"]);
+			$hash = $c["pending"][array_key_last($c["pending"])];
+			[$wx, $wy, $wz] = $c["wires"][$hash];
+			if(!$this->isSettlingAreaLoaded($wx, $wz, 1)){
+				return $steps + 1; // keep unavailable topology pending; the retry is metered
+			}
+			array_pop($c["pending"]);
 			++$steps;
 			if(isset($c["edges"][$hash])){
 				continue;
@@ -369,6 +368,8 @@ final class WireNetwork{
 				}
 				if(!isset($c["wires"][$next])){
 					$c["wires"][$next] = [$nx, $ny, $nz];
+					$c["sourceQueue"][] = $next;
+					$c["applyQueue"][] = $next;
 					$c["pending"][] = $next;
 					$this->continuationOwner[$next] = $id;
 				}
@@ -402,6 +403,8 @@ final class WireNetwork{
 				$coords = $source["wires"][$wHash];
 				unset($source["wires"][$wHash]);
 				$c["wires"][$wHash] = $coords;
+				$c["sourceQueue"][] = $wHash;
+				$c["applyQueue"][] = $wHash;
 				$this->continuationOwner[$wHash] = $id;
 				if(isset($source["edges"][$wHash])){
 					$c["edges"][$wHash] = $source["edges"][$wHash];
@@ -431,7 +434,12 @@ final class WireNetwork{
 	private function stepSources(array &$c, int $budget) : int{
 		$steps = 0;
 		while($c["sourceQueue"] !== [] && $steps < $budget){
-			$hash = array_pop($c["sourceQueue"]);
+			$hash = $c["sourceQueue"][array_key_last($c["sourceQueue"])];
+			[$wx, $wy, $wz] = $c["wires"][$hash];
+			if(!$this->isSettlingAreaLoaded($wx, $wz, 2)){
+				return $steps + 1; // keep unavailable topology pending; the retry is metered
+			}
+			array_pop($c["sourceQueue"]);
 			++$steps;
 			[$wx, $wy, $wz] = $c["wires"][$hash];
 			$p = $this->sourcePower($wx, $wy, $wz);
@@ -455,7 +463,12 @@ final class WireNetwork{
 				continue;
 			}
 
-			$hash = array_pop($c["buckets"][$level]);
+			$hash = $c["buckets"][$level][array_key_last($c["buckets"][$level])];
+			[$wx, $wy, $wz] = $c["wires"][$hash];
+			if(!$this->isSettlingAreaLoaded($wx, $wz, 1)){
+				return $steps + 1;
+			}
+			array_pop($c["buckets"][$level]);
 			++$steps;
 
 			if(($c["power"][$hash] ?? 0) !== $level){
@@ -478,7 +491,14 @@ final class WireNetwork{
 	private function stepApply(array &$c, int $budget) : int{
 		$steps = 0;
 		while($c["applyQueue"] !== [] && $steps < $budget){
-			$hash = array_pop($c["applyQueue"]);
+			$hash = $c["applyQueue"][array_key_last($c["applyQueue"])];
+			if(isset($c["wires"][$hash])){
+				[$wx, $wy, $wz] = $c["wires"][$hash];
+				if(!$this->isSettlingAreaLoaded($wx, $wz, 1)){
+					return $steps + 1; // keep unavailable topology pending; the retry is metered
+				}
+			}
+			array_pop($c["applyQueue"]);
 			++$steps;
 
 			if(!isset($c["wires"][$hash])){
@@ -670,6 +690,18 @@ final class WireNetwork{
 			}
 		}
 		return $result;
+	}
+
+	/** The fixed read halo spans at most four horizontal chunks. Never treat an unloaded chunk as air. */
+	private function isSettlingAreaLoaded(int $x, int $z, int $radius) : bool{
+		foreach([$x - $radius, $x + $radius] as $nx){
+			foreach([$z - $radius, $z + $radius] as $nz){
+				if(!$this->world->isChunkLoaded($nx >> 4, $nz >> 4)){
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	public function isWireAreaLoaded(Vector3 $pos) : bool{

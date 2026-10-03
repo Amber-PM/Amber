@@ -35,7 +35,7 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 	/** @var array<string, bool> */
 	private array $loadedChunks = [];
 
-	private function createWorld(array &$blocks, int $maxUpdatesPerTick = 1000) : array{
+	private function createWorld(array &$blocks, int $maxUpdatesPerTick = 1000, ?\Closure $onRead = null) : array{
 		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods([
 			"getBlockAt",
 			"setBlockAt",
@@ -50,7 +50,8 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 
 		$engine = new RedstoneEngine($world, $maxUpdatesPerTick);
 
-		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world, $onRead) : Block{
+			$onRead?->__invoke();
 			$key = "$x:$y:$z";
 			if(isset($blocks[$key])){
 				return clone $blocks[$key];
@@ -72,6 +73,66 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 		});
 
 		return [$engine, $world];
+	}
+
+	public function testContainerRotationDoesNotCopyAllWatchers() : void{
+		$blocks = [];
+		$before = 0;
+		$delta = 0;
+		[$engine, $world] = $this->createWorld($blocks, 1, function() use (&$before, &$delta) : void{
+			$delta = memory_get_usage() - $before;
+		});
+		$world->getBlockAt(0, 64, 0); // warm up block factories and the callback
+		$watch = $engine->getContainerWatch();
+		for($i = 0; $i < 20000; ++$i){
+			$watch->watch(new Vector3($i, 64, 0), 0);
+		}
+		$before = memory_get_usage();
+		self::assertSame(1, $watch->check($engine, 1));
+		self::assertLessThan(65536, $delta, "A one-entry check cannot duplicate the 20,000-entry watcher index");
+		self::assertSame(19999, $watch->getWatchedCount());
+	}
+
+	public function testParkedAwakeningDoesNotCopyTheChunkBucket() : void{
+		$blocks = [];
+		$before = 0;
+		$peak = 0;
+		$reads = 0;
+		[$engine, $world] = $this->createWorld($blocks, 20000, function() use (&$before, &$peak, &$reads) : void{
+			if(++$reads === 1){
+				$peak = memory_get_usage() - $before;
+			}
+		});
+		$world->getBlockAt(0, 64, 0);
+		for($i = 0; $i < 20000; ++$i){
+			$pos = new Vector3($i % 16, 64 + intdiv($i, 256), intdiv($i, 16) % 16);
+			$engine->schedule($pos, 1, VanillaBlocks::REDSTONE_REPEATER()->getStateId());
+		}
+		$this->loadedChunks["0:0"] = false;
+		$engine->tick(1);
+		self::assertSame(20000, $engine->getUnloadedDelayedCount());
+		$this->loadedChunks["0:0"] = true;
+		$peak = 0;
+		$reads = 0;
+		$before = memory_get_usage();
+		$engine->tick(2);
+		self::assertLessThan(65536, $peak, "Awakening cannot duplicate the full chunk event bucket before its first entry");
+		self::assertSame(0, $engine->getUnloadedDelayedCount());
+	}
+
+	public function testDueUnloadedTimersParkWithinSharedBudget() : void{
+		$blocks = [];
+		[$engine, $world] = $this->createWorld($blocks, 1);
+		for($i = 0; $i < 1000; ++$i){
+			$pos = new Vector3($i, 64, 0);
+			$world->setBlockAt($i, 64, 0, VanillaBlocks::REDSTONE_REPEATER(), false);
+			$engine->schedule($pos, 1);
+			$this->loadedChunks[($i >> 4) . ":0"] = false;
+		}
+		for($tick = 1; $tick <= 3; ++$tick){
+			$engine->tick($tick);
+			self::assertSame($tick, $engine->getUnloadedDelayedCount(), "Parking due work consumes the shared budget too");
+		}
 	}
 
 	public function testContainerWatchBoundedByBudget() : void{
@@ -175,7 +236,9 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 			$engine->schedule($pos, 1);
 		}
 
-		$engine->tick(1);
+		for($tick = 1; $tick <= 256; ++$tick){
+			$engine->tick($tick);
+		}
 		self::assertSame(256, $engine->getUnloadedDelayedCount());
 
 		for($i = 0; $i < 256; ++$i){
@@ -189,7 +252,7 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 		$chunkHash = World::chunkHash(5, 5);
 		self::assertCount(256, $unloadedProp->getValue($engine)[$chunkHash]);
 
-		$engine->tick(2);
+		$engine->tick(257);
 
 		self::assertArrayHasKey($chunkHash, $unloadedProp->getValue($engine), "Stale events in newly loaded chunk must not be scanned all at once without budget");
 	}

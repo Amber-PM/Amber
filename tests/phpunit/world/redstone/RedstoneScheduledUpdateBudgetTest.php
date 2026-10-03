@@ -262,30 +262,33 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		}
 
 		$this->loadedChunks["$chunkX:$chunkZ"] = false;
-		$engine->tick(1);
+		for($tick = 1; $tick <= 4; ++$tick){
+			$engine->tick($tick);
+			self::assertSame($tick * $tickBudget, $engine->getUnloadedDelayedCount(), "Parking progresses within budget");
+		}
 
 		self::assertSame(0, $executions, "No events should fire while chunk is unloaded");
 		self::assertSame(200, $engine->getUnloadedDelayedCount(), "All 200 events must be parked in unloadedDelayed collection");
 
 		$this->loadedChunks["$chunkX:$chunkZ"] = true;
 
-		$engine->tick(2);
+		$engine->tick(5);
 		self::assertSame(50, $executions, "Tick 1 after load must execute only up to tick budget (50 updates)");
 		self::assertSame(150, $engine->getUnloadedDelayedCount(), "Remaining 150 events must remain parked when awakening is metered under budget");
 
-		$engine->tick(3);
+		$engine->tick(6);
 		self::assertSame(100, $executions, "Tick 2 after load must execute next 50 updates");
 		self::assertSame(100, $engine->getUnloadedDelayedCount());
 
-		$engine->tick(4);
+		$engine->tick(7);
 		self::assertSame(150, $executions, "Tick 3 after load must execute next 50 updates");
 		self::assertSame(50, $engine->getUnloadedDelayedCount());
 
-		$engine->tick(5);
+		$engine->tick(8);
 		self::assertSame(200, $executions, "Tick 4 after load must execute final 50 updates");
 		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Parked events collection must be completely drained");
 
-		$engine->tick(6);
+		$engine->tick(9);
 		self::assertSame(200, $executions, "No further updates should fire once drained");
 	}
 

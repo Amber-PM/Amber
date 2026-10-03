@@ -31,6 +31,61 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 
 final class WireContinuationBudgetTest extends TestCase{
+	private bool $allChunksLoaded = true;
+	public function testPhaseTransitionsDoNotBuildWholeWireQueues() : void{
+		[$engine, $world] = $this->createEnvironment();
+		$network = $engine->getWires();
+		for($x = 0; $x < 2000; ++$x){
+			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
+			$world->setBlockAt($x, 64, 0, VanillaBlocks::REDSTONE_WIRE(), false);
+		}
+		$budget = 0;
+		$network->update($world->getBlockAt(0, 64, 0), $budget);
+		$network->processDeferred(1999);
+		$states = new \ReflectionProperty(WireNetwork::class, "continuations");
+		$before = $states->getValue($network)[1];
+		$beforeCount = count($before["sourceQueue"]);
+		unset($before);
+		self::assertSame(1, $network->processDeferred(1));
+		$after = $states->getValue($network)[1];
+		self::assertLessThanOrEqual(1, count($after["sourceQueue"]) - $beforeCount, "One phase-boundary step cannot allocate the whole source queue");
+		self::assertCount(2000, $after["applyQueue"], "Apply work is also accumulated during metered discovery");
+	}
+
+	public function testWireSettlementSurvivesChunkUnloadInEveryReadPhase() : void{
+		foreach([WireNetwork::PHASE_DISCOVER, WireNetwork::PHASE_SOURCES, WireNetwork::PHASE_PROPAGATE, WireNetwork::PHASE_APPLY] as $phase){
+			[$engine, $world] = $this->createEnvironment(1);
+			$network = $engine->getWires();
+			$world->setBlockAt(7, 64, 8, VanillaBlocks::REDSTONE(), false);
+			for($x = 8; $x < 12; ++$x){
+				$world->setBlockAt($x, 63, 8, VanillaBlocks::STONE(), false);
+				$world->setBlockAt($x, 64, 8, VanillaBlocks::REDSTONE_WIRE(), false);
+			}
+			$budget = 0;
+			$network->update($world->getBlockAt(8, 64, 8), $budget);
+			$states = new \ReflectionProperty(WireNetwork::class, "continuations");
+			for($i = 0; $i < 100 && $states->getValue($network)[1]["phase"] !== $phase; ++$i){
+				$network->processDeferred(1);
+			}
+			self::assertSame($phase, $states->getValue($network)[1]["phase"]);
+			$this->allChunksLoaded = false;
+			$network->processDeferred(100);
+			self::assertTrue($network->hasDeferred(), "Unavailable topology must stay pending in phase $phase");
+			$this->allChunksLoaded = true;
+			for($tick = 1; $tick <= 300; ++$tick){
+				$engine->tick($tick);
+			}
+			for($x = 8; $x < 12; ++$x){
+				$wire = $world->getBlockAt($x, 64, 8);
+				self::assertInstanceOf(RedstoneWire::class, $wire);
+				self::assertSame(15 - ($x - 8), $wire->getOutputSignalStrength());
+			}
+			foreach(["continuations", "continuationOwner", "continuationAliases", "continuationAliasSources"] as $field){
+				self::assertSame([], (new \ReflectionProperty(WireNetwork::class, $field))->getValue($network));
+			}
+		}
+	}
+
 	public function testSettledCleanupPreventsDuplicateContinuation() : void{
 		[$engine, $world] = $this->createEnvironment();
 		$network = $engine->getWires();
@@ -200,13 +255,13 @@ final class WireContinuationBudgetTest extends TestCase{
 		])->getMock();
 
 		$world->method("isInWorld")->willReturn(true);
-		$world->method("isChunkLoaded")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturnCallback(fn() : bool => $this->allChunksLoaded);
 
 		$engine = new RedstoneEngine($world, $maxUpdatesPerTick);
 
 		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
 			$key = "$x:$y:$z";
-			if(isset($blocks[$key])){
+			if($this->allChunksLoaded && isset($blocks[$key])){
 				return $blocks[$key];
 			}
 			$air = clone VanillaBlocks::AIR();
@@ -349,10 +404,11 @@ final class WireContinuationBudgetTest extends TestCase{
 		self::assertTrue($engine->getWires()->hasDeferred(), "Physical cleanup must remain budgeted after logical invalidation");
 
 		$engine->getWires()->update($wire0);
-		while($engine->getWires()->hasDeferred()){
+		for($i = 0; $i < 100 && $engine->getWires()->hasDeferred(); ++$i){
 			$engine->tick($engine->getCurrentTick() + 1);
 		}
 
+		self::assertFalse($engine->getWires()->hasDeferred(), "Settlement must complete within the bounded test window");
 		self::assertNull($engine->getWires()->getContinuationOwner($hash0), "Ownership must be released after network settlement");
 	}
 

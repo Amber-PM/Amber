@@ -33,6 +33,7 @@ use pocketmine\block\utils\RedstoneSource;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
+use function array_key_first;
 use function max;
 use function min;
 
@@ -301,26 +302,26 @@ final class RedstoneEngine{
 			if($this->unloadedDelayed !== [] && $this->currentBudget > 0){
 				$chunkCheckLimit = min(count($this->unloadedDelayed), max(32, $this->currentBudget));
 				$checked = 0;
-				foreach($this->unloadedDelayed as $chunkHash => $events){
-					if($this->currentBudget <= 0 || ++$checked > $chunkCheckLimit){
-						break;
-					}
+				while($this->unloadedDelayed !== [] && $this->currentBudget > 0 && $checked < $chunkCheckLimit){
+					++$checked;
+					$chunkHash = array_key_first($this->unloadedDelayed);
 
 					$chunkX = null;
 					$chunkZ = null;
 					World::getXZ($chunkHash, $chunkX, $chunkZ);
 					if($chunkX === null || $chunkZ === null || !$this->world->isChunkLoaded($chunkX, $chunkZ)){
+						$events = $this->unloadedDelayed[$chunkHash];
 						unset($this->unloadedDelayed[$chunkHash]);
 						$this->unloadedDelayed[$chunkHash] = $events;
+						unset($events);
 						continue;
 					}
 
 					$staleChecks = 0;
-					$staleLimit = min(count($events), max(32, $this->currentBudget));
-					foreach($events as $hash => $dueTick){
-						if($this->currentBudget <= 0){
-							break;
-						}
+					$staleLimit = min(count($this->unloadedDelayed[$chunkHash]), max(32, $this->currentBudget));
+					while(isset($this->unloadedDelayed[$chunkHash]) && $this->unloadedDelayed[$chunkHash] !== [] && $this->currentBudget > 0){
+						$hash = array_key_first($this->unloadedDelayed[$chunkHash]);
+						$dueTick = $this->unloadedDelayed[$chunkHash][$hash];
 						unset($this->unloadedDelayed[$chunkHash][$hash]);
 						--$this->unloadedDelayedCount;
 
@@ -342,12 +343,16 @@ final class RedstoneEngine{
 						}
 					}
 
+					if(!isset($this->unloadedDelayed[$chunkHash])){
+						continue; // a callback may cancel the last remaining parked entry
+					}
 					if($this->unloadedDelayed[$chunkHash] === []){
 						unset($this->unloadedDelayed[$chunkHash]);
 					}else{
 						$remaining = $this->unloadedDelayed[$chunkHash];
 						unset($this->unloadedDelayed[$chunkHash]);
 						$this->unloadedDelayed[$chunkHash] = $remaining;
+						unset($remaining);
 					}
 				}
 			}
@@ -375,6 +380,7 @@ final class RedstoneEngine{
 							}
 							continue;
 						}
+						--$this->currentBudget; // parking valid due work is metered as well
 						$expectedState = $this->delayedState[$hash] ?? null;
 						World::getBlockXYZ($hash, $x, $y, $z);
 						$chunkX = $x >> 4;
@@ -388,7 +394,6 @@ final class RedstoneEngine{
 							continue;
 						}
 						unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
-						--$this->currentBudget;
 						$block = $this->world->getBlockAt($x, $y, $z);
 						if($block instanceof DelayedRedstoneReceiver && ($expectedState === null || $block->getStateId() === $expectedState)){
 							$block->onRedstoneScheduledUpdate($this);

@@ -37,7 +37,6 @@ use function count;
 use function gc_collect_cycles;
 use function gc_mem_caches;
 use function intdiv;
-use function memory_get_usage;
 
 final class RedstoneTimerFuzzTest extends TestCase{
 
@@ -542,8 +541,8 @@ final class RedstoneTimerFuzzTest extends TestCase{
 			}
 		}
 
-		while($engine->getUnloadedDelayedCount() > ($totalTimers - $expectedToFire)){
-			$engine->tick(6);
+		for($tick = 6; $tick < 506 && $engine->getUnloadedDelayedCount() > ($totalTimers - $expectedToFire); ++$tick){
+			$engine->tick($tick);
 		}
 
 		self::assertSame($expectedToFire, $fired);

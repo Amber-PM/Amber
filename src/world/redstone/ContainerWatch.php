@@ -28,6 +28,7 @@ use pocketmine\block\RedstoneComparator;
 use pocketmine\block\tile\Container;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
+use function array_key_first;
 use function floor;
 use function min;
 
@@ -74,10 +75,10 @@ final class ContainerWatch{
 
 	public function check(RedstoneEngine $engine, int $limit) : int{
 		$checked = 0;
-		foreach($this->watched as $hash => $signal){
-			if($checked >= $limit){
-				break;
-			}
+		$limit = min($limit, count($this->watched));
+		while($checked < $limit && $this->watched !== []){
+			$hash = array_key_first($this->watched);
+			$signal = $this->watched[$hash];
 			++$checked;
 			unset($this->watched[$hash]);
 			$this->watched[$hash] = $signal;

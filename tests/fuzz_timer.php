@@ -47,12 +47,10 @@ foreach($scenarios as $method => $description){
 	$test->setUp();
 
 	$startTime = microtime(true);
-	$startMem = memory_get_usage();
 
 	try{
 		$test->$method();
 		$elapsed = (microtime(true) - $startTime) * 1000;
-		$memDelta = (memory_get_usage() - $startMem) / 1024;
 		echo "  ✓ {$description} (" . sprintf("%.2fms", $elapsed) . ")\n";
 		$passed++;
 	}catch(\Throwable $e){

@@ -32,7 +32,7 @@ final class MasterWireStressSuite {
 	/** @var list<array{Workload: string, Size: int, Budget: int, 'Ticks to settle': int, 'Peak continuation count': int, 'Peak owner count': int, Result: string}> */
 	private array $results = [];
 
-	public function runAll() : void {
+	public function runAll() : bool {
 		echo "[info] Starting WireNetwork comprehensive stress suite\n";
 		$startTime = microtime(true);
 
@@ -83,6 +83,12 @@ final class MasterWireStressSuite {
 		echo "\n[info] All tests completed in {$totalElapsed}s\n\n";
 
 		$this->printMarkdownTable();
+		foreach($this->results as $result){
+			if($result["Result"] !== "PASS"){
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private function testLine(string $name, int $size, int $budget, int $maxTicks) : void {
@@ -563,4 +569,4 @@ final class MasterWireStressSuite {
 }
 
 $suite = new MasterWireStressSuite();
-$suite->runAll();
+exit($suite->runAll() ? 0 : 1);
