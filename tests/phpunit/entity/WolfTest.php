@@ -30,6 +30,7 @@ use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\event\entity\EntityRegainHealthEvent;
 use pocketmine\event\entity\EntityTameEvent;
 use pocketmine\event\entity\PetCollarColorChangeEvent;
 use pocketmine\event\entity\PetSitChangeEvent;
@@ -75,6 +76,13 @@ class TestTargetEntity extends Living{
 	public function attack(EntityDamageEvent $source) : void{
 		$this->lastDamageEvent = $source;
 	}
+}
+
+class TestNonLivingEntity extends Entity{
+	public static function getNetworkTypeId() : string{ return "minecraft:item"; }
+	protected function getInitialGravity() : float{ return 0.04; }
+	protected function getInitialDragMultiplier() : float{ return 0.02; }
+	protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(0.25, 0.25); }
 }
 
 final class WolfTest extends TestCase{
@@ -672,5 +680,50 @@ final class WolfTest extends TestCase{
 		self::assertSame("Mani", $loadedWolf->getOwnerName());
 		self::assertSame(DyeColor::CYAN, $loadedWolf->getCollarColor());
 		self::assertSame(20, $loadedWolf->getMaxHealth());
+	}
+
+	public function testMeatHealingCancellationAbortsConsumption() : void{
+		$wolf = $this->createWolf();
+		$player = $this->createPlayer("Owner");
+		$wolf->tame($player);
+		$wolf->setHealth(10.0);
+
+		$this->registerCancellingListener(EntityRegainHealthEvent::class);
+
+		$steak = VanillaItems::STEAK()->setCount(5);
+		$player->getInventory()->setItemInHand($steak);
+
+		$result = $wolf->onInteract($player, Vector3::zero());
+		self::assertFalse($result);
+		self::assertEqualsWithDelta(10.0, $wolf->getHealth(), 0.001);
+		self::assertSame(5, $player->getInventory()->getItemInHand()->getCount());
+	}
+
+	public function testIsValidTargetHandlesNonLivingEntity() : void{
+		$wolf = $this->createWolf();
+		$nonLiving = (new ReflectionClass(TestNonLivingEntity::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($nonLiving, false);
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($nonLiving, new Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
+		self::assertTrue($wolf->isValidTarget($nonLiving));
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($nonLiving, true);
+	}
+
+	public function testTamedWolfPreservesTwentyHealthOnNbtReload() : void{
+		$wolf = $this->createWolf();
+		$player = $this->createPlayer("Owner");
+		$wolf->tame($player);
+		self::assertSame(20.0, $wolf->getHealth());
+
+		$nbt = CompoundTag::create();
+		$wolf->saveNBTData($nbt);
+		$nbt->setFloat(Wolf::TAG_HEALTH, 20.0);
+
+		$loadedWolf = $this->createWolf();
+		$loadedWolf->readNBTData($nbt);
+
+		self::assertSame(20, $loadedWolf->getMaxHealth());
+		self::assertSame(20.0, $loadedWolf->getHealth());
 	}
 }

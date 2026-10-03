@@ -36,6 +36,9 @@ use pocketmine\item\ItemTypeIds;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\FloatTag;
+use pocketmine\nbt\tag\ShortTag;
+use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
@@ -50,6 +53,7 @@ use function strtolower;
 class Wolf extends TameableAnimal{
 
 	public const TAG_ANGRY = "Angry";
+	public const TAG_HEALTH = "Health";
 
 	private const MEAT_ITEM_IDS = [
 		ItemTypeIds::RAW_BEEF => true,
@@ -152,7 +156,7 @@ class Wolf extends TameableAnimal{
 			return false;
 		}
 		$typeId = $target::getNetworkTypeId();
-		if($typeId === EntityIds::CREEPER || $typeId === "minecraft:creeper" || strtolower($target->getName()) === "creeper"){
+		if($typeId === EntityIds::CREEPER || $typeId === "minecraft:creeper" || ($target instanceof Living && strtolower($target->getName()) === "creeper")){
 			return false;
 		}
 		if($this->isTamed()){
@@ -261,9 +265,10 @@ class Wolf extends TameableAnimal{
 					$actualHeal = min((float) $this->getMaxHealth() - $this->getHealth(), $healAmount);
 					$ev = new EntityRegainHealthEvent($this, $actualHeal, EntityRegainHealthEvent::CAUSE_EATING);
 					$ev->call();
-					if(!$ev->isCancelled()){
-						$this->setHealth($this->getHealth() + $ev->getAmount());
+					if($ev->isCancelled()){
+						return false;
 					}
+					$this->setHealth($this->getHealth() + $ev->getAmount());
 					$this->consumeHeldItem($player, $item);
 					if(isset($this->location)){
 						$world = $this->getWorld();
@@ -370,6 +375,14 @@ class Wolf extends TameableAnimal{
 		$nbt->setByte(self::TAG_ANGRY, $this->angry ? 1 : 0);
 	}
 
+	protected function initEntity(CompoundTag $nbt) : void{
+		$ownerTag = $nbt->getTag(TameableAnimal::TAG_OWNER_UUID);
+		if($ownerTag instanceof StringTag && $ownerTag->getValue() !== ""){
+			$this->setMaxHealth(20);
+		}
+		parent::initEntity($nbt);
+	}
+
 	protected function readSaveData(CompoundTag $nbt) : void{
 		parent::readSaveData($nbt);
 		$angryTag = $nbt->getTag(self::TAG_ANGRY);
@@ -377,6 +390,11 @@ class Wolf extends TameableAnimal{
 
 		if($this->isTamed()){
 			$this->setMaxHealth(20);
+			if(($healthTag = $nbt->getTag(self::TAG_HEALTH)) instanceof FloatTag){
+				$this->setHealth($healthTag->getValue());
+			}elseif(($healthShortTag = $nbt->getTag(self::TAG_HEALTH)) instanceof ShortTag){
+				$this->setHealth($healthShortTag->getValue());
+			}
 		}
 	}
 
