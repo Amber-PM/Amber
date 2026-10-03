@@ -573,9 +573,10 @@ final class CatTest extends TestCase{
 		$owner->getInventory()->setItemInHand(VanillaItems::RAW_SALMON()->setCount(2));
 
 		$result = $cat->onInteract($owner, Vector3::zero());
-		self::assertFalse($result);
+		self::assertTrue($result);
 		self::assertFalse($cat->isInLove());
-		self::assertSame(2, $owner->getInventory()->getItemInHand()->getCount());
+		self::assertSame(-21600, $cat->getAge());
+		self::assertSame(1, $owner->getInventory()->getItemInHand()->getCount());
 	}
 
 	public function testNbtSerializationRoundtrip() : void{

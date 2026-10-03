@@ -226,6 +226,14 @@ class Wolf extends TameableAnimal{
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 
+		if($this->isBaby() && self::isMeat($item)){
+			if($this->feedBaby()){
+				$this->consumeHeldItem($player, $item);
+				return true;
+			}
+			return false;
+		}
+
 		if(!$this->isTamed()){
 			if($item->getTypeId() === ItemTypeIds::BONE){
 				$this->consumeHeldItem($player, $item);

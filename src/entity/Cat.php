@@ -133,6 +133,14 @@ class Cat extends TameableAnimal{
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 
+		if($this->isBaby() && self::isFish($item)){
+			if($this->feedBaby()){
+				$this->consumeHeldItem($player, $item);
+				return true;
+			}
+			return false;
+		}
+
 		if(!$this->isTamed()){
 			if(self::isFish($item)){
 				$this->consumeHeldItem($player, $item);

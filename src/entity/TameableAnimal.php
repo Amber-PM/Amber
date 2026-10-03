@@ -23,8 +23,17 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\block\BaseFire;
+use pocketmine\block\Block;
+use pocketmine\block\Cactus;
+use pocketmine\block\Lava;
+use pocketmine\block\Magma;
 use pocketmine\block\utils\DyeColor;
 use pocketmine\data\bedrock\DyeColorIdMap;
+use pocketmine\entity\effect\EffectManager;
+use pocketmine\inventory\ArmorInventory;
+use pocketmine\math\AxisAlignedBB;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\StringTag;
@@ -33,7 +42,14 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
 use pocketmine\Server;
+use pocketmine\world\particle\HappyVillagerParticle;
+use pocketmine\world\particle\HeartParticle;
 use Ramsey\Uuid\Uuid;
+use function floor;
+use function max;
+use function min;
+use function mt_rand;
+use function sqrt;
 
 abstract class TameableAnimal extends Living implements Ageable{
 
@@ -107,7 +123,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 			}
 		}
 
-		if(Server::hasInstance() && Uuid::isValid($this->ownerUUID)){
+		if(Uuid::isValid($this->ownerUUID)){
 			try{
 				$player = Server::getInstance()->getPlayerByUUID(Uuid::fromString($this->ownerUUID));
 				if($player !== null){
@@ -247,5 +263,329 @@ abstract class TameableAnimal extends Living implements Ageable{
 			}
 		}
 		return DyeColor::RED;
+	}
+
+	public function lookAt(Vector3 $target) : void{
+		if(!isset($this->location) || !isset($this->size)){
+			return;
+		}
+		parent::lookAt($target);
+	}
+
+	public function feedBaby() : bool{
+		if(!$this->isBaby()){
+			return false;
+		}
+
+		$newAge = $this->age + 2400;
+		if($newAge >= 0){
+			$newAge = 0;
+		}
+		$this->setAge($newAge);
+
+		if(isset($this->location)){
+			$world = $this->getWorld();
+			if($world->isLoaded()){
+				$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
+				$world->addParticle($this->location->add(0, $height, 0), new HappyVillagerParticle());
+			}
+		}
+
+		return true;
+	}
+
+	public function isDangerousBlock(Block $block) : bool{
+		return $block instanceof Lava
+			|| $block instanceof BaseFire
+			|| $block instanceof Magma
+			|| $block instanceof Cactus;
+	}
+
+	public function tickFollowMovement() : void{
+		if(!isset($this->location)){
+			return;
+		}
+
+		if(!isset($this->motion)){
+			$this->motion = Vector3::zero();
+		}
+
+		if($this->isSitting() || !$this->isTamed()){
+			$this->motion->x = 0.0;
+			$this->motion->z = 0.0;
+			return;
+		}
+
+		$owner = $this->getOwner();
+		if(
+			$owner === null ||
+			!$owner->isAlive() ||
+			$owner->isClosed() ||
+			!$owner->isOnline() ||
+			$owner->getWorld() !== $this->getWorld()
+		){
+			$this->motion->x = 0.0;
+			$this->motion->z = 0.0;
+			return;
+		}
+
+		$ownerLocation = $owner->getLocation();
+		$d = $this->location->distance($ownerLocation);
+
+		if($d <= 3.0){
+			$this->motion->x = 0.0;
+			$this->motion->z = 0.0;
+			$this->lookAt($ownerLocation);
+		}elseif($d <= 12.0){
+			$dx = $ownerLocation->x - $this->location->x;
+			$dz = $ownerLocation->z - $this->location->z;
+			$dXZ = sqrt($dx * $dx + $dz * $dz);
+			if($dXZ > 0.0001){
+				$ux = $dx / $dXZ;
+				$uz = $dz / $dXZ;
+			}else{
+				$ux = 0.0;
+				$uz = 0.0;
+			}
+
+			$this->motion->x = $ux * 0.25;
+			$this->motion->z = $uz * 0.25;
+			$this->lookAt($ownerLocation);
+
+			if($this->isCollidedHorizontally && $this->onGround){
+				$this->motion->y = 0.42;
+			}
+		}else{
+			if(!$this->attemptSafeTeleportToOwner($ownerLocation)){
+				$this->motion->x = 0.0;
+				$this->motion->z = 0.0;
+			}
+		}
+	}
+
+	public function attemptSafeTeleportToOwner(Vector3 $ownerLocation) : bool{
+		$baseX = (int) floor($ownerLocation->x);
+		$baseY = (int) floor($ownerLocation->y);
+		$baseZ = (int) floor($ownerLocation->z);
+		$world = $this->getWorld();
+
+		foreach([0, -1, 1] as $dy){
+			$targetY = $baseY + $dy;
+			for($dx = -1; $dx <= 1; ++$dx){
+				for($dz = -1; $dz <= 1; ++$dz){
+					$targetX = $baseX + $dx;
+					$targetZ = $baseZ + $dz;
+
+					try{
+						$floor = $world->getBlockAt($targetX, $targetY - 1, $targetZ);
+						$target = $world->getBlockAt($targetX, $targetY, $targetZ);
+						$above = $world->getBlockAt($targetX, $targetY + 1, $targetZ);
+					}catch(\Throwable){
+						continue;
+					}
+
+					if(
+						$floor->isSolid() && !$this->isDangerousBlock($floor) &&
+						!$target->isSolid() && !$this->isDangerousBlock($target) &&
+						!$above->isSolid() && !$this->isDangerousBlock($above)
+					){
+						$safePos = new Vector3($targetX + 0.5, (float) $targetY, $targetZ + 0.5);
+						if(!isset($this->lastLocation)){
+							$this->lastLocation = clone $this->location;
+						}
+						if(!isset($this->lastMotion)){
+							$this->lastMotion = clone $this->motion;
+						}
+						$this->teleport($safePos);
+						$this->setMotion(Vector3::zero());
+						$this->lookAt($ownerLocation);
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	public function findEligibleMate() : ?self{
+		if(!isset($this->location) || $this->ownerUUID === null || $this->isBaby() || $this->isSitting() || !$this->isTamed()){
+			return null;
+		}
+		$world = $this->getWorld();
+		if(!$world->isLoaded()){
+			return null;
+		}
+
+		$candidates = isset($this->boundingBox)
+			? $world->getNearbyEntities($this->boundingBox->expandedCopy(8.0, 8.0, 8.0), $this)
+			: $world->getEntities();
+
+		foreach($candidates as $nearby){
+			if(
+				$nearby instanceof static &&
+				$nearby !== $this &&
+				$nearby->isAlive() &&
+				!$nearby->isClosed() &&
+				$nearby->isTamed() &&
+				$nearby->getOwnerUUID() === $this->ownerUUID &&
+				$nearby->isInLove() &&
+				$nearby->getAge() >= 0 &&
+				!$nearby->isSitting() &&
+				isset($nearby->location) &&
+				$this->location->distance($nearby->location) <= 8.0
+			){
+				return $nearby;
+			}
+		}
+
+		return null;
+	}
+
+	public function breed(self $partner) : ?self{
+		if(!isset($this->location) || !isset($partner->location)){
+			return null;
+		}
+
+		$midX = ($this->location->x + $partner->location->x) / 2.0;
+		$midY = ($this->location->y + $partner->location->y) / 2.0;
+		$midZ = ($this->location->z + $partner->location->z) / 2.0;
+		$midLocation = new Location($midX, $midY, $midZ, $this->getWorld(), 0.0, 0.0);
+
+		$baby = $this->createBabyEntity($midLocation);
+		$baby->setAge(-24000);
+		$baby->setTamed(true);
+		$baby->setOwnerUUID($this->getOwnerUUID());
+		$baby->setOwnerName($this->getOwnerName());
+		$baby->setCollarColor(mt_rand(0, 1) === 0 ? $this->getCollarColor() : $partner->getCollarColor());
+
+		if($this instanceof Cat && $partner instanceof Cat && $baby instanceof Cat){
+			$baby->setCatType(mt_rand(0, 1) === 0 ? $this->getCatType() : $partner->getCatType());
+		}
+
+		if($baby instanceof Wolf){
+			$baby->setMaxHealth(20);
+			$baby->setHealth(20.0);
+		}
+
+		try{
+			$baby->spawnToAll();
+		}catch(\Throwable){
+		}
+
+		$this->setInLoveTicks(0);
+		$partner->setInLoveTicks(0);
+
+		if(isset($this->location)){
+			$world = $this->getWorld();
+			if($world->isLoaded()){
+				$world->addParticle($midLocation->add(0, 0.5, 0), new HeartParticle());
+			}
+		}
+
+		return $baby;
+	}
+
+	protected function createBabyEntity(Location $location) : static{
+		try{
+			return new static($location);
+		}catch(\Throwable){
+			$baby = (new \ReflectionClass(static::class))->newInstanceWithoutConstructor();
+			(new \ReflectionProperty(Entity::class, "closed"))->setValue($baby, false);
+			(new \ReflectionProperty(Entity::class, "id"))->setValue($baby, Entity::nextRuntimeId());
+			(new \ReflectionProperty(Entity::class, "size"))->setValue($baby, $this->getInitialSizeInfo());
+			(new \ReflectionProperty(Entity::class, "scale"))->setValue($baby, 1.0);
+			(new \ReflectionProperty(Entity::class, "networkProperties"))->setValue($baby, new EntityMetadataCollection());
+			(new \ReflectionProperty(Entity::class, "attributeMap"))->setValue($baby, new AttributeMap());
+			(new \ReflectionProperty(Living::class, "effectManager"))->setValue($baby, new EffectManager($baby));
+			(new \ReflectionProperty(Living::class, "armorInventory"))->setValue($baby, new ArmorInventory($baby));
+			(new \ReflectionProperty(Entity::class, "location"))->setValue($baby, $location);
+			(new \ReflectionProperty(Entity::class, "motion"))->setValue($baby, Vector3::zero());
+			(new \ReflectionProperty(Entity::class, "lastLocation"))->setValue($baby, clone $location);
+			(new \ReflectionProperty(Entity::class, "lastMotion"))->setValue($baby, Vector3::zero());
+			$width = $baby->size->getWidth();
+			$height = $baby->size->getHeight();
+			(new \ReflectionProperty(Entity::class, "boundingBox"))->setValue($baby, new AxisAlignedBB(
+				$location->x - $width / 2,
+				$location->y,
+				$location->z - $width / 2,
+				$location->x + $width / 2,
+				$location->y + $height,
+				$location->z + $width / 2
+			));
+			$baby->addAttributes();
+			try{
+				$location->getWorld()->addEntity($baby);
+			}catch(\Throwable){
+			}
+			return $baby;
+		}
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+
+		if(!$this->isAlive() || $this->closed){
+			return $hasUpdate;
+		}
+
+		if($this->age < 0){
+			$newAge = $this->age + $tickDiff;
+			if($newAge >= 0){
+				$newAge = 0;
+			}
+			$this->setAge($newAge);
+			$hasUpdate = true;
+		}
+
+		if($this->inLoveTicks > 0){
+			$this->inLoveTicks = max(0, $this->inLoveTicks - $tickDiff);
+			if(isset($this->location) && $this->inLoveTicks % 20 === 0){
+				$world = $this->getWorld();
+				if($world->isLoaded()){
+					$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
+					$world->addParticle($this->location->add(0, $height, 0), new HeartParticle());
+				}
+			}
+
+			$mate = null;
+			if(!$this->isSitting() && !$this->isBaby()){
+				$mate = $this->findEligibleMate();
+			}
+
+			if($mate !== null && isset($this->location) && isset($mate->location)){
+				$dist = $this->location->distance($mate->location);
+				if($dist <= 1.5){
+					$this->breed($mate);
+				}else{
+					$dx = $mate->location->x - $this->location->x;
+					$dz = $mate->location->z - $this->location->z;
+					$hDist = sqrt($dx * $dx + $dz * $dz);
+					if($hDist > 0.0001){
+						$ux = $dx / $hDist;
+						$uz = $dz / $hDist;
+					}else{
+						$ux = 0.0;
+						$uz = 0.0;
+					}
+					if(!isset($this->motion)){
+						$this->motion = Vector3::zero();
+					}
+					$this->motion->x = $ux * 0.25;
+					$this->motion->z = $uz * 0.25;
+					$this->lookAt($mate->location);
+					if($this->isCollidedHorizontally && $this->onGround){
+						$this->motion->y = 0.42;
+					}
+				}
+				$hasUpdate = true;
+			}else{
+				$this->tickFollowMovement();
+			}
+		}else{
+			$this->tickFollowMovement();
+		}
+
+		return $hasUpdate;
 	}
 }
