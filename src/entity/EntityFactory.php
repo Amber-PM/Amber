@@ -216,6 +216,10 @@ final class EntityFactory{
 			return new Villager(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Villager', 'minecraft:villager']);
 
+		$this->register(Wolf::class, function(World $world, CompoundTag $nbt) : Wolf{
+			return new Wolf(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Wolf', 'minecraft:wolf']);
+
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
