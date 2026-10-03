@@ -200,6 +200,10 @@ final class EntityFactory{
 			'ThrownTrident' //as above
 		]);
 
+		$this->register(Cat::class, function(World $world, CompoundTag $nbt) : Cat{
+			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Cat', 'minecraft:cat']);
+
 		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
 			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Skeleton', 'minecraft:skeleton']);
@@ -215,6 +219,10 @@ final class EntityFactory{
 		$this->register(Villager::class, function(World $world, CompoundTag $nbt) : Villager{
 			return new Villager(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Villager', 'minecraft:villager']);
+
+		$this->register(Wolf::class, function(World $world, CompoundTag $nbt) : Wolf{
+			return new Wolf(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Wolf', 'minecraft:wolf']);
 
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);

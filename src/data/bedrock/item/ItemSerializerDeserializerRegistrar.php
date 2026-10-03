@@ -196,6 +196,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::BRICK, Items::BRICK());
 		$this->map1to1Item(Ids::BUCKET, Items::BUCKET());
 		$this->map1to1Item(Ids::CARROT, Items::CARROT());
+		$this->map1to1Item(Ids::CAT_SPAWN_EGG, Items::CAT_SPAWN_EGG());
 		$this->map1to1Item(Ids::CHAINMAIL_BOOTS, Items::CHAINMAIL_BOOTS());
 		$this->map1to1Item(Ids::CHAINMAIL_CHESTPLATE, Items::CHAINMAIL_CHESTPLATE());
 		$this->map1to1Item(Ids::CHAINMAIL_HELMET, Items::CHAINMAIL_HELMET());
@@ -435,6 +436,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::WHEAT, Items::WHEAT());
 		$this->map1to1Item(Ids::WHEAT_SEEDS, Items::WHEAT_SEEDS());
 		$this->map1to1Item(Ids::WILD_ARMOR_TRIM_SMITHING_TEMPLATE, Items::WILD_ARMOR_TRIM_SMITHING_TEMPLATE());
+		$this->map1to1Item(Ids::WOLF_SPAWN_EGG, Items::WOLF_SPAWN_EGG());
 		$this->map1to1Item(Ids::WOODEN_AXE, Items::WOODEN_AXE());
 		$this->map1to1Item(Ids::WOODEN_HOE, Items::WOODEN_HOE());
 		$this->map1to1Item(Ids::WOODEN_PICKAXE, Items::WOODEN_PICKAXE());
