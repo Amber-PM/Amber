@@ -25,12 +25,14 @@ namespace pocketmine\item;
 
 use pocketmine\block\utils\RecordType;
 use pocketmine\block\VanillaBlocks as Blocks;
+use pocketmine\entity\Cat;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
 use pocketmine\entity\Skeleton;
 use pocketmine\entity\Spider;
 use pocketmine\entity\Squid;
 use pocketmine\entity\Villager;
+use pocketmine\entity\Wolf;
 use pocketmine\entity\Zombie;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\enchantment\ItemEnchantmentTags as EnchantmentTags;
@@ -388,6 +390,24 @@ final class VanillaItemsInputs extends RegistrySource{
 
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Villager(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("wolf_spawn_egg", fn(IID $id) => new class($id, "Wolf Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::WOLF;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Wolf(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("cat_spawn_egg", fn(IID $id) => new class($id, "Cat Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::CAT;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Cat(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 	}
