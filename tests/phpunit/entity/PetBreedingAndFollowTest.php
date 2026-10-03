@@ -35,6 +35,7 @@ use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\player\Player;
 use pocketmine\world\World;
@@ -667,5 +668,140 @@ final class PetBreedingAndFollowTest extends TestCase{
 		$wolf->tickFollowMovement();
 		self::assertSame(0.0, $wolf->getMotion()->x);
 		self::assertSame(0.0, $wolf->getMotion()->z);
+	}
+
+	public function testBreedingSetsCooldownOnBothParents() : void{
+		$world = $this->createMockWorld();
+		$wolf1 = $this->createWolf($world, new Vector3(0.0, 0.0, 0.0));
+		$wolf2 = $this->createWolf($world, new Vector3(1.0, 0.0, 0.0));
+
+		$ownerUuid = Uuid::uuid4()->toString();
+		$wolf1->setTamed(true);
+		$wolf1->setOwnerUUID($ownerUuid);
+		$wolf1->setAge(0);
+		$wolf1->setInLoveTicks(600);
+
+		$wolf2->setTamed(true);
+		$wolf2->setOwnerUUID($ownerUuid);
+		$wolf2->setAge(0);
+		$wolf2->setInLoveTicks(600);
+
+		$baby = $wolf1->breed($wolf2);
+		self::assertInstanceOf(Wolf::class, $baby);
+		$this->createdEntities[] = $baby;
+
+		// Both parents must have cooldown applied and love cleared
+		self::assertSame(0, $wolf1->getInLoveTicks());
+		self::assertSame(0, $wolf2->getInLoveTicks());
+		self::assertSame(TameableAnimal::BREEDING_COOLDOWN_TICKS, $wolf1->getBreedingCooldownTicks());
+		self::assertSame(TameableAnimal::BREEDING_COOLDOWN_TICKS, $wolf2->getBreedingCooldownTicks());
+		self::assertSame(TameableAnimal::BREEDING_COOLDOWN_TICKS, $wolf1->getAge());
+		self::assertSame(TameableAnimal::BREEDING_COOLDOWN_TICKS, $wolf2->getAge());
+		self::assertFalse($wolf1->canBreed());
+		self::assertFalse($wolf2->canBreed());
+	}
+
+	public function testParentOnBreedingCooldownRejectsBreedingFood() : void{
+		// 1. Wolf with Meat
+		$wolf = $this->createWolf();
+		$wolf->setTamed(true);
+		$wolf->setOwnerUUID(Uuid::uuid4()->toString());
+		$wolf->setMaxHealth(20);
+		$wolf->setHealth(20.0);
+		$wolf->setBreedingCooldownTicks(6000);
+		self::assertFalse($wolf->canBreed());
+
+		$player = $this->createPlayer("Player", null, VanillaItems::RAW_BEEF()->setCount(2), true);
+		(new ReflectionProperty(Player::class, "uuid"))->setValue($player, Uuid::fromString($wolf->getOwnerUUID()));
+
+		$wolf->onInteract($player, Vector3::zero());
+		self::assertSame(2, $player->getInventory()->getItemInHand()->getCount());
+		self::assertFalse($wolf->isInLove());
+		self::assertSame(0, $wolf->getInLoveTicks());
+
+		// 2. Cat with Fish
+		$cat = $this->createCat();
+		$cat->setTamed(true);
+		$cat->setOwnerUUID(Uuid::uuid4()->toString());
+		$cat->setMaxHealth(10);
+		$cat->setHealth(10.0);
+		$cat->setBreedingCooldownTicks(6000);
+		self::assertFalse($cat->canBreed());
+
+		$playerCat = $this->createPlayer("PlayerCat", null, VanillaItems::RAW_FISH()->setCount(3), true);
+		(new ReflectionProperty(Player::class, "uuid"))->setValue($playerCat, Uuid::fromString($cat->getOwnerUUID()));
+
+		$cat->onInteract($playerCat, Vector3::zero());
+		self::assertSame(3, $playerCat->getInventory()->getItemInHand()->getCount());
+		self::assertFalse($cat->isInLove());
+		self::assertSame(0, $cat->getInLoveTicks());
+	}
+
+	public function testParentOnBreedingCooldownCannotBeEligibleMate() : void{
+		$world = $this->createMockWorld();
+		$wolf1 = $this->createWolf($world, new Vector3(0.0, 0.0, 0.0));
+		$wolf2 = $this->createWolf($world, new Vector3(1.0, 0.0, 0.0));
+
+		$ownerUuid = Uuid::uuid4()->toString();
+		$wolf1->setTamed(true);
+		$wolf1->setOwnerUUID($ownerUuid);
+		$wolf1->setAge(0);
+		$wolf1->setInLoveTicks(600);
+
+		$wolf2->setTamed(true);
+		$wolf2->setOwnerUUID($ownerUuid);
+		$wolf2->setBreedingCooldownTicks(3000);
+		$wolf2->setInLoveTicks(600);
+
+		$world->method("getNearbyEntities")->willReturn([$wolf2]);
+
+		// wolf1 scanning for mate finds wolf2 which is on cooldown
+		self::assertNull($wolf1->findEligibleMate());
+		// wolf2 cannot search for mate while on cooldown
+		self::assertNull($wolf2->findEligibleMate());
+	}
+
+	public function testBreedingCooldownDecrementsInEntityBaseTick() : void{
+		$wolf = $this->createWolf();
+		$wolf->setTamed(true);
+		$wolf->setBreedingCooldownTicks(100);
+		self::assertSame(100, $wolf->getBreedingCooldownTicks());
+		self::assertSame(100, $wolf->getAge());
+		self::assertFalse($wolf->canBreed());
+
+		(new ReflectionClass(Wolf::class))->getMethod("entityBaseTick")->invoke($wolf, 40);
+		self::assertSame(60, $wolf->getBreedingCooldownTicks());
+		self::assertSame(60, $wolf->getAge());
+		self::assertFalse($wolf->canBreed());
+
+		(new ReflectionClass(Wolf::class))->getMethod("entityBaseTick")->invoke($wolf, 60);
+		self::assertSame(0, $wolf->getBreedingCooldownTicks());
+		self::assertSame(0, $wolf->getAge());
+		self::assertTrue($wolf->canBreed());
+	}
+
+	public function testBreedingCooldownNbtPersistenceRoundtrip() : void{
+		$wolf = $this->createWolf();
+		$wolf->setTamed(true);
+		$wolf->setBreedingCooldownTicks(4500);
+
+		$nbt = $wolf->saveNBT();
+		self::assertSame(4500, $nbt->getInt(TameableAnimal::TAG_BREEDING_COOLDOWN));
+		self::assertSame(4500, $nbt->getInt(TameableAnimal::TAG_AGE));
+
+		$restored = $this->createWolf();
+		$restored->readNBTData($nbt);
+		self::assertSame(4500, $restored->getBreedingCooldownTicks());
+		self::assertSame(4500, $restored->getAge());
+		self::assertFalse($restored->canBreed());
+
+		// Backward compatibility: load NBT that has only positive Age and no BreedingCooldown tag
+		$nbtLegacy = new CompoundTag();
+		$nbtLegacy->setInt(TameableAnimal::TAG_AGE, 2500);
+		$legacyWolf = $this->createWolf();
+		$legacyWolf->setTamed(true);
+		$legacyWolf->readNBTData($nbtLegacy);
+		self::assertSame(2500, $legacyWolf->getBreedingCooldownTicks());
+		self::assertSame(2500, $legacyWolf->getAge());
 	}
 }

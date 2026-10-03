@@ -183,7 +183,7 @@ class Cat extends TameableAnimal{
 					return true;
 				}
 
-				if(!$this->isBaby() && !$this->isInLove()){
+				if($this->canBreed() && !$this->isInLove()){
 					$this->setInLoveTicks(600);
 					$this->consumeHeldItem($player, $item);
 					$this->emitParticle(new HeartParticle());

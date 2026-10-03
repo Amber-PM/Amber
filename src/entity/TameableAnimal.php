@@ -65,6 +65,8 @@ abstract class TameableAnimal extends Living implements Ageable{
 	public const TAG_COLLAR_COLOR = "CollarColor";
 	public const TAG_IN_LOVE = "InLove";
 	public const TAG_AGE = "Age";
+	public const TAG_BREEDING_COOLDOWN = "BreedingCooldown";
+	public const BREEDING_COOLDOWN_TICKS = 6000;
 
 	protected ?string $ownerUUID = null;
 	protected ?string $ownerName = null;
@@ -72,6 +74,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 	protected DyeColor $collarColor = DyeColor::RED;
 	protected int $inLoveTicks = 0;
 	protected int $age = 0;
+	protected int $breedingCooldownTicks = 0;
 	protected bool $tamed = false;
 
 	protected function initEntity(CompoundTag $nbt) : void{
@@ -173,6 +176,11 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 	public function setAge(int $age) : void{
 		$this->age = $age;
+		if($age <= 0){
+			$this->breedingCooldownTicks = 0;
+		}else{
+			$this->breedingCooldownTicks = $age;
+		}
 		$this->networkPropertiesDirty = true;
 		if(isset($this->networkProperties)){
 			$this->networkProperties->setGenericFlag(EntityMetadataFlags::BABY, $this->isBaby());
@@ -181,6 +189,29 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 	public function isBaby() : bool{
 		return $this->age < 0;
+	}
+
+	public function getBreedingCooldownTicks() : int{
+		return $this->breedingCooldownTicks;
+	}
+
+	public function setBreedingCooldownTicks(int $ticks) : void{
+		$this->breedingCooldownTicks = max(0, $ticks);
+		if(!$this->isBaby()){
+			$this->age = $this->breedingCooldownTicks;
+		}
+	}
+
+	public function getBreedingCooldown() : int{
+		return $this->breedingCooldownTicks;
+	}
+
+	public function setBreedingCooldown(int $ticks) : void{
+		$this->setBreedingCooldownTicks($ticks);
+	}
+
+	public function canBreed() : bool{
+		return !$this->isBaby() && $this->isTamed() && $this->breedingCooldownTicks <= 0 && $this->age <= 0;
 	}
 
 	public function getInLoveTicks() : int{
@@ -220,8 +251,9 @@ abstract class TameableAnimal extends Living implements Ageable{
 		}
 		$nbt->setByte(self::TAG_SITTING, $this->sitting ? 1 : 0);
 		$nbt->setByte(self::TAG_COLLAR_COLOR, DyeColorIdMap::getInstance()->toId($this->collarColor));
-		$nbt->setInt(self::TAG_AGE, $this->age);
+		$nbt->setInt(self::TAG_AGE, $this->breedingCooldownTicks > 0 ? $this->breedingCooldownTicks : $this->age);
 		$nbt->setInt(self::TAG_IN_LOVE, $this->inLoveTicks);
+		$nbt->setInt(self::TAG_BREEDING_COOLDOWN, $this->breedingCooldownTicks);
 	}
 
 	public function saveNBTData(CompoundTag $nbt) : void{
@@ -252,6 +284,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 		$this->setAge($nbt->getInt(self::TAG_AGE, 0));
 		$this->setInLoveTicks($nbt->getInt(self::TAG_IN_LOVE, 0));
+		$this->setBreedingCooldownTicks($nbt->getInt(self::TAG_BREEDING_COOLDOWN, max(0, $this->age)));
 	}
 
 	public function readNBTData(CompoundTag $nbt) : void{
@@ -409,7 +442,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 	}
 
 	public function findEligibleMate() : ?self{
-		if(!isset($this->location) || $this->ownerUUID === null || $this->isBaby() || $this->isSitting() || !$this->isTamed()){
+		if(!isset($this->location) || $this->ownerUUID === null || !$this->canBreed() || $this->isSitting()){
 			return null;
 		}
 		$world = $this->getWorld();
@@ -430,7 +463,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 				$nearby->isTamed() &&
 				$nearby->getOwnerUUID() === $this->ownerUUID &&
 				$nearby->isInLove() &&
-				$nearby->getAge() >= 0 &&
+				$nearby->canBreed() &&
 				!$nearby->isSitting() &&
 				isset($nearby->location) &&
 				$this->location->distance($nearby->location) <= 8.0
@@ -475,6 +508,8 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 		$this->setInLoveTicks(0);
 		$partner->setInLoveTicks(0);
+		$this->setBreedingCooldownTicks(self::BREEDING_COOLDOWN_TICKS);
+		$partner->setBreedingCooldownTicks(self::BREEDING_COOLDOWN_TICKS);
 
 		if(isset($this->location)){
 			$world = $this->getWorld();
@@ -566,6 +601,12 @@ abstract class TameableAnimal extends Living implements Ageable{
 			}
 			$this->setAge($newAge);
 			$hasUpdate = true;
+		}elseif($this->age > 0){
+			$this->setAge(max(0, $this->age - $tickDiff));
+			$hasUpdate = true;
+		}elseif($this->breedingCooldownTicks > 0){
+			$this->setBreedingCooldownTicks(max(0, $this->breedingCooldownTicks - $tickDiff));
+			$hasUpdate = true;
 		}
 
 		if($this->inLoveTicks > 0){
@@ -575,7 +616,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 			}
 
 			$mate = null;
-			if(!$this->isSitting() && !$this->isBaby()){
+			if(!$this->isSitting() && $this->canBreed()){
 				$mate = $this->findEligibleMate();
 			}
 
