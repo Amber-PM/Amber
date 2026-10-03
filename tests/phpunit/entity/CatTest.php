@@ -736,4 +736,31 @@ final class CatTest extends TestCase{
 		$this->tickCat($cat, 10);
 		self::assertEqualsWithDelta(0.0, $creeper->getMotion()->x, 0.001);
 	}
+
+	public function testCollarDyeingSameColorDoesNotConsumeDye() : void{
+		$cat = $this->createCat();
+		$owner = $this->createPlayer("Owner");
+		$cat->tame($owner);
+		self::assertSame(DyeColor::RED, $cat->getCollarColor());
+
+		$eventDispatched = false;
+		$listener = new RegisteredListener(
+			function(Event $ev) use (&$eventDispatched) : void{
+				$eventDispatched = true;
+			},
+			EventPriority::NORMAL,
+			$this->createMock(Plugin::class),
+			false,
+			new TimingsHandler("test")
+		);
+		HandlerListManager::global()->getListFor(PetCollarColorChangeEvent::class)->register($listener);
+
+		$redDye = VanillaItems::DYE()->setColor(DyeColor::RED)->setCount(3);
+		$owner->getInventory()->setItemInHand($redDye);
+
+		$interactResult = $cat->onInteract($owner, Vector3::zero());
+		self::assertFalse($eventDispatched);
+		self::assertSame(DyeColor::RED, $cat->getCollarColor());
+		self::assertSame(3, $owner->getInventory()->getItemInHand()->getCount());
+	}
 }

@@ -33,6 +33,7 @@ use pocketmine\world\format\io\GlobalItemDataHandlers;
 use pocketmine\world\World;
 use ReflectionMethod;
 use ReflectionNamedType;
+use function array_slice;
 use function file;
 use function implode;
 

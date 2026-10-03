@@ -59,6 +59,7 @@ use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use ReflectionClass;
 use ReflectionProperty;
+use function sqrt;
 
 class TestCreeper extends Living{
 	public static function getNetworkTypeId() : string{ return EntityIds::CREEPER; }
@@ -725,5 +726,89 @@ final class WolfTest extends TestCase{
 
 		self::assertSame(20, $loadedWolf->getMaxHealth());
 		self::assertSame(20.0, $loadedWolf->getHealth());
+	}
+
+	public function testTamedWolfRetaliatesAgainstAttacker() : void{
+		$wolf = $this->createWolf();
+		$owner = $this->createPlayer("Owner");
+		$wolf->tame($owner);
+
+		$enemy = $this->createPlayer("Attacker");
+		$damageEv = $this->createDamageByEntityEvent($enemy, $wolf, 2.0);
+		$wolf->attack($damageEv);
+
+		self::assertFalse($wolf->isAngry());
+		self::assertSame($enemy, $wolf->getTargetEntity());
+
+		// Tamed wolf must not retaliate against its owner
+		$ownerDamageEv = $this->createDamageByEntityEvent($owner, $wolf, 2.0);
+		$wolf->attack($ownerDamageEv);
+		self::assertSame($enemy, $wolf->getTargetEntity());
+	}
+
+	public function testTamedWolfTargetPursuitSetsMotionTowardsTarget() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getPlayers")->willReturn([]);
+
+		$wolf = $this->createWolf($world, new Vector3(0.0, 0.0, 0.0));
+		$owner = $this->createPlayer("Owner", null, null, true, $world, new Vector3(20.0, 0.0, 0.0));
+		$world->method("getPlayers")->willReturn([$owner]);
+		$wolf->tame($owner);
+		$wolf->setSitting(false);
+
+		$target = $this->createTargetEntity($world, new Vector3(5.0, 0.0, 0.0));
+		$wolf->setTargetEntity($target);
+
+		$wolf->tickFollowMovement();
+
+		$motion = $wolf->getMotion();
+		self::assertEqualsWithDelta(0.35, $motion->x, 0.001);
+		self::assertEqualsWithDelta(0.0, $motion->z, 0.001);
+		$speed = sqrt($motion->x ** 2 + $motion->z ** 2);
+		self::assertEqualsWithDelta(0.35, $speed, 0.001);
+
+		// Within melee range (<= 1.5 blocks): attacks target and halts horizontal motion
+		(new ReflectionProperty(Entity::class, "location"))->setValue($target, new Location(1.0, 0.0, 0.0, $world, 0.0, 0.0));
+		$wolf->tickFollowMovement();
+
+		self::assertSame(0.0, $wolf->getMotion()->x);
+		self::assertSame(0.0, $wolf->getMotion()->z);
+		self::assertNotNull($target->lastDamageEvent);
+		self::assertInstanceOf(EntityDamageByEntityEvent::class, $target->lastDamageEvent);
+		self::assertSame($wolf->getId(), (new ReflectionProperty(EntityDamageByEntityEvent::class, "damagerEntityId"))->getValue($target->lastDamageEvent));
+
+		// When target becomes closed / invalid, clears combatTarget and falls back to following owner
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($target, true);
+		$wolf->tickFollowMovement();
+		self::assertNull($wolf->getTargetEntity());
+		// Fell back to following owner towards (20, 0, 0) -> safe teleport or movement
+	}
+
+	public function testCollarDyeingSameColorDoesNotConsumeDye() : void{
+		$wolf = $this->createWolf();
+		$owner = $this->createPlayer("Owner");
+		$wolf->tame($owner);
+		self::assertSame(DyeColor::RED, $wolf->getCollarColor());
+
+		$eventDispatched = false;
+		$listener = new RegisteredListener(
+			function(Event $ev) use (&$eventDispatched) : void{
+				$eventDispatched = true;
+			},
+			EventPriority::NORMAL,
+			$this->createMock(Plugin::class),
+			false,
+			new TimingsHandler("test")
+		);
+		HandlerListManager::global()->getListFor(PetCollarColorChangeEvent::class)->register($listener);
+
+		$redDye = VanillaItems::DYE()->setColor(DyeColor::RED)->setCount(2);
+		$owner->getInventory()->setItemInHand($redDye);
+
+		$interactResult = $wolf->onInteract($owner, Vector3::zero());
+		self::assertFalse($eventDispatched);
+		self::assertSame(DyeColor::RED, $wolf->getCollarColor());
+		self::assertSame(2, $owner->getInventory()->getItemInHand()->getCount());
 	}
 }

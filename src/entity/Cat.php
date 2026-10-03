@@ -157,7 +157,7 @@ class Cat extends TameableAnimal{
 		$ownerUuid = $this->getOwnerUUID();
 		if($ownerUuid !== null && $ownerUuid === $player->getUniqueId()->toString()){
 			$dyeColor = $this->extractDyeColor($item);
-			if($dyeColor !== null){
+			if($dyeColor !== null && $dyeColor !== $this->collarColor){
 				$ev = new PetCollarColorChangeEvent($this, $player, $this->collarColor, $dyeColor);
 				$ev->call();
 				if(!$ev->isCancelled()){
@@ -279,36 +279,6 @@ class Cat extends TameableAnimal{
 			$this->setCatType($catTypeTag->getValue());
 		}else{
 			$this->setCatType(mt_rand(self::TYPE_TABBY, self::TYPE_ALL_BLACK));
-		}
-	}
-
-	private function emitParticle(Particle $particle) : void{
-		if(isset($this->location)){
-			$world = $this->getWorld();
-			if($world->isLoaded()){
-				$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-				$world->addParticle($this->location->add(0, $height, 0), $particle);
-			}
-		}
-	}
-
-	private function extractDyeColor(Item $item) : ?DyeColor{
-		if($item instanceof Dye){
-			return $item->getColor();
-		}
-		if(method_exists($item, "getColor")){
-			$color = $item->getColor();
-			if($color instanceof DyeColor){
-				return $color;
-			}
-		}
-		return null;
-	}
-
-	private function consumeHeldItem(Player $player, Item $held) : void{
-		if($player->hasFiniteResources()){
-			$held->pop();
-			$player->getInventory()->setItemInHand($held);
 		}
 	}
 }

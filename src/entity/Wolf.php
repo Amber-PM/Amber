@@ -48,6 +48,7 @@ use pocketmine\world\particle\SmokeParticle;
 use function max;
 use function min;
 use function mt_rand;
+use function sqrt;
 use function strtolower;
 
 class Wolf extends TameableAnimal{
@@ -208,13 +209,7 @@ class Wolf extends TameableAnimal{
 		$this->setAngry(false);
 		$this->setSitting(true);
 
-		if(isset($this->location)){
-			$world = $this->getWorld();
-			if($world->isLoaded()){
-				$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-				$world->addParticle($this->location->add(0, $height, 0), new HeartParticle());
-			}
-		}
+		$this->emitParticle(new HeartParticle());
 
 		return true;
 	}
@@ -240,13 +235,7 @@ class Wolf extends TameableAnimal{
 				if(mt_rand(1, 3) === 1){
 					$this->tame($player);
 				}else{
-					if(isset($this->location)){
-						$world = $this->getWorld();
-						if($world->isLoaded()){
-							$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-							$world->addParticle($this->location->add(0, $height, 0), new SmokeParticle());
-						}
-					}
+					$this->emitParticle(new SmokeParticle());
 				}
 				return true;
 			}
@@ -256,7 +245,7 @@ class Wolf extends TameableAnimal{
 		$ownerUuid = $this->getOwnerUUID();
 		if($ownerUuid !== null && $ownerUuid === $player->getUniqueId()->toString()){
 			$dyeColor = $this->extractDyeColor($item);
-			if($dyeColor !== null){
+			if($dyeColor !== null && $dyeColor !== $this->collarColor){
 				$ev = new PetCollarColorChangeEvent($this, $player, $this->collarColor, $dyeColor);
 				$ev->call();
 				if(!$ev->isCancelled()){
@@ -278,26 +267,14 @@ class Wolf extends TameableAnimal{
 					}
 					$this->setHealth($this->getHealth() + $ev->getAmount());
 					$this->consumeHeldItem($player, $item);
-					if(isset($this->location)){
-						$world = $this->getWorld();
-						if($world->isLoaded()){
-							$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-							$world->addParticle($this->location->add(0, $height, 0), new HeartParticle());
-						}
-					}
+					$this->emitParticle(new HeartParticle());
 					return true;
 				}
 
 				if(!$this->isBaby() && !$this->isInLove()){
 					$this->setInLoveTicks(600);
 					$this->consumeHeldItem($player, $item);
-					if(isset($this->location)){
-						$world = $this->getWorld();
-						if($world->isLoaded()){
-							$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-							$world->addParticle($this->location->add(0, $height, 0), new HeartParticle());
-						}
-					}
+					$this->emitParticle(new HeartParticle());
 					return true;
 				}
 
@@ -317,13 +294,15 @@ class Wolf extends TameableAnimal{
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
-		if(!$this->isTamed() && $source instanceof EntityDamageByEntityEvent){
-			$this->setAngry(true);
+		if($source instanceof EntityDamageByEntityEvent){
 			$damager = $source->getDamager();
-			if($damager !== null && $this->isValidTarget($damager)){
+			if($this->isValidTarget($damager)){
 				$this->setTargetEntity($damager);
+				if(!$this->isTamed()){
+					$this->setAngry(true);
+					$this->alertNearbyWolves($damager);
+				}
 			}
-			$this->alertNearbyWolves($damager);
 		}
 
 		parent::attack($source);
@@ -346,6 +325,46 @@ class Wolf extends TameableAnimal{
 					$nearby->setTargetEntity($attacker);
 				}
 			}
+		}
+	}
+
+	public function tickFollowMovement() : void{
+		if(!$this->isSitting() && $this->combatTarget !== null){
+			if(!$this->isValidTarget($this->combatTarget)){
+				$this->combatTarget = null;
+				parent::tickFollowMovement();
+				return;
+			}
+
+			if(!isset($this->location)){
+				return;
+			}
+
+			if(!isset($this->motion)){
+				$this->motion = Vector3::zero();
+			}
+
+			$targetLoc = $this->combatTarget->getLocation();
+			$dx = $targetLoc->x - $this->location->x;
+			$dz = $targetLoc->z - $this->location->z;
+			$hDist = sqrt($dx * $dx + $dz * $dz);
+
+			if($hDist <= 1.5){
+				$this->attackTarget($this->combatTarget);
+				$this->motion->x = 0.0;
+				$this->motion->z = 0.0;
+			}else{
+				$ux = $dx / $hDist;
+				$uz = $dz / $hDist;
+				$this->motion->x = $ux * 0.35;
+				$this->motion->z = $uz * 0.35;
+				$this->lookAt($targetLoc);
+				if($this->isCollidedHorizontally && $this->onGround){
+					$this->motion->y = 0.42;
+				}
+			}
+		}else{
+			parent::tickFollowMovement();
 		}
 	}
 
@@ -403,26 +422,6 @@ class Wolf extends TameableAnimal{
 			}elseif(($healthShortTag = $nbt->getTag(self::TAG_HEALTH)) instanceof ShortTag){
 				$this->setHealth($healthShortTag->getValue());
 			}
-		}
-	}
-
-	private function extractDyeColor(Item $item) : ?DyeColor{
-		if($item instanceof Dye){
-			return $item->getColor();
-		}
-		if(method_exists($item, "getColor")){
-			$color = $item->getColor();
-			if($color instanceof DyeColor){
-				return $color;
-			}
-		}
-		return null;
-	}
-
-	private function consumeHeldItem(Player $player, Item $held) : void{
-		if($player->hasFiniteResources()){
-			$held->pop();
-			$player->getInventory()->setItemInHand($held);
 		}
 	}
 }

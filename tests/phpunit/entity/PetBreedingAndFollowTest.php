@@ -28,6 +28,7 @@ use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
 use pocketmine\block\utils\DyeColor;
 use pocketmine\entity\effect\EffectManager;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\item\Item;
@@ -42,6 +43,18 @@ use ReflectionClass;
 use ReflectionProperty;
 use function in_array;
 use function sqrt;
+
+if(!class_exists(PetBreedingAndFollowTestTargetEntity::class)){
+	class PetBreedingAndFollowTestTargetEntity extends Living{
+		public static function getNetworkTypeId() : string{ return "minecraft:test_target"; }
+		protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(1.0, 1.0); }
+		public function getName() : string{ return "Test Target"; }
+
+		public function attack(EntityDamageEvent $source) : void{
+			// Prevent world/server lookup during follow movement attack
+		}
+	}
+}
 
 final class PetBreedingAndFollowTest extends TestCase{
 
@@ -195,6 +208,35 @@ final class PetBreedingAndFollowTest extends TestCase{
 
 		$this->createdEntities[] = $player;
 		return $player;
+	}
+
+	private function createTargetEntity(?World $world = null, ?Vector3 $pos = null) : PetBreedingAndFollowTestTargetEntity{
+		$target = (new ReflectionClass(PetBreedingAndFollowTestTargetEntity::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($target, false);
+		(new ReflectionProperty(Entity::class, "id"))->setValue($target, Entity::nextRuntimeId());
+		(new ReflectionProperty(Entity::class, "size"))->setValue($target, new EntitySizeInfo(1.0, 1.0));
+		(new ReflectionProperty(Entity::class, "scale"))->setValue($target, 1.0);
+		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($target, new EntityMetadataCollection());
+		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($target, new AttributeMap());
+		(new ReflectionClass(Living::class))->getMethod("addAttributes")->invoke($target);
+		(new ReflectionProperty(Living::class, "effectManager"))->setValue($target, new EffectManager($target));
+		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($target, new ArmorInventory($target));
+		if($world === null){
+			$world = $this->createMockWorld();
+		}
+		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($target, $location);
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($target, new AxisAlignedBB(
+			$location->x - 0.5,
+			$location->y,
+			$location->z - 0.5,
+			$location->x + 0.5,
+			$location->y + 1.0,
+			$location->z + 0.5
+		));
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($target, Vector3::zero());
+		$this->createdEntities[] = $target;
+		return $target;
 	}
 
 	public function testBabyFeedingReducesAge() : void{
@@ -580,6 +622,49 @@ final class PetBreedingAndFollowTest extends TestCase{
 		self::assertSame(0.0, $wolf->getLocation()->x);
 		self::assertSame(0.0, $wolf->getLocation()->z);
 		// Horizontal motion cleared
+		self::assertSame(0.0, $wolf->getMotion()->x);
+		self::assertSame(0.0, $wolf->getMotion()->z);
+	}
+
+	public function testTamedWolfTargetPursuitSetsMotionTowardsTarget() : void{
+		$world = $this->createMockWorld();
+		$owner = $this->createPlayer("Owner", null, null, true, $world, new Vector3(10.0, 0.0, 0.0));
+
+		$wolf = $this->createWolf($world, new Vector3(0.0, 0.0, 0.0));
+		$wolf->setTamed(true);
+		$wolf->setOwnerUUID($owner->getUniqueId()->toString());
+		$wolf->setSitting(false);
+
+		$enemy = $this->createTargetEntity($world, new Vector3(0.0, 0.0, 5.0));
+		$wolf->setTargetEntity($enemy);
+
+		$wolf->tickFollowMovement();
+
+		$motion = $wolf->getMotion();
+		// Moves towards target at speed 0.35 in +Z direction rather than towards owner in +X
+		self::assertEqualsWithDelta(0.0, $motion->x, 0.001);
+		self::assertEqualsWithDelta(0.35, $motion->z, 0.001);
+		$horizontalSpeed = sqrt($motion->x ** 2 + $motion->z ** 2);
+		self::assertEqualsWithDelta(0.35, $horizontalSpeed, 0.001);
+
+		// Within melee range (<= 1.5 blocks): halts horizontal motion
+		(new ReflectionProperty(Entity::class, "location"))->setValue($enemy, new Location(0.0, 0.0, 1.0, $world, 0.0, 0.0));
+		$wolf->tickFollowMovement();
+
+		self::assertSame(0.0, $wolf->getMotion()->x);
+		self::assertSame(0.0, $wolf->getMotion()->z);
+
+		// When target becomes closed / invalid, clears target and falls back to owner follow
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($enemy, true);
+		$wolf->tickFollowMovement();
+		self::assertNull($wolf->getTargetEntity());
+		self::assertEqualsWithDelta(0.25, $wolf->getMotion()->x, 0.001);
+		self::assertEqualsWithDelta(0.0, $wolf->getMotion()->z, 0.001);
+
+		// When sitting, target pursuit is suppressed and horizontal motion is cleared
+		$wolf->setSitting(true);
+		$wolf->setMotion(new Vector3(0.5, 0.0, 0.5));
+		$wolf->tickFollowMovement();
 		self::assertSame(0.0, $wolf->getMotion()->x);
 		self::assertSame(0.0, $wolf->getMotion()->z);
 	}

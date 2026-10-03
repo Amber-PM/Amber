@@ -32,6 +32,8 @@ use pocketmine\block\utils\DyeColor;
 use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\inventory\ArmorInventory;
+use pocketmine\item\Dye;
+use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
@@ -44,6 +46,7 @@ use pocketmine\player\Player;
 use pocketmine\Server;
 use pocketmine\world\particle\HappyVillagerParticle;
 use pocketmine\world\particle\HeartParticle;
+use pocketmine\world\particle\Particle;
 use Ramsey\Uuid\Uuid;
 use function floor;
 use function max;
@@ -51,6 +54,9 @@ use function min;
 use function mt_rand;
 use function sqrt;
 
+/**
+ * @phpstan-consistent-constructor
+ */
 abstract class TameableAnimal extends Living implements Ageable{
 
 	public const TAG_OWNER_UUID = "OwnerUUID";
@@ -283,13 +289,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 		}
 		$this->setAge($newAge);
 
-		if(isset($this->location)){
-			$world = $this->getWorld();
-			if($world->isLoaded()){
-				$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-				$world->addParticle($this->location->add(0, $height, 0), new HappyVillagerParticle());
-			}
-		}
+		$this->emitParticle(new HappyVillagerParticle());
 
 		return true;
 	}
@@ -522,6 +522,36 @@ abstract class TameableAnimal extends Living implements Ageable{
 		}
 	}
 
+	protected function emitParticle(Particle $particle) : void{
+		if(isset($this->location)){
+			$world = $this->getWorld();
+			if($world->isLoaded()){
+				$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
+				$world->addParticle($this->location->add(0, $height, 0), $particle);
+			}
+		}
+	}
+
+	protected function extractDyeColor(Item $item) : ?DyeColor{
+		if($item instanceof Dye){
+			return $item->getColor();
+		}
+		if(method_exists($item, "getColor")){
+			$color = $item->getColor();
+			if($color instanceof DyeColor){
+				return $color;
+			}
+		}
+		return null;
+	}
+
+	protected function consumeHeldItem(Player $player, Item $held) : void{
+		if($player->hasFiniteResources()){
+			$held->pop();
+			$player->getInventory()->setItemInHand($held);
+		}
+	}
+
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
@@ -540,12 +570,8 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 		if($this->inLoveTicks > 0){
 			$this->inLoveTicks = max(0, $this->inLoveTicks - $tickDiff);
-			if(isset($this->location) && $this->inLoveTicks % 20 === 0){
-				$world = $this->getWorld();
-				if($world->isLoaded()){
-					$height = isset($this->size) ? $this->size->getHeight() * 0.5 : 0.5;
-					$world->addParticle($this->location->add(0, $height, 0), new HeartParticle());
-				}
+			if($this->inLoveTicks % 20 === 0){
+				$this->emitParticle(new HeartParticle());
 			}
 
 			$mate = null;
