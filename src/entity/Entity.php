@@ -123,7 +123,7 @@ abstract class Entity{
 
 	protected int $id;
 
-	private EntityMetadataCollection $networkProperties;
+	protected EntityMetadataCollection $networkProperties;
 
 	protected ?EntityDamageEvent $lastDamageCause = null;
 
