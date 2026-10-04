@@ -101,6 +101,7 @@ use pocketmine\inventory\transaction\TransactionCancelledException;
 use pocketmine\inventory\transaction\TransactionValidationException;
 use pocketmine\item\ConsumableItem;
 use pocketmine\item\Durable;
+use pocketmine\item\Elytra;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\MeleeWeaponEnchantment;
 use pocketmine\item\Item;
@@ -1508,8 +1509,38 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->sendPosition($from, $from->yaw, $from->pitch, MovePlayerPacket::MODE_RESET);
 	}
 
+	protected int $glideFlightTicks = 0;
+
 	protected function calculateFallDamage(float $fallDistance) : float{
-		return $this->flying ? 0 : parent::calculateFallDamage($fallDistance);
+		return ($this->flying || $this->isGliding()) ? 0.0 : parent::calculateFallDamage($fallDistance);
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+
+		if($this->isGliding()){
+			if(!$this->canGlide()){
+				$this->setGliding(false);
+			}else{
+				$this->glideFlightTicks += $tickDiff;
+				if($this->glideFlightTicks >= 20){
+					$this->glideFlightTicks = 0;
+					$chest = $this->armorInventory->getChestplate();
+					if($chest instanceof Elytra){
+						if($chest->applyDamage(1)){
+							$this->armorInventory->setChestplate($chest);
+							if($chest->isBroken()){
+								$this->setGliding(false);
+							}
+						}
+					}
+				}
+			}
+		}else{
+			$this->glideFlightTicks = 0;
+		}
+
+		return $hasUpdate;
 	}
 
 	public function jump() : void{
@@ -2175,9 +2206,25 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		return false;
 	}
 
+	public function canGlide() : bool{
+		$chest = $this->armorInventory->getChestplate();
+		if(!($chest instanceof Elytra) || $chest->isBroken()){
+			return false;
+		}
+
+		return !$this->onGround &&
+			!$this->flying &&
+			!$this->isUnderwater() &&
+			!$this->isSwimming() &&
+			!$this->isSleeping();
+	}
+
 	public function toggleGlide(bool $glide) : bool{
 		if($glide === $this->gliding){
 			return true;
+		}
+		if($glide && !$this->canGlide()){
+			return false;
 		}
 		$ev = new PlayerToggleGlideEvent($this, $glide);
 		$ev->call();
