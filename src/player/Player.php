@@ -2235,6 +2235,18 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		return true;
 	}
 
+	public function checkGlidingKineticDamage(float $horizontalSpeed, bool $horizontalCollision = true) : bool{
+		if($this->isGliding() && $horizontalCollision && $horizontalSpeed >= 0.75){
+			$damage = (float) floor($horizontalSpeed * 10.0);
+			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FLY_INTO_WALL, $damage);
+			$this->attack($ev);
+			$this->setGliding(false);
+			return true;
+		}
+
+		return false;
+	}
+
 	public function toggleSwim(bool $swim) : bool{
 		if($swim === $this->swimming){
 			return true;
