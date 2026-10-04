@@ -101,7 +101,9 @@ class NetherPortal extends Transparent{
 	}
 
 	public function onEntityInside(Entity $entity) : bool{
-		//TODO
+		if($entity instanceof \pocketmine\player\Player){
+			\pocketmine\world\portal\PortalTeleporter::handlePlayerInNetherPortal($entity);
+		}
 		return true;
 	}
 }
