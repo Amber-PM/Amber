@@ -291,6 +291,8 @@ final class VanillaBlocks{
 	private static Stair $_mDEEPSLATE_TILE_STAIRS;
 	private static Wall $_mDEEPSLATE_TILE_WALL;
 	private static DetectorRail $_mDETECTOR_RAIL;
+	private static Dispenser $_mDISPENSER;
+	private static Dropper $_mDROPPER;
 	private static Opaque $_mDIAMOND;
 	private static DiamondOre $_mDIAMOND_ORE;
 	private static Opaque $_mDIORITE;
@@ -1124,6 +1126,8 @@ final class VanillaBlocks{
 			"deepslate_tile_stairs" => fn(Stair $v) => self::$_mDEEPSLATE_TILE_STAIRS = $v,
 			"deepslate_tile_wall" => fn(Wall $v) => self::$_mDEEPSLATE_TILE_WALL = $v,
 			"detector_rail" => fn(DetectorRail $v) => self::$_mDETECTOR_RAIL = $v,
+			"dispenser" => fn(Dispenser $v) => self::$_mDISPENSER = $v,
+			"dropper" => fn(Dropper $v) => self::$_mDROPPER = $v,
 			"diamond" => fn(Opaque $v) => self::$_mDIAMOND = $v,
 			"diamond_ore" => fn(DiamondOre $v) => self::$_mDIAMOND_ORE = $v,
 			"diorite" => fn(Opaque $v) => self::$_mDIORITE = $v,
@@ -2971,6 +2975,16 @@ final class VanillaBlocks{
 	public static function DETECTOR_RAIL() : DetectorRail{
 		if(!isset(self::$_mDETECTOR_RAIL)){ self::init(); }
 		return clone self::$_mDETECTOR_RAIL;
+	}
+
+	public static function DISPENSER() : Dispenser{
+		if(!isset(self::$_mDISPENSER)){ self::init(); }
+		return clone self::$_mDISPENSER;
+	}
+
+	public static function DROPPER() : Dropper{
+		if(!isset(self::$_mDROPPER)){ self::init(); }
+		return clone self::$_mDROPPER;
 	}
 
 	public static function DIAMOND() : Opaque{

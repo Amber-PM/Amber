@@ -85,8 +85,8 @@ final class TileFactory{
 		//TODO: ChemistryTable
 		//TODO: CommandBlock
 		//TODO: Conduit
-		//TODO: Dispenser
-		//TODO: Dropper
+		$this->register(Dispenser::class, ["Dispenser", "Trap", "minecraft:dispenser"]);
+		$this->register(Dropper::class, ["Dropper", "minecraft:dropper"]);
 		//TODO: EndGateway
 		//TODO: EndPortal
 		//TODO: JigsawBlock
