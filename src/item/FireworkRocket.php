@@ -112,6 +112,18 @@ class FireworkRocket extends Item{
 		return ItemUseResult::SUCCESS;
 	}
 
+	public function onClickAir(Player $player, Vector3 $directionVector, array &$returnedItems) : ItemUseResult{
+		if($player->isGliding()){
+			$player->boostGlideWithFirework($this);
+			if($player->hasFiniteResources()){
+				$this->pop();
+			}
+			return ItemUseResult::SUCCESS;
+		}
+
+		return ItemUseResult::FAIL;
+	}
+
 	protected function deserializeCompoundTag(CompoundTag $tag) : void{
 		parent::deserializeCompoundTag($tag);
 

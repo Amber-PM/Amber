@@ -103,6 +103,7 @@ use pocketmine\item\ConsumableItem;
 use pocketmine\item\Durable;
 use pocketmine\item\Elytra;
 use pocketmine\item\enchantment\EnchantmentInstance;
+use pocketmine\item\FireworkRocket;
 use pocketmine\item\enchantment\MeleeWeaponEnchantment;
 use pocketmine\item\Item;
 use pocketmine\item\ItemUseResult;
@@ -143,6 +144,7 @@ use pocketmine\world\Position;
 use pocketmine\world\sound\EntityAttackNoDamageSound;
 use pocketmine\world\sound\EntityAttackSound;
 use pocketmine\world\sound\FireExtinguishSound;
+use pocketmine\world\sound\FireworkLaunchSound;
 use pocketmine\world\sound\ItemBreakSound;
 use pocketmine\world\sound\RespawnAnchorDepleteSound;
 use pocketmine\world\sound\Sound;
@@ -2245,6 +2247,20 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		}
 
 		return false;
+	}
+
+	public function boostGlideWithFirework(FireworkRocket $firework) : void{
+		$boostMultiplier = 1.5 * (1.0 + ($firework->getFlightTimeMultiplier() - 1) * 0.25);
+		$dir = $this->getDirectionVector();
+		$this->setMotion($this->getMotion()->add($dir->x * $boostMultiplier, $dir->y * $boostMultiplier, $dir->z * $boostMultiplier));
+		$this->broadcastSound(new FireworkLaunchSound());
+
+		$explosions = $firework->getExplosions();
+		if(count($explosions) > 0){
+			$damage = (float) (count($explosions) * 2.0);
+			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_ENTITY_EXPLOSION, $damage);
+			$this->attack($ev);
+		}
 	}
 
 	public function toggleSwim(bool $swim) : bool{
