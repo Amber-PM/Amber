@@ -40,18 +40,6 @@ use function mb_strtoupper;
 final class VanillaItems{
 	private static Boat $_mACACIA_BOAT;
 	private static ChestBoat $_mACACIA_CHEST_BOAT;
-	private static ChestBoat $_mBAMBOO_CHEST_RAFT;
-	private static Boat $_mBAMBOO_RAFT;
-	private static ChestBoat $_mBIRCH_CHEST_BOAT;
-	private static Boat $_mCHERRY_BOAT;
-	private static ChestBoat $_mCHERRY_CHEST_BOAT;
-	private static ChestBoat $_mDARK_OAK_CHEST_BOAT;
-	private static ChestBoat $_mJUNGLE_CHEST_BOAT;
-	private static ChestBoat $_mMANGROVE_CHEST_BOAT;
-	private static ChestBoat $_mOAK_CHEST_BOAT;
-	private static Boat $_mPALE_OAK_BOAT;
-	private static ChestBoat $_mPALE_OAK_CHEST_BOAT;
-	private static ChestBoat $_mSPRUCE_CHEST_BOAT;
 	private static HangingSign $_mACACIA_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mACACIA_SIGN;
 	private static Item $_mAIR;
@@ -61,13 +49,16 @@ final class VanillaItems{
 	private static Arrow $_mARROW;
 	private static BakedPotato $_mBAKED_POTATO;
 	private static Bamboo $_mBAMBOO;
+	private static ChestBoat $_mBAMBOO_CHEST_RAFT;
 	private static HangingSign $_mBAMBOO_HANGING_SIGN;
+	private static Boat $_mBAMBOO_RAFT;
 	private static ItemBlockWallOrFloor $_mBAMBOO_SIGN;
 	private static Banner $_mBANNER;
 	private static Beetroot $_mBEETROOT;
 	private static BeetrootSeeds $_mBEETROOT_SEEDS;
 	private static BeetrootSoup $_mBEETROOT_SOUP;
 	private static Boat $_mBIRCH_BOAT;
+	private static ChestBoat $_mBIRCH_CHEST_BOAT;
 	private static HangingSign $_mBIRCH_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mBIRCH_SIGN;
 	private static Item $_mBLAZE_POWDER;
@@ -126,6 +117,8 @@ final class VanillaItems{
 	private static Item $_mCHEMICAL_SULPHATE;
 	private static Item $_mCHEMICAL_TUNGSTEN_CHLORIDE;
 	private static Item $_mCHEMICAL_WATER;
+	private static Boat $_mCHERRY_BOAT;
+	private static ChestBoat $_mCHERRY_CHEST_BOAT;
 	private static HangingSign $_mCHERRY_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mCHERRY_SIGN;
 	private static ChorusFruit $_mCHORUS_FRUIT;
@@ -158,6 +151,7 @@ final class VanillaItems{
 	private static HangingSign $_mCRIMSON_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mCRIMSON_SIGN;
 	private static Boat $_mDARK_OAK_BOAT;
+	private static ChestBoat $_mDARK_OAK_CHEST_BOAT;
 	private static HangingSign $_mDARK_OAK_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mDARK_OAK_SIGN;
 	private static Item $_mDIAMOND;
@@ -231,6 +225,7 @@ final class VanillaItems{
 	private static Shovel $_mIRON_SHOVEL;
 	private static Sword $_mIRON_SWORD;
 	private static Boat $_mJUNGLE_BOAT;
+	private static ChestBoat $_mJUNGLE_CHEST_BOAT;
 	private static HangingSign $_mJUNGLE_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mJUNGLE_SIGN;
 	private static Item $_mLAPIS_LAZULI;
@@ -243,6 +238,7 @@ final class VanillaItems{
 	private static SplashPotion $_mLINGERING_POTION;
 	private static Item $_mMAGMA_CREAM;
 	private static Boat $_mMANGROVE_BOAT;
+	private static ChestBoat $_mMANGROVE_CHEST_BOAT;
 	private static HangingSign $_mMANGROVE_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mMANGROVE_SIGN;
 	private static Medicine $_mMEDICINE;
@@ -269,10 +265,13 @@ final class VanillaItems{
 	private static Item $_mNETHER_QUARTZ;
 	private static Item $_mNETHER_STAR;
 	private static Boat $_mOAK_BOAT;
+	private static ChestBoat $_mOAK_CHEST_BOAT;
 	private static HangingSign $_mOAK_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mOAK_SIGN;
 	private static ItemBlockWallOrFloor $_mOMINOUS_BANNER;
 	private static PaintingItem $_mPAINTING;
+	private static Boat $_mPALE_OAK_BOAT;
+	private static ChestBoat $_mPALE_OAK_CHEST_BOAT;
 	private static HangingSign $_mPALE_OAK_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mPALE_OAK_SIGN;
 	private static Item $_mPAPER;
@@ -341,6 +340,7 @@ final class VanillaItems{
 	private static Item $_mSPIRE_ARMOR_TRIM_SMITHING_TEMPLATE;
 	private static SplashPotion $_mSPLASH_POTION;
 	private static Boat $_mSPRUCE_BOAT;
+	private static ChestBoat $_mSPRUCE_CHEST_BOAT;
 	private static HangingSign $_mSPRUCE_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mSPRUCE_SIGN;
 	private static Spyglass $_mSPYGLASS;
@@ -416,18 +416,6 @@ final class VanillaItems{
 		return [
 			"acacia_boat" => fn(Boat $v) => self::$_mACACIA_BOAT = $v,
 			"acacia_chest_boat" => fn(ChestBoat $v) => self::$_mACACIA_CHEST_BOAT = $v,
-			"bamboo_chest_raft" => fn(ChestBoat $v) => self::$_mBAMBOO_CHEST_RAFT = $v,
-			"bamboo_raft" => fn(Boat $v) => self::$_mBAMBOO_RAFT = $v,
-			"birch_chest_boat" => fn(ChestBoat $v) => self::$_mBIRCH_CHEST_BOAT = $v,
-			"cherry_boat" => fn(Boat $v) => self::$_mCHERRY_BOAT = $v,
-			"cherry_chest_boat" => fn(ChestBoat $v) => self::$_mCHERRY_CHEST_BOAT = $v,
-			"dark_oak_chest_boat" => fn(ChestBoat $v) => self::$_mDARK_OAK_CHEST_BOAT = $v,
-			"jungle_chest_boat" => fn(ChestBoat $v) => self::$_mJUNGLE_CHEST_BOAT = $v,
-			"mangrove_chest_boat" => fn(ChestBoat $v) => self::$_mMANGROVE_CHEST_BOAT = $v,
-			"oak_chest_boat" => fn(ChestBoat $v) => self::$_mOAK_CHEST_BOAT = $v,
-			"pale_oak_boat" => fn(Boat $v) => self::$_mPALE_OAK_BOAT = $v,
-			"pale_oak_chest_boat" => fn(ChestBoat $v) => self::$_mPALE_OAK_CHEST_BOAT = $v,
-			"spruce_chest_boat" => fn(ChestBoat $v) => self::$_mSPRUCE_CHEST_BOAT = $v,
 			"acacia_hanging_sign" => fn(HangingSign $v) => self::$_mACACIA_HANGING_SIGN = $v,
 			"acacia_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mACACIA_SIGN = $v,
 			"air" => fn(Item $v) => self::$_mAIR = $v,
@@ -437,13 +425,16 @@ final class VanillaItems{
 			"arrow" => fn(Arrow $v) => self::$_mARROW = $v,
 			"baked_potato" => fn(BakedPotato $v) => self::$_mBAKED_POTATO = $v,
 			"bamboo" => fn(Bamboo $v) => self::$_mBAMBOO = $v,
+			"bamboo_chest_raft" => fn(ChestBoat $v) => self::$_mBAMBOO_CHEST_RAFT = $v,
 			"bamboo_hanging_sign" => fn(HangingSign $v) => self::$_mBAMBOO_HANGING_SIGN = $v,
+			"bamboo_raft" => fn(Boat $v) => self::$_mBAMBOO_RAFT = $v,
 			"bamboo_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mBAMBOO_SIGN = $v,
 			"banner" => fn(Banner $v) => self::$_mBANNER = $v,
 			"beetroot" => fn(Beetroot $v) => self::$_mBEETROOT = $v,
 			"beetroot_seeds" => fn(BeetrootSeeds $v) => self::$_mBEETROOT_SEEDS = $v,
 			"beetroot_soup" => fn(BeetrootSoup $v) => self::$_mBEETROOT_SOUP = $v,
 			"birch_boat" => fn(Boat $v) => self::$_mBIRCH_BOAT = $v,
+			"birch_chest_boat" => fn(ChestBoat $v) => self::$_mBIRCH_CHEST_BOAT = $v,
 			"birch_hanging_sign" => fn(HangingSign $v) => self::$_mBIRCH_HANGING_SIGN = $v,
 			"birch_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mBIRCH_SIGN = $v,
 			"blaze_powder" => fn(Item $v) => self::$_mBLAZE_POWDER = $v,
@@ -502,6 +493,8 @@ final class VanillaItems{
 			"chemical_sulphate" => fn(Item $v) => self::$_mCHEMICAL_SULPHATE = $v,
 			"chemical_tungsten_chloride" => fn(Item $v) => self::$_mCHEMICAL_TUNGSTEN_CHLORIDE = $v,
 			"chemical_water" => fn(Item $v) => self::$_mCHEMICAL_WATER = $v,
+			"cherry_boat" => fn(Boat $v) => self::$_mCHERRY_BOAT = $v,
+			"cherry_chest_boat" => fn(ChestBoat $v) => self::$_mCHERRY_CHEST_BOAT = $v,
 			"cherry_hanging_sign" => fn(HangingSign $v) => self::$_mCHERRY_HANGING_SIGN = $v,
 			"cherry_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mCHERRY_SIGN = $v,
 			"chorus_fruit" => fn(ChorusFruit $v) => self::$_mCHORUS_FRUIT = $v,
@@ -534,6 +527,7 @@ final class VanillaItems{
 			"crimson_hanging_sign" => fn(HangingSign $v) => self::$_mCRIMSON_HANGING_SIGN = $v,
 			"crimson_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mCRIMSON_SIGN = $v,
 			"dark_oak_boat" => fn(Boat $v) => self::$_mDARK_OAK_BOAT = $v,
+			"dark_oak_chest_boat" => fn(ChestBoat $v) => self::$_mDARK_OAK_CHEST_BOAT = $v,
 			"dark_oak_hanging_sign" => fn(HangingSign $v) => self::$_mDARK_OAK_HANGING_SIGN = $v,
 			"dark_oak_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mDARK_OAK_SIGN = $v,
 			"diamond" => fn(Item $v) => self::$_mDIAMOND = $v,
@@ -607,6 +601,7 @@ final class VanillaItems{
 			"iron_shovel" => fn(Shovel $v) => self::$_mIRON_SHOVEL = $v,
 			"iron_sword" => fn(Sword $v) => self::$_mIRON_SWORD = $v,
 			"jungle_boat" => fn(Boat $v) => self::$_mJUNGLE_BOAT = $v,
+			"jungle_chest_boat" => fn(ChestBoat $v) => self::$_mJUNGLE_CHEST_BOAT = $v,
 			"jungle_hanging_sign" => fn(HangingSign $v) => self::$_mJUNGLE_HANGING_SIGN = $v,
 			"jungle_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mJUNGLE_SIGN = $v,
 			"lapis_lazuli" => fn(Item $v) => self::$_mLAPIS_LAZULI = $v,
@@ -619,6 +614,7 @@ final class VanillaItems{
 			"lingering_potion" => fn(SplashPotion $v) => self::$_mLINGERING_POTION = $v,
 			"magma_cream" => fn(Item $v) => self::$_mMAGMA_CREAM = $v,
 			"mangrove_boat" => fn(Boat $v) => self::$_mMANGROVE_BOAT = $v,
+			"mangrove_chest_boat" => fn(ChestBoat $v) => self::$_mMANGROVE_CHEST_BOAT = $v,
 			"mangrove_hanging_sign" => fn(HangingSign $v) => self::$_mMANGROVE_HANGING_SIGN = $v,
 			"mangrove_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mMANGROVE_SIGN = $v,
 			"medicine" => fn(Medicine $v) => self::$_mMEDICINE = $v,
@@ -645,10 +641,13 @@ final class VanillaItems{
 			"nether_quartz" => fn(Item $v) => self::$_mNETHER_QUARTZ = $v,
 			"nether_star" => fn(Item $v) => self::$_mNETHER_STAR = $v,
 			"oak_boat" => fn(Boat $v) => self::$_mOAK_BOAT = $v,
+			"oak_chest_boat" => fn(ChestBoat $v) => self::$_mOAK_CHEST_BOAT = $v,
 			"oak_hanging_sign" => fn(HangingSign $v) => self::$_mOAK_HANGING_SIGN = $v,
 			"oak_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mOAK_SIGN = $v,
 			"ominous_banner" => fn(ItemBlockWallOrFloor $v) => self::$_mOMINOUS_BANNER = $v,
 			"painting" => fn(PaintingItem $v) => self::$_mPAINTING = $v,
+			"pale_oak_boat" => fn(Boat $v) => self::$_mPALE_OAK_BOAT = $v,
+			"pale_oak_chest_boat" => fn(ChestBoat $v) => self::$_mPALE_OAK_CHEST_BOAT = $v,
 			"pale_oak_hanging_sign" => fn(HangingSign $v) => self::$_mPALE_OAK_HANGING_SIGN = $v,
 			"pale_oak_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mPALE_OAK_SIGN = $v,
 			"paper" => fn(Item $v) => self::$_mPAPER = $v,
@@ -717,6 +716,7 @@ final class VanillaItems{
 			"spire_armor_trim_smithing_template" => fn(Item $v) => self::$_mSPIRE_ARMOR_TRIM_SMITHING_TEMPLATE = $v,
 			"splash_potion" => fn(SplashPotion $v) => self::$_mSPLASH_POTION = $v,
 			"spruce_boat" => fn(Boat $v) => self::$_mSPRUCE_BOAT = $v,
+			"spruce_chest_boat" => fn(ChestBoat $v) => self::$_mSPRUCE_CHEST_BOAT = $v,
 			"spruce_hanging_sign" => fn(HangingSign $v) => self::$_mSPRUCE_HANGING_SIGN = $v,
 			"spruce_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mSPRUCE_SIGN = $v,
 			"spyglass" => fn(Spyglass $v) => self::$_mSPYGLASS = $v,
@@ -804,66 +804,6 @@ final class VanillaItems{
 		return clone self::$_mACACIA_CHEST_BOAT;
 	}
 
-	public static function BAMBOO_CHEST_RAFT() : ChestBoat{
-		if(!isset(self::$_mBAMBOO_CHEST_RAFT)){ self::init(); }
-		return clone self::$_mBAMBOO_CHEST_RAFT;
-	}
-
-	public static function BAMBOO_RAFT() : Boat{
-		if(!isset(self::$_mBAMBOO_RAFT)){ self::init(); }
-		return clone self::$_mBAMBOO_RAFT;
-	}
-
-	public static function BIRCH_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mBIRCH_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mBIRCH_CHEST_BOAT;
-	}
-
-	public static function CHERRY_BOAT() : Boat{
-		if(!isset(self::$_mCHERRY_BOAT)){ self::init(); }
-		return clone self::$_mCHERRY_BOAT;
-	}
-
-	public static function CHERRY_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mCHERRY_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mCHERRY_CHEST_BOAT;
-	}
-
-	public static function DARK_OAK_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mDARK_OAK_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mDARK_OAK_CHEST_BOAT;
-	}
-
-	public static function JUNGLE_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mJUNGLE_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mJUNGLE_CHEST_BOAT;
-	}
-
-	public static function MANGROVE_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mMANGROVE_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mMANGROVE_CHEST_BOAT;
-	}
-
-	public static function OAK_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mOAK_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mOAK_CHEST_BOAT;
-	}
-
-	public static function PALE_OAK_BOAT() : Boat{
-		if(!isset(self::$_mPALE_OAK_BOAT)){ self::init(); }
-		return clone self::$_mPALE_OAK_BOAT;
-	}
-
-	public static function PALE_OAK_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mPALE_OAK_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mPALE_OAK_CHEST_BOAT;
-	}
-
-	public static function SPRUCE_CHEST_BOAT() : ChestBoat{
-		if(!isset(self::$_mSPRUCE_CHEST_BOAT)){ self::init(); }
-		return clone self::$_mSPRUCE_CHEST_BOAT;
-	}
-
 	public static function ACACIA_HANGING_SIGN() : HangingSign{
 		if(!isset(self::$_mACACIA_HANGING_SIGN)){ self::init(); }
 		return clone self::$_mACACIA_HANGING_SIGN;
@@ -909,9 +849,19 @@ final class VanillaItems{
 		return clone self::$_mBAMBOO;
 	}
 
+	public static function BAMBOO_CHEST_RAFT() : ChestBoat{
+		if(!isset(self::$_mBAMBOO_CHEST_RAFT)){ self::init(); }
+		return clone self::$_mBAMBOO_CHEST_RAFT;
+	}
+
 	public static function BAMBOO_HANGING_SIGN() : HangingSign{
 		if(!isset(self::$_mBAMBOO_HANGING_SIGN)){ self::init(); }
 		return clone self::$_mBAMBOO_HANGING_SIGN;
+	}
+
+	public static function BAMBOO_RAFT() : Boat{
+		if(!isset(self::$_mBAMBOO_RAFT)){ self::init(); }
+		return clone self::$_mBAMBOO_RAFT;
 	}
 
 	public static function BAMBOO_SIGN() : ItemBlockWallOrFloor{
@@ -942,6 +892,11 @@ final class VanillaItems{
 	public static function BIRCH_BOAT() : Boat{
 		if(!isset(self::$_mBIRCH_BOAT)){ self::init(); }
 		return clone self::$_mBIRCH_BOAT;
+	}
+
+	public static function BIRCH_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mBIRCH_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mBIRCH_CHEST_BOAT;
 	}
 
 	public static function BIRCH_HANGING_SIGN() : HangingSign{
@@ -1234,6 +1189,16 @@ final class VanillaItems{
 		return clone self::$_mCHEMICAL_WATER;
 	}
 
+	public static function CHERRY_BOAT() : Boat{
+		if(!isset(self::$_mCHERRY_BOAT)){ self::init(); }
+		return clone self::$_mCHERRY_BOAT;
+	}
+
+	public static function CHERRY_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mCHERRY_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mCHERRY_CHEST_BOAT;
+	}
+
 	public static function CHERRY_HANGING_SIGN() : HangingSign{
 		if(!isset(self::$_mCHERRY_HANGING_SIGN)){ self::init(); }
 		return clone self::$_mCHERRY_HANGING_SIGN;
@@ -1392,6 +1357,11 @@ final class VanillaItems{
 	public static function DARK_OAK_BOAT() : Boat{
 		if(!isset(self::$_mDARK_OAK_BOAT)){ self::init(); }
 		return clone self::$_mDARK_OAK_BOAT;
+	}
+
+	public static function DARK_OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mDARK_OAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mDARK_OAK_CHEST_BOAT;
 	}
 
 	public static function DARK_OAK_HANGING_SIGN() : HangingSign{
@@ -1759,6 +1729,11 @@ final class VanillaItems{
 		return clone self::$_mJUNGLE_BOAT;
 	}
 
+	public static function JUNGLE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mJUNGLE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mJUNGLE_CHEST_BOAT;
+	}
+
 	public static function JUNGLE_HANGING_SIGN() : HangingSign{
 		if(!isset(self::$_mJUNGLE_HANGING_SIGN)){ self::init(); }
 		return clone self::$_mJUNGLE_HANGING_SIGN;
@@ -1817,6 +1792,11 @@ final class VanillaItems{
 	public static function MANGROVE_BOAT() : Boat{
 		if(!isset(self::$_mMANGROVE_BOAT)){ self::init(); }
 		return clone self::$_mMANGROVE_BOAT;
+	}
+
+	public static function MANGROVE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mMANGROVE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mMANGROVE_CHEST_BOAT;
 	}
 
 	public static function MANGROVE_HANGING_SIGN() : HangingSign{
@@ -1949,6 +1929,11 @@ final class VanillaItems{
 		return clone self::$_mOAK_BOAT;
 	}
 
+	public static function OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mOAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mOAK_CHEST_BOAT;
+	}
+
 	public static function OAK_HANGING_SIGN() : HangingSign{
 		if(!isset(self::$_mOAK_HANGING_SIGN)){ self::init(); }
 		return clone self::$_mOAK_HANGING_SIGN;
@@ -1967,6 +1952,16 @@ final class VanillaItems{
 	public static function PAINTING() : PaintingItem{
 		if(!isset(self::$_mPAINTING)){ self::init(); }
 		return clone self::$_mPAINTING;
+	}
+
+	public static function PALE_OAK_BOAT() : Boat{
+		if(!isset(self::$_mPALE_OAK_BOAT)){ self::init(); }
+		return clone self::$_mPALE_OAK_BOAT;
+	}
+
+	public static function PALE_OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mPALE_OAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mPALE_OAK_CHEST_BOAT;
 	}
 
 	public static function PALE_OAK_HANGING_SIGN() : HangingSign{
@@ -2307,6 +2302,11 @@ final class VanillaItems{
 	public static function SPRUCE_BOAT() : Boat{
 		if(!isset(self::$_mSPRUCE_BOAT)){ self::init(); }
 		return clone self::$_mSPRUCE_BOAT;
+	}
+
+	public static function SPRUCE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mSPRUCE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mSPRUCE_CHEST_BOAT;
 	}
 
 	public static function SPRUCE_HANGING_SIGN() : HangingSign{
