@@ -141,10 +141,10 @@ final class PortalTeleporter{
 			return $nearest;
 		}
 
-		// 2. Fallback scan around targetPos (+- 16 blocks horizontal, 32..120 Y)
+		// 2. Fallback scan around targetPos (+- 4 blocks horizontal, 32..120 Y)
 		$tx = $targetPos->getFloorX();
 		$tz = $targetPos->getFloorZ();
-		$localRadius = min($searchRadius, 16);
+		$localRadius = min($searchRadius, 4);
 
 		for($x = $tx - $localRadius; $x <= $tx + $localRadius; ++$x){
 			for($z = $tz - $localRadius; $z <= $tz + $localRadius; ++$z){
