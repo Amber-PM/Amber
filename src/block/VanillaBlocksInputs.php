@@ -319,8 +319,8 @@ final class VanillaBlocksInputs extends RegistrySource{
 		self::register("note_block", fn(BID $id) => new Note($id, "Note Block", new Info(BreakInfo::axe(0.8))), TileNote::class);
 		self::register("obsidian", fn(BID $id) => new Opaque($id, "Obsidian", new Info(BreakInfo::pickaxe(35.0 /* 50 in PC */,  ToolTier::DIAMOND, 6000.0))));
 		self::register("packed_ice", fn(BID $id) => new PackedIce($id, "Packed Ice", new Info(BreakInfo::pickaxe(0.5))));
-		self::register("piston", fn(BID $id) => new Piston($id, "Piston", new Info(new BreakInfo(0.5))));
-		self::register("piston_head", fn(BID $id) => new PistonHead($id, "Piston Head", new Info(BreakInfo::instant())));
+		self::register("piston", fn(BID $id) => new Piston($id, "Piston", new Info(new BreakInfo(1.5))));
+		self::register("piston_head", fn(BID $id) => new PistonHead($id, "Piston Head", new Info(new BreakInfo(1.5))));
 		self::register("podzol", fn(BID $id) => new Podzol($id, "Podzol", new Info(BreakInfo::shovel(0.5), [Tags::DIRT])));
 		self::register("potatoes", fn(BID $id) => new Potato($id, "Potato Block", new Info(BreakInfo::instant())));
 		self::register("powered_rail", fn(BID $id) => new PoweredRail($id, "Powered Rail", $railBreakInfo));
@@ -380,7 +380,7 @@ final class VanillaBlocksInputs extends RegistrySource{
 		self::register("sponge", fn(BID $id) => new Sponge($id, "Sponge", new Info(new BreakInfo(0.6, ToolType::HOE))));
 		$shulkerBoxBreakInfo = new Info(BreakInfo::pickaxe(2));
 		self::register("shulker_box", fn(BID $id) => new ShulkerBox($id, "Shulker Box", $shulkerBoxBreakInfo), TileShulkerBox::class);
-		self::register("sticky_piston", fn(BID $id) => new StickyPiston($id, "Sticky Piston", new Info(new BreakInfo(0.5))));
+		self::register("sticky_piston", fn(BID $id) => new StickyPiston($id, "Sticky Piston", new Info(new BreakInfo(1.5))));
 
 		$stoneBreakInfo = new Info(BreakInfo::pickaxe(1.5, ToolTier::WOOD, 30.0));
 		$stone = self::register(
