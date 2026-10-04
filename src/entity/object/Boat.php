@@ -33,12 +33,21 @@ use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\BoatType;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\network\mcpe\protocol\SetActorLinkPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityLink;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\sound\BlockBreakSound;
+use function cos;
+use function count;
+use function deg2rad;
+use function in_array;
+use function sin;
 use function strtolower;
 
 class Boat extends Entity{
@@ -161,8 +170,145 @@ class Boat extends Entity{
 		$this->close();
 	}
 
+	/** @var array<int, Entity> seat => Entity */
+	protected array $riders = [];
+
+	public function getMaxRiders() : int{
+		return 2;
+	}
+
+	public function getSeatPosition(int $seat) : Vector3{
+		return match($seat){
+			0 => new Vector3(0.0, 0.35, -0.2),
+			1 => new Vector3(0.0, 0.35, 0.5),
+			default => new Vector3(0.0, 0.35, 0.0),
+		};
+	}
+
+	public function isFull() : bool{
+		return count($this->riders) >= $this->getMaxRiders();
+	}
+
+	public function isRider(Entity $rider) : bool{
+		return in_array($rider, $this->riders, true);
+	}
+
+	public function getRiderSeat(Entity $rider) : ?int{
+		foreach($this->riders as $seat => $r){
+			if($r === $rider){
+				return $seat;
+			}
+		}
+		return null;
+	}
+
+	public function getDriver() : ?Entity{
+		return $this->riders[0] ?? null;
+	}
+
+	public function getPassenger() : ?Entity{
+		return $this->riders[1] ?? null;
+	}
+
+	/**
+	 * @return array<int, Entity>
+	 */
+	public function getRiders() : array{
+		return $this->riders;
+	}
+
+	public function canAddRider(Entity $rider) : bool{
+		if($rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull()){
+			return false;
+		}
+		return true;
+	}
+
+	public function addRider(Entity $rider) : bool{
+		if(!$this->canAddRider($rider)){
+			return false;
+		}
+
+		$seat = null;
+		for($i = 0; $i < $this->getMaxRiders(); ++$i){
+			if(!isset($this->riders[$i])){
+				$seat = $i;
+				break;
+			}
+		}
+
+		if($seat === null){
+			return false;
+		}
+
+		$this->riders[$seat] = $rider;
+
+		$properties = $rider->getNetworkProperties();
+		$properties->setGenericFlag(EntityMetadataFlags::RIDING, true);
+		$properties->setVector3(EntityMetadataProperties::RIDER_SEAT_POSITION, $this->getSeatPosition($seat));
+
+		$this->broadcastLink($rider, $seat === 0 ? EntityLink::TYPE_RIDER : EntityLink::TYPE_PASSENGER);
+		return true;
+	}
+
+	public function removeRider(Entity $rider) : bool{
+		$seat = $this->getRiderSeat($rider);
+		if($seat === null){
+			return false;
+		}
+
+		unset($this->riders[$seat]);
+
+		$properties = $rider->getNetworkProperties();
+		$properties->setGenericFlag(EntityMetadataFlags::RIDING, false);
+
+		$this->broadcastLink($rider, EntityLink::TYPE_REMOVE);
+
+		$world = $this->getWorld();
+		if($world->isLoaded() && !$rider->isClosed()){
+			$yawRad = deg2rad($this->location->yaw + 90.0);
+			$dismountPos = $this->location->add(1.2 * cos($yawRad), 0.0, 1.2 * sin($yawRad));
+			$rider->teleport(Location::fromObject($dismountPos, $world, $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+		}
+
+		return true;
+	}
+
 	public function ejectRiders() : void{
-		// Seating logic expanded in Task 3
+		foreach($this->riders as $rider){
+			$this->removeRider($rider);
+		}
+	}
+
+	protected function broadcastLink(Entity $rider, int $type) : void{
+		if(!isset($this->id) || !isset($rider->id)){
+			return;
+		}
+		$packet = SetActorLinkPacket::create(new EntityLink($this->getId(), $rider->getId(), $type, true, false, 0.0));
+		$viewers = $this->getViewers();
+		if($rider instanceof Player){
+			$viewers[] = $rider;
+		}
+		foreach($viewers as $viewer){
+			$viewer->getNetworkSession()->sendDataPacket($packet);
+		}
+	}
+
+	public function onInteract(Player $player, Vector3 $clickPos) : bool{
+		if($player->isSneaking()){
+			if($this->isRider($player)){
+				$this->removeRider($player);
+				return true;
+			}
+			return false;
+		}
+
+		if(!$this->isRider($player) && !$this->isFull()){
+			$this->addRider($player);
+			return true;
+		}
+
+		return false;
 	}
 
 	protected function readSaveData(CompoundTag $nbt) : void{
