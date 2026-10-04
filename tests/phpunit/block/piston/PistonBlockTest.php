@@ -84,7 +84,7 @@ final class PistonBlockTest extends TestCase{
 		self::assertTrue($cloned->isExtended());
 		self::assertTrue($cloned->isPowered());
 
-		$cloned->setExtended(false);
+		$cloned->setFacing(Facing::NORTH);
 		self::assertNotSame($piston->getStateId(), $cloned->getStateId());
 	}
 

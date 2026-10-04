@@ -920,6 +920,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("plank", fn() => Blocks::OAK_PLANKS());
 		$result->registerBlock("planks", fn() => Blocks::OAK_PLANKS());
 		$result->registerBlock("player_head", fn() => Blocks::MOB_HEAD()->setMobHeadType(MobHeadType::PLAYER));
+		$result->registerBlock("piston", fn() => Blocks::PISTON());
 		$result->registerBlock("podzol", fn() => Blocks::PODZOL());
 		$result->registerBlock("polished_andesite", fn() => Blocks::POLISHED_ANDESITE());
 		$result->registerBlock("polished_andesite_slab", fn() => Blocks::POLISHED_ANDESITE_SLAB());
@@ -1099,6 +1100,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("standing_sign", fn() => Blocks::OAK_SIGN());
 		$result->registerBlock("still_lava", fn() => Blocks::LAVA()->setStill(true));
 		$result->registerBlock("still_water", fn() => Blocks::WATER()->setStill(true));
+		$result->registerBlock("sticky_piston", fn() => Blocks::STICKY_PISTON());
 		$result->registerBlock("stone", fn() => Blocks::STONE());
 		$result->registerBlock("stone_brick", fn() => Blocks::STONE_BRICKS());
 		$result->registerBlock("stone_brick_slab", fn() => Blocks::STONE_BRICK_SLAB());

@@ -32,11 +32,13 @@ use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\block\VanillaBlocks;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\PistonExtendSound;
 use pocketmine\world\sound\PistonRetractSound;
-use pocketmine\block\VanillaBlocks;
+use pocketmine\world\World;
 
 
 class Piston extends Transparent implements AnyFacing, PoweredByRedstone, RedstoneReceiver{
@@ -46,8 +48,6 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
 		$w->facing($this->facing);
-		$w->bool($this->extended);
-		$w->bool($this->powered);
 	}
 
 	public function getFacing() : int{
@@ -62,6 +62,12 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 	}
 
 	public function isExtended() : bool{
+		if($this->position->isValid()){
+			$headBlock = $this->position->getWorld()->getBlock($this->position->getSide($this->facing));
+			if($headBlock instanceof PistonHead && $headBlock->getFacing() === $this->facing){
+				return true;
+			}
+		}
 		return $this->extended;
 	}
 
@@ -131,15 +137,20 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 			$world->useBreakOn($destroyPos);
 		}
 
+		$displacedPositions = [];
 		foreach($calculator->getBlocksToMove() as $movePos){
 			$targetPos = $movePos->getSide($this->facing);
 			$block = $world->getBlock($movePos);
 			$world->setBlock($movePos, VanillaBlocks::AIR(), false);
 			$world->setBlock($targetPos, $block, true);
+			$displacedPositions[] = $targetPos;
 		}
 
 		$headPos = $this->position->getSide($this->facing);
 		$world->setBlock($headPos, $this->createPistonHead(), true);
+		$displacedPositions[] = $headPos;
+
+		$this->displaceEntities($world, $displacedPositions, $this->facing);
 
 		$this->extended = true;
 		$world->setBlock($this->position, $this, true);
@@ -161,12 +172,15 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 			$calculator = new PistonStructureCalculator($world, $this->position, $this->facing, false);
 			if($calculator->calculate()){
 				$pullDir = Facing::opposite($this->facing);
+				$displacedPositions = [];
 				foreach($calculator->getBlocksToMove() as $movePos){
 					$targetPos = $movePos->getSide($pullDir);
 					$block = $world->getBlock($movePos);
 					$world->setBlock($movePos, VanillaBlocks::AIR(), false);
 					$world->setBlock($targetPos, $block, true);
+					$displacedPositions[] = $targetPos;
 				}
+				$this->displaceEntities($world, $displacedPositions, $pullDir);
 			}
 		}
 
@@ -175,5 +189,25 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 		$world->addSound($this->position, new PistonRetractSound());
 
 		return true;
+	}
+
+	/**
+	 * @param Vector3[] $positions
+	 */
+	protected function displaceEntities(World $world, array $positions, int $facing) : void{
+		[$dx, $dy, $dz] = Facing::OFFSET[$facing];
+		$offset = new Vector3($dx, $dy, $dz);
+		/** @var array<int, bool> $checkedEntities */
+		$checkedEntities = [];
+		foreach($positions as $pos){
+			$bb = new AxisAlignedBB($pos->x, $pos->y, $pos->z, $pos->x + 1, $pos->y + 1, $pos->z + 1);
+			foreach($world->getNearbyEntities($bb) as $entity){
+				$id = $entity->getId();
+				if(!isset($checkedEntities[$id]) && $entity->isAlive()){
+					$checkedEntities[$id] = true;
+					$entity->teleport($entity->getPosition()->addVector($offset));
+				}
+			}
+		}
 	}
 }
