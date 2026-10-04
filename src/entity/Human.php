@@ -40,7 +40,9 @@ use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\enchantment\EnchantingHelper;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
+use pocketmine\item\Shield;
 use pocketmine\item\Totem;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\NBT;
 use pocketmine\nbt\tag\CompoundTag;
@@ -58,6 +60,8 @@ use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
 use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
 use pocketmine\network\mcpe\protocol\types\DeviceOS;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\PropertySyncData;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
@@ -104,6 +108,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	protected PlayerInventory $inventory;
 	protected PlayerOffHandInventory $offHandInventory;
 	protected PlayerEnderInventory $enderInventory;
+	protected bool $blocking = false;
 
 	protected UuidInterface $uuid;
 
@@ -245,6 +250,47 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 	public function getOffHandInventory() : PlayerOffHandInventory{ return $this->offHandInventory; }
 
+	public function isBlocking() : bool{
+		return $this->blocking;
+	}
+
+	public function hasShieldEquipped() : bool{
+		return (isset($this->inventory) && $this->inventory->getItemInHand() instanceof Shield)
+			|| (isset($this->offHandInventory) && $this->offHandInventory->getItem(0) instanceof Shield);
+	}
+
+	public function hasShieldCooldown() : bool{
+		if($this instanceof Player){
+			return $this->hasItemCooldown(VanillaItems::SHIELD());
+		}
+		return false;
+	}
+
+	public function updateBlockingState() : void{
+		$shouldBlock = $this->isSneaking() && $this->hasShieldEquipped() && !$this->hasShieldCooldown();
+		$this->setBlocking($shouldBlock);
+	}
+
+	public function setBlocking(bool $blocking) : void{
+		if($this->blocking !== $blocking){
+			$this->blocking = $blocking;
+			$this->networkPropertiesDirty = true;
+			if(isset($this->networkProperties)){
+				$this->networkProperties->setGenericFlag(EntityMetadataFlags::BLOCKING, $blocking);
+			}
+		}
+	}
+
+	public function setSneaking(bool $value = true) : void{
+		parent::setSneaking($value);
+		$this->updateBlockingState();
+	}
+
+	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
+		parent::syncNetworkData($properties);
+		$properties->setGenericFlag(EntityMetadataFlags::BLOCKING, $this->blocking);
+	}
+
 	public function getEnderInventory() : PlayerEnderInventory{
 		return $this->enderInventory;
 	}
@@ -290,13 +336,16 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 				if($slot === $this->inventory->getHeldItemIndex()){
 					$syncHeldItem();
 				}
+				$this->updateBlockingState();
 			},
 			function(Inventory $unused, array $oldItems) use ($syncHeldItem) : void{
 				if(array_key_exists($this->inventory->getHeldItemIndex(), $oldItems)){
 					$syncHeldItem();
 				}
+				$this->updateBlockingState();
 			}
 		));
+		$this->inventory->getHeldItemIndexChangeListeners()->add(fn(int $oldIndex) => $this->updateBlockingState());
 		$this->offHandInventory = new PlayerOffHandInventory($this);
 		$this->enderInventory = new PlayerEnderInventory($this);
 		$this->initHumanData($nbt);
@@ -326,10 +375,13 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		if($offHand !== null){
 			$this->offHandInventory->setItem(0, Item::safeNbtDeserialize($offHand, "Human off-hand item"));
 		}
-		$this->offHandInventory->getListeners()->add(CallbackInventoryListener::onAnyChange(fn() => NetworkBroadcastUtils::broadcastEntityEvent(
-			$this->getViewers(),
-			fn(EntityEventBroadcaster $broadcaster, array $recipients) => $broadcaster->onMobOffHandItemChange($recipients, $this)
-		)));
+		$this->offHandInventory->getListeners()->add(CallbackInventoryListener::onAnyChange(function() : void{
+			NetworkBroadcastUtils::broadcastEntityEvent(
+				$this->getViewers(),
+				fn(EntityEventBroadcaster $broadcaster, array $recipients) => $broadcaster->onMobOffHandItemChange($recipients, $this)
+			);
+			$this->updateBlockingState();
+		}));
 
 		$enderChestInventoryTag = $nbt->getListTag(self::TAG_ENDER_CHEST_INVENTORY, CompoundTag::class);
 		if($enderChestInventoryTag !== null){
