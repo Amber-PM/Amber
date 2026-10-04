@@ -42,6 +42,7 @@ use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\enchantment\EnchantingHelper;
 use pocketmine\item\enchantment\VanillaEnchantments;
+use pocketmine\item\Axe;
 use pocketmine\item\Item;
 use pocketmine\item\Shield;
 use pocketmine\item\Totem;
@@ -86,6 +87,7 @@ use function array_key_exists;
 use function array_merge;
 use function array_values;
 use function atan2;
+use function floor;
 use function min;
 use const M_PI;
 
@@ -353,6 +355,39 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		return false;
 	}
 
+	public static function calculateShieldDurabilityLoss(float $damage) : int{
+		if($damage < 3.0){
+			return 0;
+		}
+		return (int) floor($damage);
+	}
+
+	public function damageEquippedShield(int $durabilityLoss) : void{
+		if($durabilityLoss <= 0){
+			return;
+		}
+		$hand = $this->inventory->getItemInHand();
+		if($hand instanceof Shield){
+			if($hand->applyDamage($durabilityLoss)){
+				$this->inventory->setItemInHand($hand->isBroken() ? VanillaItems::AIR() : $hand);
+			}
+			return;
+		}
+		$offHand = $this->offHandInventory->getItem(0);
+		if($offHand instanceof Shield){
+			if($offHand->applyDamage($durabilityLoss)){
+				$this->offHandInventory->setItem(0, $offHand->isBroken() ? VanillaItems::AIR() : $offHand);
+			}
+		}
+	}
+
+	public function disableShield(int $ticks = 100) : void{
+		$this->setBlocking(false);
+		if($this instanceof Player){
+			$this->resetItemCooldown(VanillaItems::SHIELD(), $ticks);
+		}
+	}
+
 	public function getEnderInventory() : PlayerEnderInventory{
 		return $this->enderInventory;
 	}
@@ -515,10 +550,21 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 		if($source->getModifier(EntityDamageEvent::MODIFIER_SHIELD) < 0){
 			$this->broadcastSound(new ShieldBlockSound());
+
+			$durabilityLoss = self::calculateShieldDurabilityLoss($source->getBaseDamage());
+			$this->damageEquippedShield($durabilityLoss);
+
 			if($source instanceof EntityDamageByChildEntityEvent){
 				$child = $source->getChild();
 				if($child instanceof Projectile){
 					$child->setMotion($child->getMotion()->multiply(-0.5));
+				}
+			}
+
+			if($source instanceof EntityDamageByEntityEvent){
+				$damager = $source->getDamager();
+				if($damager instanceof Human && $damager->getInventory()->getItemInHand() instanceof Axe){
+					$this->disableShield(100);
 				}
 			}
 		}
