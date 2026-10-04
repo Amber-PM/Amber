@@ -54,7 +54,7 @@ class PlayerGlideStateTest extends TestCase{
 			$world = $this->createMock(World::class);
 			$world->method("isLoaded")->willReturn(true);
 		}
-		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 10.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
+		$location = new Location($pos !== null ? $pos->x : 0.0, $pos !== null ? $pos->y : 10.0, $pos !== null ? $pos->z : 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $location);
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(
 			$location->x - 0.3,
