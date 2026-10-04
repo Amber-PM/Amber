@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\object;
 
+use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Attribute;
 use pocketmine\entity\Entity;
@@ -46,8 +47,12 @@ use pocketmine\world\sound\BlockBreakSound;
 use function cos;
 use function count;
 use function deg2rad;
+use function floor;
 use function in_array;
+use function max;
+use function min;
 use function sin;
+use function sqrt;
 use function strtolower;
 
 class Boat extends Entity{
@@ -59,6 +64,10 @@ class Boat extends Entity{
 	protected const TAG_HEALTH = "Health";
 
 	protected BoatType $boatType;
+
+	protected float $paddleTimeLeft = 0.0;
+	protected float $paddleTimeRight = 0.0;
+	protected int $bubbleTime = 0;
 
 	public function __construct(Location $location, BoatType|CompoundTag|null $typeOrNbt = null, ?CompoundTag $nbt = null){
 		if($typeOrNbt instanceof BoatType){
@@ -84,6 +93,10 @@ class Boat extends Entity{
 		return $this->boatType;
 	}
 
+	public function isRaft() : bool{
+		return $this->boatType->isRaft();
+	}
+
 	protected function addAttributes() : void{
 		parent::addAttributes();
 		$this->setMaxHealth(40);
@@ -97,7 +110,32 @@ class Boat extends Entity{
 
 	protected function syncBoatMetadata() : void{
 		$this->networkProperties->setInt(EntityMetadataProperties::VARIANT, $this->boatType->getVariantId());
-		$this->networkProperties->setInt(EntityMetadataProperties::BOAT_BUBBLE_TIME, 0);
+		$this->networkProperties->setInt(EntityMetadataProperties::BOAT_BUBBLE_TIME, $this->bubbleTime);
+		$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_LEFT, $this->paddleTimeLeft);
+		$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_RIGHT, $this->paddleTimeRight);
+	}
+
+	public function getPaddleTime(int $paddle) : float{
+		return $paddle === 0 ? $this->paddleTimeLeft : $this->paddleTimeRight;
+	}
+
+	public function setPaddleTime(int $paddle, float $time) : void{
+		if($paddle === 0){
+			$this->paddleTimeLeft = $time;
+			$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_LEFT, $time);
+		}else{
+			$this->paddleTimeRight = $time;
+			$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_RIGHT, $time);
+		}
+	}
+
+	public function getBubbleTime() : int{
+		return $this->bubbleTime;
+	}
+
+	public function setBubbleTime(int $time) : void{
+		$this->bubbleTime = $time;
+		$this->networkProperties->setInt(EntityMetadataProperties::BOAT_BUBBLE_TIME, $time);
 	}
 
 	protected function initEntity(CompoundTag $nbt) : void{
@@ -339,5 +377,113 @@ class Boat extends Entity{
 	protected function writeSaveData(CompoundTag $nbt) : void{
 		$nbt->setString(self::TAG_TYPE, strtolower($this->boatType->name));
 		$nbt->setFloat(self::TAG_HEALTH, $this->getHealth());
+	}
+
+	protected function tryChangeMovement() : void{
+		$world = $this->getWorld();
+		if(!$world->isLoaded()){
+			parent::tryChangeMovement();
+			return;
+		}
+
+		$floorX = (int) floor($this->location->x);
+		$floorY = (int) floor($this->location->y);
+		$floorZ = (int) floor($this->location->z);
+
+		$blockAt = $world->getBlockAt($floorX, $floorY, $floorZ);
+		$blockBelow = $world->getBlockAt($floorX, (int) floor($this->location->y - 0.5), $floorZ);
+
+		$inWater = $blockAt->getTypeId() === BlockTypeIds::WATER;
+		$waterBelow = $blockBelow->getTypeId() === BlockTypeIds::WATER;
+
+		if($inWater || $waterBelow){
+			$this->resetFallDistance();
+
+			$bubbleType = 0;
+			for($dy = 1; $dy <= 10; ++$dy){
+				$underBlock = $world->getBlockAt($floorX, $floorY - $dy, $floorZ);
+				$underId = $underBlock->getTypeId();
+				if($underId === BlockTypeIds::MAGMA){
+					$bubbleType = 1;
+					break;
+				}
+				if($underId === BlockTypeIds::SOUL_SAND){
+					$bubbleType = 2;
+					break;
+				}
+				if($underId !== BlockTypeIds::WATER){
+					break;
+				}
+			}
+
+			if($bubbleType === 1){
+				// Downward whirlpool
+				$this->motion = new Vector3($this->motion->x * 0.9, -0.3, $this->motion->z * 0.9);
+				$this->setBubbleTime(min(60, $this->bubbleTime + 1));
+				return;
+			}
+			if($bubbleType === 2){
+				// Upward bubble column
+				$this->motion = new Vector3($this->motion->x * 0.95, 0.25, $this->motion->z * 0.95);
+				$this->setBubbleTime(min(60, $this->bubbleTime + 1));
+				return;
+			}
+
+			if($this->bubbleTime > 0){
+				$this->setBubbleTime(0);
+			}
+
+			$waterSurface = $inWater ? ($floorY + 1.0) : ((float) $floorY);
+			$submerged = $waterSurface - $this->location->y;
+
+			if($submerged > 0.1){
+				$buoyancy = min(0.08, $submerged * 0.1);
+				$this->motion = new Vector3($this->motion->x * 0.95, min(0.15, $this->motion->y + $buoyancy), $this->motion->z * 0.95);
+			}else{
+				$this->motion = new Vector3($this->motion->x * 0.95, max(-0.02, min(0.02, $submerged * 0.05)), $this->motion->z * 0.95);
+			}
+			$this->onGround = true;
+			return;
+		}
+
+		if($this->bubbleTime > 0){
+			$this->setBubbleTime(0);
+		}
+
+		$belowTypeId = $blockBelow->getTypeId();
+		$friction = match($belowTypeId){
+			BlockTypeIds::BLUE_ICE => 0.989,
+			BlockTypeIds::PACKED_ICE, BlockTypeIds::ICE, BlockTypeIds::FROSTED_ICE => 0.98,
+			default => $this->onGround ? 0.6 : (1.0 - $this->drag)
+		};
+
+		$mY = $this->motion->y;
+		if($this->gravityEnabled && !$this->onGround){
+			$mY -= $this->gravity;
+		}
+		$mY *= (1.0 - $this->drag);
+
+		$this->motion = new Vector3($this->motion->x * $friction, $mY, $this->motion->z * $friction);
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+
+		if($this->isClosed() || !$this->isAlive()){
+			return $hasUpdate;
+		}
+
+		$horizontalSpeedSq = $this->motion->x ** 2 + $this->motion->z ** 2;
+		if($horizontalSpeedSq > 0.0001){
+			$speed = sqrt($horizontalSpeedSq);
+			$delta = min(0.2, $speed * 0.5 * $tickDiff);
+			$this->paddleTimeLeft += $delta;
+			$this->paddleTimeRight += $delta;
+			$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_LEFT, $this->paddleTimeLeft);
+			$this->networkProperties->setFloat(EntityMetadataProperties::PADDLE_TIME_RIGHT, $this->paddleTimeRight);
+			$hasUpdate = true;
+		}
+
+		return $hasUpdate;
 	}
 }
