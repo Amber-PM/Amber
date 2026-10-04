@@ -103,6 +103,7 @@ class Boat extends Entity{
 	protected function initEntity(CompoundTag $nbt) : void{
 		parent::initEntity($nbt);
 		$this->initBoatProperties();
+		$this->readSaveData($nbt);
 	}
 
 	public function getDropItem() : Item{
@@ -286,11 +287,13 @@ class Boat extends Entity{
 		}
 		$packet = SetActorLinkPacket::create(new EntityLink($this->getId(), $rider->getId(), $type, true, false, 0.0));
 		$viewers = $this->getViewers();
-		if($rider instanceof Player){
+		if($rider instanceof Player && $rider->isConnected()){
 			$viewers[] = $rider;
 		}
 		foreach($viewers as $viewer){
-			$viewer->getNetworkSession()->sendDataPacket($packet);
+			if($viewer->isConnected()){
+				$viewer->getNetworkSession()->sendDataPacket($packet);
+			}
 		}
 	}
 
@@ -325,6 +328,12 @@ class Boat extends Entity{
 			$this->setHealth($nbt->getFloat(self::TAG_HEALTH, self::DEFAULT_MAX_HEALTH));
 		}
 		$this->syncBoatMetadata();
+	}
+
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
+		$this->writeSaveData($nbt);
+		return $nbt;
 	}
 
 	protected function writeSaveData(CompoundTag $nbt) : void{
