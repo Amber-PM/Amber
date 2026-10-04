@@ -39,6 +39,19 @@ use function mb_strtoupper;
  */
 final class VanillaItems{
 	private static Boat $_mACACIA_BOAT;
+	private static ChestBoat $_mACACIA_CHEST_BOAT;
+	private static ChestBoat $_mBAMBOO_CHEST_RAFT;
+	private static Boat $_mBAMBOO_RAFT;
+	private static ChestBoat $_mBIRCH_CHEST_BOAT;
+	private static Boat $_mCHERRY_BOAT;
+	private static ChestBoat $_mCHERRY_CHEST_BOAT;
+	private static ChestBoat $_mDARK_OAK_CHEST_BOAT;
+	private static ChestBoat $_mJUNGLE_CHEST_BOAT;
+	private static ChestBoat $_mMANGROVE_CHEST_BOAT;
+	private static ChestBoat $_mOAK_CHEST_BOAT;
+	private static Boat $_mPALE_OAK_BOAT;
+	private static ChestBoat $_mPALE_OAK_CHEST_BOAT;
+	private static ChestBoat $_mSPRUCE_CHEST_BOAT;
 	private static HangingSign $_mACACIA_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mACACIA_SIGN;
 	private static Item $_mAIR;
@@ -402,6 +415,19 @@ final class VanillaItems{
 	private static function getInitAssigners() : array{
 		return [
 			"acacia_boat" => fn(Boat $v) => self::$_mACACIA_BOAT = $v,
+			"acacia_chest_boat" => fn(ChestBoat $v) => self::$_mACACIA_CHEST_BOAT = $v,
+			"bamboo_chest_raft" => fn(ChestBoat $v) => self::$_mBAMBOO_CHEST_RAFT = $v,
+			"bamboo_raft" => fn(Boat $v) => self::$_mBAMBOO_RAFT = $v,
+			"birch_chest_boat" => fn(ChestBoat $v) => self::$_mBIRCH_CHEST_BOAT = $v,
+			"cherry_boat" => fn(Boat $v) => self::$_mCHERRY_BOAT = $v,
+			"cherry_chest_boat" => fn(ChestBoat $v) => self::$_mCHERRY_CHEST_BOAT = $v,
+			"dark_oak_chest_boat" => fn(ChestBoat $v) => self::$_mDARK_OAK_CHEST_BOAT = $v,
+			"jungle_chest_boat" => fn(ChestBoat $v) => self::$_mJUNGLE_CHEST_BOAT = $v,
+			"mangrove_chest_boat" => fn(ChestBoat $v) => self::$_mMANGROVE_CHEST_BOAT = $v,
+			"oak_chest_boat" => fn(ChestBoat $v) => self::$_mOAK_CHEST_BOAT = $v,
+			"pale_oak_boat" => fn(Boat $v) => self::$_mPALE_OAK_BOAT = $v,
+			"pale_oak_chest_boat" => fn(ChestBoat $v) => self::$_mPALE_OAK_CHEST_BOAT = $v,
+			"spruce_chest_boat" => fn(ChestBoat $v) => self::$_mSPRUCE_CHEST_BOAT = $v,
 			"acacia_hanging_sign" => fn(HangingSign $v) => self::$_mACACIA_HANGING_SIGN = $v,
 			"acacia_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mACACIA_SIGN = $v,
 			"air" => fn(Item $v) => self::$_mAIR = $v,
@@ -771,6 +797,71 @@ final class VanillaItems{
 	public static function ACACIA_BOAT() : Boat{
 		if(!isset(self::$_mACACIA_BOAT)){ self::init(); }
 		return clone self::$_mACACIA_BOAT;
+	}
+
+	public static function ACACIA_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mACACIA_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mACACIA_CHEST_BOAT;
+	}
+
+	public static function BAMBOO_CHEST_RAFT() : ChestBoat{
+		if(!isset(self::$_mBAMBOO_CHEST_RAFT)){ self::init(); }
+		return clone self::$_mBAMBOO_CHEST_RAFT;
+	}
+
+	public static function BAMBOO_RAFT() : Boat{
+		if(!isset(self::$_mBAMBOO_RAFT)){ self::init(); }
+		return clone self::$_mBAMBOO_RAFT;
+	}
+
+	public static function BIRCH_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mBIRCH_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mBIRCH_CHEST_BOAT;
+	}
+
+	public static function CHERRY_BOAT() : Boat{
+		if(!isset(self::$_mCHERRY_BOAT)){ self::init(); }
+		return clone self::$_mCHERRY_BOAT;
+	}
+
+	public static function CHERRY_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mCHERRY_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mCHERRY_CHEST_BOAT;
+	}
+
+	public static function DARK_OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mDARK_OAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mDARK_OAK_CHEST_BOAT;
+	}
+
+	public static function JUNGLE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mJUNGLE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mJUNGLE_CHEST_BOAT;
+	}
+
+	public static function MANGROVE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mMANGROVE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mMANGROVE_CHEST_BOAT;
+	}
+
+	public static function OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mOAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mOAK_CHEST_BOAT;
+	}
+
+	public static function PALE_OAK_BOAT() : Boat{
+		if(!isset(self::$_mPALE_OAK_BOAT)){ self::init(); }
+		return clone self::$_mPALE_OAK_BOAT;
+	}
+
+	public static function PALE_OAK_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mPALE_OAK_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mPALE_OAK_CHEST_BOAT;
+	}
+
+	public static function SPRUCE_CHEST_BOAT() : ChestBoat{
+		if(!isset(self::$_mSPRUCE_CHEST_BOAT)){ self::init(); }
+		return clone self::$_mSPRUCE_CHEST_BOAT;
 	}
 
 	public static function ACACIA_HANGING_SIGN() : HangingSign{
