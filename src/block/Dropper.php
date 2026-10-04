@@ -23,6 +23,9 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\dispenser\BlockSource;
+use pocketmine\block\dispenser\DispenseBehaviorRegistry;
+use pocketmine\block\tile\Container;
 use pocketmine\block\tile\Dropper as TileDropper;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
@@ -34,6 +37,10 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\redstone\RedstoneEngine;
+use pocketmine\world\sound\ClickFailSound;
+use pocketmine\world\sound\ClickSound;
+use function array_rand;
+use function count;
 
 class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	use PoweredByRedstoneTrait;
@@ -94,11 +101,52 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	}
 
 	public function drop() : void{
-		$tile = $this->position->getWorld()->getTile($this->position);
+		$world = $this->position->getWorld();
+		$tile = $world->getTile($this->position);
 		if(!$tile instanceof TileDropper){
 			return;
 		}
 
-		// Drop logic will be integrated in Task 2
+		$inventory = $tile->getInventory();
+		$occupiedSlots = [];
+		foreach($inventory->getContents() as $slot => $item){
+			if(!$item->isNull()){
+				$occupiedSlots[] = $slot;
+			}
+		}
+
+		if(count($occupiedSlots) === 0){
+			$world->addSound($this->position, new ClickFailSound());
+			return;
+		}
+
+		$randomSlot = $occupiedSlots[array_rand($occupiedSlots)];
+		$sourceItem = $inventory->getItem($randomSlot);
+		if($sourceItem->isNull()){
+			$world->addSound($this->position, new ClickFailSound());
+			return;
+		}
+
+		$targetPos = $this->position->getSide($this->facing);
+		$targetTile = $world->getTile($targetPos);
+
+		if($targetTile instanceof Container){
+			$targetInv = $targetTile->getInventory();
+			$itemToDrop = (clone $sourceItem)->setCount(1);
+			if($targetInv->canAddItem($itemToDrop)){
+				$targetInv->addItem($itemToDrop);
+				$sourceItem->pop();
+				$inventory->setItem($randomSlot, $sourceItem);
+				$world->addSound($this->position, new ClickSound());
+			}else{
+				$world->addSound($this->position, new ClickFailSound());
+			}
+			return;
+		}
+
+		// Not facing a container: drop as item entity in the world
+		$source = new BlockSource($world, $this->position, $this->facing, $tile);
+		$leftover = DispenseBehaviorRegistry::getInstance()->getDefault()->dispense($source, $sourceItem);
+		$inventory->setItem($randomSlot, $leftover);
 	}
 }

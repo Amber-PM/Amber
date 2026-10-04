@@ -23,6 +23,8 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\dispenser\BlockSource;
+use pocketmine\block\dispenser\DispenseBehaviorRegistry;
 use pocketmine\block\tile\Dispenser as TileDispenser;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
@@ -34,6 +36,9 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\redstone\RedstoneEngine;
+use pocketmine\world\sound\ClickFailSound;
+use function array_rand;
+use function count;
 
 class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	use PoweredByRedstoneTrait;
@@ -94,11 +99,35 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	}
 
 	public function dispense() : void{
-		$tile = $this->position->getWorld()->getTile($this->position);
+		$world = $this->position->getWorld();
+		$tile = $world->getTile($this->position);
 		if(!$tile instanceof TileDispenser){
 			return;
 		}
 
-		// Dispense logic will be integrated in Task 2 & 3
+		$inventory = $tile->getInventory();
+		$occupiedSlots = [];
+		foreach($inventory->getContents() as $slot => $item){
+			if(!$item->isNull()){
+				$occupiedSlots[] = $slot;
+			}
+		}
+
+		if(count($occupiedSlots) === 0){
+			$world->addSound($this->position, new ClickFailSound());
+			return;
+		}
+
+		$randomSlot = $occupiedSlots[array_rand($occupiedSlots)];
+		$sourceItem = $inventory->getItem($randomSlot);
+		if($sourceItem->isNull()){
+			$world->addSound($this->position, new ClickFailSound());
+			return;
+		}
+
+		$source = new BlockSource($world, $this->position, $this->facing, $tile);
+		$behavior = DispenseBehaviorRegistry::getInstance()->get($sourceItem);
+		$leftover = $behavior->dispense($source, $sourceItem);
+		$inventory->setItem($randomSlot, $leftover);
 	}
 }
