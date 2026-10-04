@@ -28,7 +28,10 @@ use pocketmine\data\SavedDataLoadingException;
 use pocketmine\entity\animation\TotemUseAnimation;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\VanillaEffects;
+use pocketmine\entity\projectile\Projectile;
 use pocketmine\entity\projectile\ProjectileSource;
+use pocketmine\event\entity\EntityDamageByChildEntityEvent;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
 use pocketmine\inventory\CallbackInventoryListener;
@@ -71,16 +74,20 @@ use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
 use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
 use pocketmine\network\mcpe\protocol\UpdateAbilitiesPacket;
 use pocketmine\player\Player;
+use pocketmine\world\sound\ShieldBlockSound;
 use pocketmine\world\sound\TotemUseSound;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
+use function abs;
 use function array_fill;
 use function array_filter;
 use function array_key_exists;
 use function array_merge;
 use function array_values;
+use function atan2;
 use function min;
+use const M_PI;
 
 class Human extends Living implements ProjectileSource, InventoryHolder{
 
@@ -291,6 +298,61 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		$properties->setGenericFlag(EntityMetadataFlags::BLOCKING, $this->blocking);
 	}
 
+	public function isFacingAttack(Vector3 $sourcePos, Vector3 $targetPos, float $targetYaw) : bool{
+		$diffX = $sourcePos->x - $targetPos->x;
+		$diffZ = $sourcePos->z - $targetPos->z;
+
+		$rot = -atan2($diffX, $diffZ) * (180.0 / M_PI);
+		if($rot < 0.0){
+			$rot += 360.0;
+		}
+
+		$angleDiff = abs($targetYaw - $rot);
+		while($angleDiff > 360.0){
+			$angleDiff -= 360.0;
+		}
+		if($angleDiff > 180.0){
+			$angleDiff = 360.0 - $angleDiff;
+		}
+
+		return $angleDiff <= 90.0;
+	}
+
+	public function isDamageBlocked(EntityDamageEvent $source) : bool{
+		if(!$this->isBlocking()){
+			return false;
+		}
+
+		$cause = $source->getCause();
+		if($cause === EntityDamageEvent::CAUSE_VOID ||
+			$cause === EntityDamageEvent::CAUSE_SUICIDE ||
+			$cause === EntityDamageEvent::CAUSE_MAGIC ||
+			$cause === EntityDamageEvent::CAUSE_STARVATION ||
+			$cause === EntityDamageEvent::CAUSE_DROWNING ||
+			$cause === EntityDamageEvent::CAUSE_SUFFOCATION ||
+			$cause === EntityDamageEvent::CAUSE_FALL ||
+			$cause === EntityDamageEvent::CAUSE_FIRE_TICK
+		){
+			return false;
+		}
+
+		if($source instanceof EntityDamageByChildEntityEvent){
+			$child = $source->getChild();
+			if($child !== null){
+				return $this->isFacingAttack($child->getPosition(), $this->getPosition(), $this->location->getYaw());
+			}
+		}
+
+		if($source instanceof EntityDamageByEntityEvent){
+			$damager = $source->getDamager();
+			if($damager !== null){
+				return $this->isFacingAttack($damager->getPosition(), $this->getPosition(), $this->location->getYaw());
+			}
+		}
+
+		return false;
+	}
+
 	public function getEnderInventory() : PlayerEnderInventory{
 		return $this->enderInventory;
 	}
@@ -433,6 +495,10 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	public function applyDamageModifiers(EntityDamageEvent $source) : void{
 		parent::applyDamageModifiers($source);
 
+		if($this->isDamageBlocked($source)){
+			$source->setModifier(-$source->getFinalDamage(), EntityDamageEvent::MODIFIER_SHIELD);
+		}
+
 		$type = $source->getCause();
 		if($type !== EntityDamageEvent::CAUSE_SUICIDE && $type !== EntityDamageEvent::CAUSE_VOID
 			&& ($this->inventory->getItemInHand() instanceof Totem || $this->offHandInventory->getItem(0) instanceof Totem)){
@@ -446,6 +512,17 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 	protected function applyPostDamageEffects(EntityDamageEvent $source) : void{
 		parent::applyPostDamageEffects($source);
+
+		if($source->getModifier(EntityDamageEvent::MODIFIER_SHIELD) < 0){
+			$this->broadcastSound(new ShieldBlockSound());
+			if($source instanceof EntityDamageByChildEntityEvent){
+				$child = $source->getChild();
+				if($child instanceof Projectile){
+					$child->setMotion($child->getMotion()->multiply(-0.5));
+				}
+			}
+		}
+
 		$totemModifier = $source->getModifier(EntityDamageEvent::MODIFIER_TOTEM);
 		if($totemModifier < 0){ //Totem prevented death
 			$this->effectManager->clear();
