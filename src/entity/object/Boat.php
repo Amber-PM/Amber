@@ -23,15 +23,31 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\object;
 
+use pocketmine\block\VanillaBlocks;
+use pocketmine\entity\Attribute;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\BoatType;
+use pocketmine\item\Item;
+use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
+use pocketmine\player\Player;
+use pocketmine\world\particle\BlockBreakParticle;
+use pocketmine\world\sound\BlockBreakSound;
+use function strtolower;
 
 class Boat extends Entity{
 	public static function getNetworkTypeId() : string{ return EntityIds::BOAT; }
+
+	public const DEFAULT_MAX_HEALTH = 40.0;
+
+	protected const TAG_TYPE = "Type";
+	protected const TAG_HEALTH = "Health";
 
 	protected BoatType $boatType;
 
@@ -59,10 +75,99 @@ class Boat extends Entity{
 		return $this->boatType;
 	}
 
+	protected function addAttributes() : void{
+		parent::addAttributes();
+		$this->setMaxHealth(40);
+		$this->setHealth(40.0);
+	}
+
+	protected function initBoatProperties() : void{
+		$this->addAttributes();
+		$this->syncBoatMetadata();
+	}
+
+	protected function syncBoatMetadata() : void{
+		$this->networkProperties->setInt(EntityMetadataProperties::VARIANT, $this->boatType->getVariantId());
+		$this->networkProperties->setInt(EntityMetadataProperties::BOAT_BUBBLE_TIME, 0);
+	}
+
 	protected function initEntity(CompoundTag $nbt) : void{
 		parent::initEntity($nbt);
-		if($nbt->getTag("Type") !== null){
-			$typeName = $nbt->getString("Type", "oak");
+		$this->initBoatProperties();
+	}
+
+	public function getDropItem() : Item{
+		return match($this->boatType){
+			BoatType::OAK => VanillaItems::OAK_BOAT(),
+			BoatType::SPRUCE => VanillaItems::SPRUCE_BOAT(),
+			BoatType::BIRCH => VanillaItems::BIRCH_BOAT(),
+			BoatType::JUNGLE => VanillaItems::JUNGLE_BOAT(),
+			BoatType::ACACIA => VanillaItems::ACACIA_BOAT(),
+			BoatType::DARK_OAK => VanillaItems::DARK_OAK_BOAT(),
+			BoatType::MANGROVE => VanillaItems::MANGROVE_BOAT(),
+			BoatType::BAMBOO => VanillaItems::BAMBOO_RAFT(),
+			BoatType::CHERRY => VanillaItems::CHERRY_BOAT(),
+			BoatType::PALE_OAK => VanillaItems::PALE_OAK_BOAT(),
+		};
+	}
+
+	public function attack(EntityDamageEvent $source) : void{
+		if($this->isClosed()){
+			return;
+		}
+
+		if($source instanceof EntityDamageByEntityEvent){
+			$damager = $source->getDamager();
+			if($damager instanceof Player && $damager->isCreative()){
+				$this->ejectRiders();
+				$this->close();
+				return;
+			}
+		}
+
+		$newHealth = $this->getHealth() - $source->getFinalDamage();
+		$this->setHealth($newHealth);
+
+		if($newHealth <= 0.0){
+			$this->destroyBoat();
+		}else{
+			$this->networkProperties->setByte(EntityMetadataProperties::HURT_TIME, 10);
+			$this->networkProperties->setByte(EntityMetadataProperties::HURT_DIRECTION, 1);
+		}
+	}
+
+	protected function destroyBoat() : void{
+		$this->ejectRiders();
+
+		$world = $this->getWorld();
+		if($world->isLoaded()){
+			$planks = match($this->boatType){
+				BoatType::OAK => VanillaBlocks::OAK_PLANKS(),
+				BoatType::SPRUCE => VanillaBlocks::SPRUCE_PLANKS(),
+				BoatType::BIRCH => VanillaBlocks::BIRCH_PLANKS(),
+				BoatType::JUNGLE => VanillaBlocks::JUNGLE_PLANKS(),
+				BoatType::ACACIA => VanillaBlocks::ACACIA_PLANKS(),
+				BoatType::DARK_OAK => VanillaBlocks::DARK_OAK_PLANKS(),
+				BoatType::MANGROVE => VanillaBlocks::MANGROVE_PLANKS(),
+				BoatType::BAMBOO => VanillaBlocks::BAMBOO_PLANKS(),
+				BoatType::CHERRY => VanillaBlocks::CHERRY_PLANKS(),
+				BoatType::PALE_OAK => VanillaBlocks::PALE_OAK_PLANKS(),
+			};
+			$world->addSound($this->location, new BlockBreakSound($planks));
+			$world->addParticle($this->location, new BlockBreakParticle($planks));
+			$world->dropItem($this->location, $this->getDropItem());
+		}
+
+		$this->close();
+	}
+
+	public function ejectRiders() : void{
+		// Seating logic expanded in Task 3
+	}
+
+	protected function readSaveData(CompoundTag $nbt) : void{
+		if(($typeTag = $nbt->getTag(self::TAG_TYPE)) !== null){
+			$typeName = $nbt->getString(self::TAG_TYPE, "oak");
 			foreach(BoatType::cases() as $case){
 				if(strtolower($case->name) === strtolower($typeName)){
 					$this->boatType = $case;
@@ -70,11 +175,14 @@ class Boat extends Entity{
 				}
 			}
 		}
+		if($nbt->getTag(self::TAG_HEALTH) !== null){
+			$this->setHealth($nbt->getFloat(self::TAG_HEALTH, self::DEFAULT_MAX_HEALTH));
+		}
+		$this->syncBoatMetadata();
 	}
 
-	public function saveNBT() : CompoundTag{
-		$nbt = parent::saveNBT();
-		$nbt->setString("Type", strtolower($this->boatType->name));
-		return $nbt;
+	protected function writeSaveData(CompoundTag $nbt) : void{
+		$nbt->setString(self::TAG_TYPE, strtolower($this->boatType->name));
+		$nbt->setFloat(self::TAG_HEALTH, $this->getHealth());
 	}
 }
