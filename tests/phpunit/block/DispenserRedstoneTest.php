@@ -189,4 +189,46 @@ final class DispenserRedstoneTest extends TestCase{
 		self::assertTrue($dropper->isPowered());
 		self::assertSame(1, $inventory->getItem(0)->getCount());
 	}
+
+	public function testDispenserRedstonePowerWithSingleBoneMealFacingCrop() : void{
+		$blocks = [];
+		[$engine, $world] = $this->createEnvironment($blocks);
+
+		$pos = new Vector3(10, 20, 30);
+		$dispenser = VanillaBlocks::DISPENSER();
+		$dispenser->setFacing(Facing::NORTH);
+		$dispenser->position($world, 10, 20, 30);
+		$blocks["10:20:30"] = $dispenser;
+
+		$wheat = VanillaBlocks::WHEAT();
+		$wheat->position($world, 10, 20, 29);
+		$blocks["10:20:29"] = $wheat;
+
+		$inventory = new DispenserInventory(new Position(10, 20, 30, $world));
+		$inventory->setItem(0, VanillaItems::BONE_MEAL()); // Single-item stack (count 1)
+		self::assertSame(1, $inventory->getItem(0)->getCount());
+
+		$tile = $this->createMock(TileDispenser::class);
+		$tile->method("getInventory")->willReturn($inventory);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $p) use ($pos, $tile) : ?TileDispenser{
+			if($p->equals($pos)){
+				return $tile;
+			}
+			return null;
+		});
+
+		// Rising edge: Redstone block placed adjacent at (10, 21, 30)
+		$redstoneBlock = VanillaBlocks::REDSTONE();
+		$redstoneBlock->position($world, 10, 21, 30);
+		$blocks["10:21:30"] = $redstoneBlock;
+
+		// Powering the dispenser must not throw InvalidArgumentException out of the redstone tick
+		$dispenser->onRedstoneUpdate($engine);
+
+		self::assertTrue($dispenser->isPowered());
+		self::assertTrue($inventory->getItem(0)->isNull());
+		self::assertInstanceOf(Crops::class, $blocks["10:20:29"]);
+		self::assertGreaterThan(0, $blocks["10:20:29"]->getAge());
+	}
 }

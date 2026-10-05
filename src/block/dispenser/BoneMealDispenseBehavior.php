@@ -38,7 +38,6 @@ class BoneMealDispenseBehavior implements DispenseBehavior{
 
 		$returnedItems = [];
 		if($targetBlock->onInteract($item, Facing::opposite($source->getFacing()), new Vector3(0, 0, 0), null, $returnedItems)){
-			$item->pop();
 			$world->addParticle($targetPos->add(0.5, 0.5, 0.5), new HappyVillagerParticle());
 			$world->addSound($targetPos, new ItemUseOnBlockSound($targetBlock));
 			return $item;

@@ -175,4 +175,68 @@ final class DispenserBehaviorsTest extends TestCase{
 		// Result item has 0 count (popped)
 		self::assertSame(0, $result->getCount());
 	}
+
+	public function testBoneMealDispenseWithSingleItemStackOnCrop() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$sourcePos = new Vector3(10, 20, 30);
+		$targetPos = $sourcePos->getSide(Facing::NORTH);
+
+		$wheat = VanillaBlocks::WHEAT();
+		$wheat->position($world, (int) $targetPos->x, (int) $targetPos->y, (int) $targetPos->z);
+
+		$world->method("getBlock")->with($targetPos)->willReturn($wheat);
+
+		$blockGrown = null;
+		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $b) use (&$blockGrown) : bool{
+			$blockGrown = $b;
+			return true;
+		});
+
+		$source = new BlockSource($world, $sourcePos, Facing::NORTH);
+		$behavior = new BoneMealDispenseBehavior();
+
+		$boneMeal = VanillaItems::BONE_MEAL(); // Count is 1
+		self::assertSame(1, $boneMeal->getCount());
+
+		// Must not throw InvalidArgumentException when popping the single item
+		$result = $behavior->dispense($source, $boneMeal);
+
+		self::assertInstanceOf(Item::class, $result);
+		self::assertTrue($result->isNull());
+		self::assertSame(0, $result->getCount());
+		self::assertInstanceOf(Crops::class, $blockGrown);
+		self::assertGreaterThan(0, $blockGrown->getAge());
+	}
+
+	public function testBoneMealDispenseWithMultipleItemStackOnCrop() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$sourcePos = new Vector3(10, 20, 30);
+		$targetPos = $sourcePos->getSide(Facing::NORTH);
+
+		$wheat = VanillaBlocks::WHEAT();
+		$wheat->position($world, (int) $targetPos->x, (int) $targetPos->y, (int) $targetPos->z);
+
+		$world->method("getBlock")->with($targetPos)->willReturn($wheat);
+
+		$blockGrown = null;
+		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $b) use (&$blockGrown) : bool{
+			$blockGrown = $b;
+			return true;
+		});
+
+		$source = new BlockSource($world, $sourcePos, Facing::NORTH);
+		$behavior = new BoneMealDispenseBehavior();
+
+		$boneMeal = VanillaItems::BONE_MEAL()->setCount(5);
+
+		$result = $behavior->dispense($source, $boneMeal);
+
+		self::assertInstanceOf(Item::class, $result);
+		// Exactly 1 bone meal consumed, 4 remaining
+		self::assertSame(4, $result->getCount());
+		self::assertInstanceOf(Crops::class, $blockGrown);
+		self::assertGreaterThan(0, $blockGrown->getAge());
+	}
 }
