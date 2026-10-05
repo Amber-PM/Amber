@@ -296,6 +296,20 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(10.0, $crossbow->shotProjectiles[2]["yawOffset"]);
 	}
 
+	public function testFireInfiniteResourcesDoesNotConsumeDurability() : void{
+		$crossbow = new CrossbowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$crossbow->setChargedItem(VanillaItems::ARROW());
+
+		$player = $this->createMockPlayer(finiteResources: false);
+		$returnedItems = [];
+		$result = $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems);
+
+		self::assertSame(ItemUseResult::SUCCESS, $result);
+		self::assertFalse($crossbow->isCharged());
+		self::assertSame(0, $crossbow->getDamage());
+		self::assertCount(1, $crossbow->shotProjectiles);
+	}
+
 	public function testFireUnchargedFails() : void{
 		$crossbow = new CrossbowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
 		$player = $this->createMockPlayer();

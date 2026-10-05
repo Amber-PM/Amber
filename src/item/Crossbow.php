@@ -209,7 +209,9 @@ class Crossbow extends Tool implements Releasable{
 		$world->addSound($location, new CrossbowShootSound());
 
 		$this->setChargedItem(null);
-		$this->applyDamage($durabilityDamage);
+		if($player->hasFiniteResources()){
+			$this->applyDamage($durabilityDamage);
+		}
 
 		return ItemUseResult::SUCCESS;
 	}
