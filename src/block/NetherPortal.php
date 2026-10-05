@@ -100,6 +100,10 @@ class NetherPortal extends Transparent{
 		return $checkNeighbor(Facing::NORTH) && $checkNeighbor(Facing::SOUTH);
 	}
 
+	public function hasEntityCollision() : bool{
+		return true;
+	}
+
 	public function onEntityInside(Entity $entity) : bool{
 		if($entity instanceof \pocketmine\player\Player){
 			\pocketmine\world\portal\PortalTeleporter::handlePlayerInNetherPortal($entity);

@@ -49,6 +49,10 @@ class EndPortal extends Transparent{
 		return [];
 	}
 
+	public function hasEntityCollision() : bool{
+		return true;
+	}
+
 	public function onEntityInside(Entity $entity) : bool{
 		if($entity instanceof \pocketmine\player\Player){
 			\pocketmine\world\portal\PortalTeleporter::handlePlayerInEndPortal($entity);

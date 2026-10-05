@@ -257,4 +257,132 @@ final class PortalTeleporterTest extends TestCase{
 		self::assertFalse(PortalTeleporter::canTeleport($player, 550));
 		self::assertTrue(PortalTeleporter::canTeleport($player, 801));
 	}
+
+	public function testSurvivalPlayerTeleportsAfter80NetherPortalTicks() : void{
+		$world1 = $this->createMockWorld("overworld");
+		$world2 = $this->createMockWorld("nether");
+		$player = $this->createMockPlayer($world1, false);
+
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use ($world2) : World{
+			return $world2;
+		});
+
+		for($i = 1; $i < 80; ++$i){
+			$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+			self::assertFalse($result);
+			self::assertSame($i, PortalTeleporter::getPlayerWaitTicks($player));
+		}
+
+		$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		self::assertTrue($result);
+		self::assertSame(0, PortalTeleporter::getPlayerWaitTicks($player));
+		self::assertFalse(PortalTeleporter::canTeleport($player, 200));
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testCreativePlayerTeleportsAfter1NetherPortalTick() : void{
+		$world1 = $this->createMockWorld("overworld");
+		$world2 = $this->createMockWorld("nether");
+		$player = $this->createMockPlayer($world1, true);
+
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use ($world2) : World{
+			return $world2;
+		});
+
+		$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		self::assertTrue($result);
+		self::assertSame(0, PortalTeleporter::getPlayerWaitTicks($player));
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testEndPortalTeleportsImmediately() : void{
+		$world1 = $this->createMockWorld("overworld");
+		$world2 = $this->createMockWorld("the_end");
+		$player = $this->createMockPlayer($world1, false);
+
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use ($world2) : World{
+			return $world2;
+		});
+
+		$result = PortalTeleporter::handlePlayerInEndPortal($player, 100);
+		self::assertTrue($result);
+		self::assertFalse(PortalTeleporter::canTeleport($player, 200));
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testExitResetClearsPortalWaitTicks() : void{
+		$world = $this->createMockWorld("overworld");
+		$player = $this->createMockPlayer($world, false);
+
+		for($i = 0; $i < 40; ++$i){
+			PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		}
+		self::assertSame(40, PortalTeleporter::getPlayerWaitTicks($player));
+
+		// End of tick where player was in portal
+		PortalTeleporter::onPlayerUpdate($player);
+		self::assertSame(40, PortalTeleporter::getPlayerWaitTicks($player));
+
+		// Next tick: player stepped out (no handlePlayerInNetherPortal called)
+		PortalTeleporter::onPlayerUpdate($player);
+		self::assertSame(0, PortalTeleporter::getPlayerWaitTicks($player));
+	}
+
+	public function testPortalCooldownPreventsPrematureTeleport() : void{
+		$world1 = $this->createMockWorld("overworld");
+		$world2 = $this->createMockWorld("nether");
+		$player = $this->createMockPlayer($world1, true);
+
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use ($world2) : World{
+			return $world2;
+		});
+
+		$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		self::assertTrue($result);
+
+		// During cooldown, cannot teleport
+		$result2 = PortalTeleporter::handlePlayerInNetherPortal($player, 200);
+		self::assertFalse($result2);
+
+		// After cooldown expires
+		$result3 = PortalTeleporter::handlePlayerInNetherPortal($player, 401);
+		self::assertTrue($result3);
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testDestinationResolutionNetherToOverworld() : void{
+		$netherWorld = $this->createMockWorld("nether");
+		$player = $this->createMockPlayer($netherWorld, true);
+
+		$resolvedDimension = null;
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use (&$resolvedDimension, $netherWorld) : World{
+			$resolvedDimension = $dim;
+			return $netherWorld;
+		});
+
+		PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		self::assertSame(DimensionIds::OVERWORLD, $resolvedDimension);
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testDestinationResolutionOverworldToNether() : void{
+		$overworld = $this->createMockWorld("overworld");
+		$player = $this->createMockPlayer($overworld, true);
+
+		$resolvedDimension = null;
+		PortalTeleporter::setDestinationResolver(function(Player $p, int $dim) use (&$resolvedDimension, $overworld) : World{
+			$resolvedDimension = $dim;
+			return $overworld;
+		});
+
+		PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		self::assertSame(DimensionIds::NETHER, $resolvedDimension);
+
+		PortalTeleporter::setDestinationResolver(null);
+	}
 }

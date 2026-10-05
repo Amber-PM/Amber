@@ -36,6 +36,8 @@ use function array_values;
 use function floor;
 use function max;
 use function min;
+use function str_contains;
+use function strtolower;
 
 final class PortalTeleporter{
 
@@ -48,6 +50,12 @@ final class PortalTeleporter{
 
 	/** @var \WeakMap<Player, int>|null */
 	private static ?\WeakMap $portalWaitTicks = null;
+
+	/** @var \WeakMap<Player, bool>|null */
+	private static ?\WeakMap $inPortalThisTick = null;
+
+	/** @var (\Closure(Player, int) : ?World)|null */
+	private static ?\Closure $destinationResolver = null;
 
 	/** @var array<string, list<Vector3>> */
 	private static array $registeredPortals = [];
@@ -64,6 +72,10 @@ final class PortalTeleporter{
 		/** @var \WeakMap<Player, int> $portalWaitTicks */
 		$portalWaitTicks = new \WeakMap();
 		self::$portalWaitTicks ??= $portalWaitTicks;
+
+		/** @var \WeakMap<Player, bool> $inPortalThisTick */
+		$inPortalThisTick = new \WeakMap();
+		self::$inPortalThisTick ??= $inPortalThisTick;
 	}
 
 	public static function scaleCoordinates(Vector3 $pos, int $sourceDimension, int $targetDimension) : Vector3{
@@ -264,6 +276,70 @@ final class PortalTeleporter{
 		return true;
 	}
 
+	public static function setDestinationResolver(?\Closure $resolver) : void{
+		self::$destinationResolver = $resolver;
+	}
+
+	public static function getDimensionId(World $world) : int{
+		$name = strtolower($world->getDisplayName());
+		try{
+			$folderName = strtolower($world->getFolderName());
+		}catch(\Error){
+			$folderName = $name;
+		}
+		if(str_contains($name, "nether") || str_contains($folderName, "nether") || str_contains($name, "hell") || str_contains($folderName, "hell")){
+			return DimensionIds::NETHER;
+		}
+		if(str_contains($name, "end") || str_contains($folderName, "end")){
+			return DimensionIds::THE_END;
+		}
+		return DimensionIds::OVERWORLD;
+	}
+
+	public static function resolveDestinationWorld(Player $player, int $targetDimension) : ?World{
+		if(self::$destinationResolver !== null){
+			$resolved = (self::$destinationResolver)($player, $targetDimension);
+			if($resolved !== null){
+				return $resolved;
+			}
+		}
+
+		try{
+			$worldManager = $player->getServer()->getWorldManager();
+		}catch(\Throwable){
+			return $player->getWorld();
+		}
+
+		if($targetDimension === DimensionIds::OVERWORLD){
+			return $worldManager->getDefaultWorld() ?? $player->getWorld();
+		}
+
+		$candidates = match($targetDimension){
+			DimensionIds::NETHER => ["nether", "world_nether", "hell"],
+			DimensionIds::THE_END => ["the_end", "end", "world_the_end", "world_end"],
+			default => []
+		};
+
+		foreach($candidates as $name){
+			if($worldManager->isWorldLoaded($name)){
+				return $worldManager->getWorldByName($name);
+			}
+			if($worldManager->isWorldGenerated($name)){
+				if($worldManager->loadWorld($name)){
+					return $worldManager->getWorldByName($name);
+				}
+			}
+		}
+
+		foreach($worldManager->getWorlds() as $loadedWorld){
+			if(self::getDimensionId($loadedWorld) === $targetDimension){
+				return $loadedWorld;
+			}
+		}
+
+		return $worldManager->getDefaultWorld() ?? $player->getWorld();
+	}
+
 	public static function recordTeleport(Player $player, int $currentTick) : void{
 		self::init();
 		if(self::$cooldowns !== null){
@@ -271,6 +347,9 @@ final class PortalTeleporter{
 		}
 		if(self::$portalWaitTicks !== null){
 			unset(self::$portalWaitTicks[$player]);
+		}
+		if(self::$inPortalThisTick !== null){
+			self::$inPortalThisTick[$player] = false;
 		}
 	}
 
@@ -283,16 +362,71 @@ final class PortalTeleporter{
 		return self::$portalWaitTicks?->offsetExists($player) ? (self::$portalWaitTicks[$player] ?? 0) : 0;
 	}
 
-	public static function handlePlayerInNetherPortal(Player $player) : void{
+	public static function handlePlayerInNetherPortal(Player $player, int $currentTick = 0) : bool{
 		self::init();
-		if(self::$portalWaitTicks !== null){
-			$wait = (self::$portalWaitTicks[$player] ?? 0) + 1;
-			self::$portalWaitTicks[$player] = $wait;
+		if($currentTick === 0){
+			try{
+				$currentTick = $player->getServer()->getTick();
+			}catch(\Throwable){
+				$currentTick = 0;
+			}
 		}
+
+		$inPortalThisTick = self::$inPortalThisTick;
+		if($inPortalThisTick !== null){
+			$inPortalThisTick[$player] = true;
+		}
+
+		if(!self::canTeleport($player, $currentTick)){
+			return false;
+		}
+
+		$wait = 1;
+		$portalWaitTicks = self::$portalWaitTicks;
+		if($portalWaitTicks !== null){
+			$wait = ($portalWaitTicks[$player] ?? 0) + 1;
+			$portalWaitTicks[$player] = $wait;
+		}
+
+		if($wait >= self::getPortalWaitTicks($player)){
+			$currentDim = self::getDimensionId($player->getWorld());
+			$targetDim = $currentDim === DimensionIds::NETHER ? DimensionIds::OVERWORLD : DimensionIds::NETHER;
+			$destWorld = self::resolveDestinationWorld($player, $targetDim);
+			if($destWorld !== null){
+				return self::teleport($player, $destWorld, $targetDim, $currentTick);
+			}
+		}
+
+		return false;
 	}
 
-	public static function handlePlayerInEndPortal(Player $player) : void{
+	public static function handlePlayerInEndPortal(Player $player, int $currentTick = 0) : bool{
 		self::init();
+		if($currentTick === 0){
+			try{
+				$currentTick = $player->getServer()->getTick();
+			}catch(\Throwable){
+				$currentTick = 0;
+			}
+		}
+
+		$inPortalThisTick = self::$inPortalThisTick;
+		if($inPortalThisTick !== null){
+			$inPortalThisTick[$player] = true;
+		}
+
+		if(!self::canTeleport($player, $currentTick)){
+			return false;
+		}
+
+		$currentDim = self::getDimensionId($player->getWorld());
+		$targetDim = $currentDim === DimensionIds::THE_END ? DimensionIds::OVERWORLD : DimensionIds::THE_END;
+		$destWorld = self::resolveDestinationWorld($player, $targetDim);
+		if($destWorld !== null){
+			return self::teleport($player, $destWorld, $targetDim, $currentTick);
+		}
+
+		return false;
 	}
 
 	public static function resetPortalWait(Player $player) : void{
@@ -302,9 +436,21 @@ final class PortalTeleporter{
 		}
 	}
 
+	public static function onPlayerUpdate(Player $player) : void{
+		self::init();
+		$inPortalThisTick = self::$inPortalThisTick;
+		if($inPortalThisTick !== null){
+			$wasInPortal = $inPortalThisTick[$player] ?? false;
+			if(!$wasInPortal){
+				self::resetPortalWait($player);
+			}
+			$inPortalThisTick[$player] = false;
+		}
+	}
+
 	public static function teleport(Player $player, World $destinationWorld, int $targetDimension, int $currentTick = 0) : bool{
 		$sourcePos = $player->getPosition();
-		$sourceDimension = DimensionIds::OVERWORLD;
+		$sourceDimension = self::getDimensionId($player->getWorld());
 
 		if($targetDimension === DimensionIds::THE_END){
 			self::createEndPlatform($destinationWorld);
