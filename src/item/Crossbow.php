@@ -202,8 +202,15 @@ class Crossbow extends Tool implements Releasable{
 		$location = $player->getLocation();
 		$world = $player->getWorld();
 
+		$launched = false;
 		foreach($angles as $angleOffset){
-			$this->shootProjectile($player, $ammo, $angleOffset);
+			if($this->shootProjectile($player, $ammo, $angleOffset, $angleOffset !== 0.0)){
+				$launched = true;
+			}
+		}
+
+		if(!$launched){
+			return ItemUseResult::FAIL;
 		}
 
 		$world->addSound($location, new CrossbowShootSound());
@@ -216,7 +223,11 @@ class Crossbow extends Tool implements Releasable{
 		return ItemUseResult::SUCCESS;
 	}
 
-	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset) : void{
+	protected function createArrow(Location $location, Player $player) : ArrowEntity{
+		return new ArrowEntity($location, $player, true);
+	}
+
+	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset, bool $isExtra = false) : bool{
 		$location = $player->getLocation();
 		$world = $player->getWorld();
 		$yaw = $location->yaw + $yawOffset;
@@ -245,38 +256,44 @@ class Crossbow extends Tool implements Releasable{
 			$rocket->setMotion($dir->multiply(1.6));
 			$rocket->setShotFromCrossbow(true);
 			$rocket->spawnToAll();
-		}else{
-			$arrow = new ArrowEntity($spawnLocation, $player, true);
-			$arrow->setMotion($dir);
-
-			if(($pierceLevel = $this->getEnchantmentLevel(VanillaEnchantments::PIERCING())) > 0){
-				$arrow->setPierceLevel($pierceLevel);
-			}
-
-			$ev = new EntityShootBowEvent($player, $this, $arrow, 3.15);
-			if($player->isSpectator()){
-				$ev->cancel();
-			}
-			$ev->call();
-
-			if($ev->isCancelled()){
-				$ev->getProjectile()->flagForDespawn();
-				return;
-			}
-
-			$projectile = $ev->getProjectile();
-			$projectile->setMotion($projectile->getMotion()->multiply($ev->getForce()));
-
-			if($projectile instanceof Projectile){
-				$projectileEv = new ProjectileLaunchEvent($projectile);
-				$projectileEv->call();
-				if($projectileEv->isCancelled()){
-					$projectile->flagForDespawn();
-					return;
-				}
-			}
-
-			$projectile->spawnToAll();
+			return true;
 		}
+
+		$arrow = $this->createArrow($spawnLocation, $player);
+		$arrow->setMotion($dir);
+
+		if($isExtra || !$player->hasFiniteResources()){
+			$arrow->setPickupMode(ArrowEntity::PICKUP_CREATIVE);
+		}
+
+		if(($pierceLevel = $this->getEnchantmentLevel(VanillaEnchantments::PIERCING())) > 0){
+			$arrow->setPierceLevel($pierceLevel);
+		}
+
+		$ev = new EntityShootBowEvent($player, $this, $arrow, 3.15);
+		if($player->isSpectator()){
+			$ev->cancel();
+		}
+		$ev->call();
+
+		if($ev->isCancelled()){
+			$ev->getProjectile()->flagForDespawn();
+			return false;
+		}
+
+		$projectile = $ev->getProjectile();
+		$projectile->setMotion($projectile->getMotion()->multiply($ev->getForce()));
+
+		if($projectile instanceof Projectile){
+			$projectileEv = new ProjectileLaunchEvent($projectile);
+			$projectileEv->call();
+			if($projectileEv->isCancelled()){
+				$projectile->flagForDespawn();
+				return false;
+			}
+		}
+
+		$projectile->spawnToAll();
+		return true;
 	}
 }

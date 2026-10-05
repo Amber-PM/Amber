@@ -28,26 +28,59 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\data\bedrock\item\ItemTypeNames;
 use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\entity\Entity;
+use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\entity\projectile\Arrow as ArrowEntity;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
 use pocketmine\world\World;
+use ReflectionClass;
 use ReflectionProperty;
+use function count;
 
 final class CrossbowTestDouble extends Crossbow{
-	/** @var array<array{ammo: Item, yawOffset: float}> */
+	/** @var array<array{ammo: Item, yawOffset: float, isExtra: bool}> */
 	public array $shotProjectiles = [];
+	public bool $shouldCancel = false;
 
-	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset) : void{
+	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset, bool $isExtra = false) : bool{
+		if($this->shouldCancel){
+			return false;
+		}
 		$this->shotProjectiles[] = [
 			"ammo" => clone $ammo,
-			"yawOffset" => $yawOffset
+			"yawOffset" => $yawOffset,
+			"isExtra" => $isExtra
 		];
+		return true;
+	}
+}
+
+final class CrossbowRealArrowTestDouble extends Crossbow{
+	/** @var ArrowEntity[] */
+	public array $createdArrows = [];
+
+	protected function createArrow(Location $location, Player $player) : ArrowEntity{
+		$arrow = (new ReflectionClass(ArrowEntity::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($arrow, false);
+		(new ReflectionProperty(Entity::class, "id"))->setValue($arrow, 200 + count($this->createdArrows));
+		(new ReflectionProperty(Entity::class, "size"))->setValue($arrow, new EntitySizeInfo(0.25, 0.25));
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($arrow, new Vector3(0.0, 0.0, 1.0));
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($arrow, new AxisAlignedBB(0, 0, 0, 0.25, 0.25, 0.25));
+		(new ReflectionProperty(ArrowEntity::class, "pickupMode"))->setValue($arrow, ArrowEntity::PICKUP_ANY);
+		(new ReflectionProperty(ArrowEntity::class, "pierceLevel"))->setValue($arrow, 0);
+		(new ReflectionProperty(ArrowEntity::class, "piercedEntityIds"))->setValue($arrow, []);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, $location);
+		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($arrow, []);
+
+		$this->createdArrows[] = $arrow;
+		return $arrow;
 	}
 }
 
@@ -74,6 +107,7 @@ final class CrossbowItemTest extends TestCase{
 				"getLocation",
 				"getWorld",
 				"isSpectator",
+				"isCreative",
 				"getEyePos",
 				"getDirectionVector",
 				"isConnected"
@@ -90,6 +124,7 @@ final class CrossbowItemTest extends TestCase{
 		$player->method("getOffHandInventory")->willReturn($offHandInventory);
 		$player->method("getItemUseDuration")->willReturn($itemUseDuration);
 		$player->method("hasFiniteResources")->willReturn($finiteResources);
+		$player->method("isCreative")->willReturn(!$finiteResources);
 		$player->method("getLocation")->willReturn(new Location(0.0, 64.0, 0.0, $world, 0.0, 0.0));
 		$player->method("getWorld")->willReturn($world);
 		$player->method("isSpectator")->willReturn(false);
@@ -275,6 +310,7 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(1, $crossbow->getDamage()); // 1 durability point
 		self::assertCount(1, $crossbow->shotProjectiles);
 		self::assertSame(0.0, $crossbow->shotProjectiles[0]["yawOffset"]);
+		self::assertFalse($crossbow->shotProjectiles[0]["isExtra"]);
 		self::assertSame(ItemTypeIds::ARROW, $crossbow->shotProjectiles[0]["ammo"]->getTypeId());
 	}
 
@@ -292,8 +328,11 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(3, $crossbow->getDamage()); // 3 durability points for multishot
 		self::assertCount(3, $crossbow->shotProjectiles);
 		self::assertSame(-10.0, $crossbow->shotProjectiles[0]["yawOffset"]);
+		self::assertTrue($crossbow->shotProjectiles[0]["isExtra"]);
 		self::assertSame(0.0, $crossbow->shotProjectiles[1]["yawOffset"]);
+		self::assertFalse($crossbow->shotProjectiles[1]["isExtra"]);
 		self::assertSame(10.0, $crossbow->shotProjectiles[2]["yawOffset"]);
+		self::assertTrue($crossbow->shotProjectiles[2]["isExtra"]);
 	}
 
 	public function testFireInfiniteResourcesDoesNotConsumeDurability() : void{
@@ -308,6 +347,81 @@ final class CrossbowItemTest extends TestCase{
 		self::assertFalse($crossbow->isCharged());
 		self::assertSame(0, $crossbow->getDamage());
 		self::assertCount(1, $crossbow->shotProjectiles);
+	}
+
+	public function testFirePreservesChargeAndDurabilityWhenShootingCancelled() : void{
+		$crossbow = new CrossbowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$crossbow->setChargedItem(VanillaItems::ARROW());
+		$crossbow->shouldCancel = true;
+
+		$player = $this->createMockPlayer();
+		$returnedItems = [];
+		$result = $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems);
+
+		self::assertSame(ItemUseResult::FAIL, $result);
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(0, $crossbow->getDamage());
+		self::assertEmpty($crossbow->shotProjectiles);
+	}
+
+	public function testSpectatorShootBowCancelledPreservesCharge() : void{
+		$crossbow = new CrossbowRealArrowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$crossbow->setChargedItem(VanillaItems::ARROW());
+
+		$player = $this->createMockPlayer();
+		$player->method("isSpectator")->willReturn(true);
+		$returnedItems = [];
+		$result = $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems);
+
+		self::assertSame(ItemUseResult::FAIL, $result);
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(0, $crossbow->getDamage());
+	}
+
+	public function testMultishotExtraArrowsPickupRestrictionAndCollection() : void{
+		$crossbow = new CrossbowRealArrowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$crossbow->addEnchantment(new EnchantmentInstance(VanillaEnchantments::MULTISHOT(), 1));
+		$crossbow->setChargedItem(VanillaItems::ARROW());
+
+		$player = $this->createMockPlayer(finiteResources: true);
+		$returnedItems = [];
+		$result = $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems);
+
+		self::assertSame(ItemUseResult::SUCCESS, $result);
+		self::assertFalse($crossbow->isCharged());
+		self::assertSame(3, $crossbow->getDamage());
+		self::assertCount(3, $crossbow->createdArrows);
+
+		[$extraLeft, $center, $extraRight] = $crossbow->createdArrows;
+
+		// Extra projectiles must restrict survival pickup
+		self::assertSame(ArrowEntity::PICKUP_CREATIVE, $extraLeft->getPickupMode());
+		self::assertSame(ArrowEntity::PICKUP_ANY, $center->getPickupMode());
+		self::assertSame(ArrowEntity::PICKUP_CREATIVE, $extraRight->getPickupMode());
+
+		// Simulate all three arrows hitting a block
+		$blockHitProp = new ReflectionProperty(ArrowEntity::class, "blockHit");
+		$blockHitProp->setValue($extraLeft, new Vector3(0, 64, 0));
+		$blockHitProp->setValue($center, new Vector3(0, 64, 0));
+		$blockHitProp->setValue($extraRight, new Vector3(0, 64, 0));
+
+		self::assertTrue($player->getInventory()->isEmpty());
+
+		// Attempt pickup on extra left arrow: should be denied in survival
+		$extraLeft->onCollideWithPlayer($player);
+		self::assertFalse($extraLeft->isFlaggedForDespawn());
+		self::assertTrue($player->getInventory()->isEmpty());
+
+		// Attempt pickup on center arrow: should succeed
+		$center->onCollideWithPlayer($player);
+		self::assertTrue($center->isFlaggedForDespawn());
+		self::assertSame(1, $player->getInventory()->getItem(0)->getCount());
+
+		// Attempt pickup on extra right arrow: should be denied in survival
+		$extraRight->onCollideWithPlayer($player);
+		self::assertFalse($extraRight->isFlaggedForDespawn());
+		// Total collected remains 1 (preventing duplicate arrow exploit)
+		self::assertSame(1, $player->getInventory()->getItem(0)->getCount());
 	}
 
 	public function testFireUnchargedFails() : void{
