@@ -29,15 +29,22 @@ use pocketmine\block\EndPortal;
 use pocketmine\block\EndPortalFrame;
 use pocketmine\block\utils\SupportType;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\entity\Entity;
+use pocketmine\entity\Location;
 use pocketmine\item\EnderEye;
 use pocketmine\item\ItemUseResult;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\portal\EndPortalDetector;
+use pocketmine\world\portal\PortalTeleporter;
+use pocketmine\world\Position;
 use pocketmine\world\sound\Sound;
 use pocketmine\world\World;
+use ReflectionMethod;
+use ReflectionProperty;
 
 final class EndPortalBlockTest extends TestCase{
 
@@ -90,6 +97,31 @@ final class EndPortalBlockTest extends TestCase{
 		self::assertEmpty($portal->getCollisionBoxes());
 		self::assertSame(SupportType::NONE, $portal->getSupportType(Facing::UP));
 		self::assertEmpty($portal->getDrops(VanillaItems::DIAMOND_PICKAXE()));
+		self::assertTrue($portal->hasEntityCollision());
+	}
+
+	public function testEntityUpdatePathTriggersOnEntityInside() : void{
+		$world = $this->createMockWorld();
+		$portal = VanillaBlocks::END_PORTAL();
+		$world->setBlockAt(0, 64, 0, $portal);
+
+		$player = $this->getMockBuilder(Player::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getWorld", "getPosition", "isCreative", "teleport", "onDispose", "isConnected"])
+			->getMock();
+		$player->method("getWorld")->willReturn($world);
+		$player->method("getPosition")->willReturn(new Position(0.5, 64.0, 0.5, $world));
+		$player->method("isCreative")->willReturn(true);
+		$player->method("teleport")->willReturn(true);
+
+		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
+		(new ReflectionProperty(Entity::class, "location"))->setValue($player, new Location(0.5, 64.0, 0.5, $world, 0.0, 0.0));
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(0.2, 64.0, 0.2, 0.8, 65.8, 0.8));
+
+		$checkIntersections = new ReflectionMethod(Entity::class, "checkBlockIntersections");
+		$checkIntersections->invoke($player);
+
+		self::assertFalse(PortalTeleporter::canTeleport($player, 200));
 	}
 
 	private function buildFrame(World $world, Vector3 $center, bool $withEyes = true) : void{

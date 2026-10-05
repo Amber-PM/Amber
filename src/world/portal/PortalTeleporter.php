@@ -281,7 +281,11 @@ final class PortalTeleporter{
 	}
 
 	public static function getDimensionId(World $world) : int{
-		$name = strtolower($world->getDisplayName());
+		try{
+			$name = strtolower($world->getDisplayName());
+		}catch(\Error){
+			$name = "world";
+		}
 		try{
 			$folderName = strtolower($world->getFolderName());
 		}catch(\Error){
