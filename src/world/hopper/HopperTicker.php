@@ -28,6 +28,8 @@ use pocketmine\block\ShulkerBox as ShulkerBoxBlock;
 use pocketmine\block\tile\Barrel;
 use pocketmine\block\tile\Chest;
 use pocketmine\block\tile\Container;
+use pocketmine\block\tile\Dispenser as TileDispenser;
+use pocketmine\block\tile\Dropper as TileDropper;
 use pocketmine\block\tile\Furnace;
 use pocketmine\block\tile\Hopper as HopperTile;
 use pocketmine\block\tile\ShulkerBox;
@@ -45,7 +47,7 @@ use function range;
  * Moves items for the hoppers of one world: every transfer interval each unlocked hopper pushes one item into the
  * container it faces, pulls one item from the container above it, and picks up dropped items lying on it.
  *
- * Chests, barrels, shulker boxes, hoppers and furnaces are supported. Furnaces take items to smelt from above and fuel
+ * Chests, barrels, shulker boxes, hoppers, furnaces, dispensers and droppers are supported. Furnaces take items to smelt from above and fuel
  * from the side, and give up only their output.
  */
 final class HopperTicker{
@@ -177,16 +179,22 @@ final class HopperTicker{
 	}
 
 	/**
-	 * @phpstan-assert-if-true Chest|Barrel|ShulkerBox|HopperTile|Furnace $tile
+	 * @phpstan-assert-if-true Chest|Barrel|ShulkerBox|HopperTile|Furnace|TileDispenser|TileDropper $tile
 	 */
 	private static function isSupported(?Tile $tile) : bool{
-		return $tile instanceof Chest || $tile instanceof Barrel || $tile instanceof ShulkerBox || $tile instanceof HopperTile || $tile instanceof Furnace;
+		return $tile instanceof Chest ||
+			$tile instanceof Barrel ||
+			$tile instanceof ShulkerBox ||
+			$tile instanceof HopperTile ||
+			$tile instanceof Furnace ||
+			$tile instanceof TileDispenser ||
+			$tile instanceof TileDropper;
 	}
 
 	/**
 	 * Puts one of the item into the container, coming in through its face $side.
 	 */
-	private static function insertOne(Chest|Barrel|ShulkerBox|HopperTile|Furnace $target, Item $item, int $side) : bool{
+	public static function insertOne(Container $target, Item $item, int $side) : bool{
 		$one = (clone $item)->setCount(1);
 		$inventory = $target->getInventory();
 		if($target instanceof Furnace){

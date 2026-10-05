@@ -29,8 +29,13 @@ use pocketmine\block\dispenser\DefaultDispenseBehavior;
 use pocketmine\block\dispenser\DispenseBehavior;
 use pocketmine\block\dispenser\DispenseBehaviorRegistry;
 use pocketmine\block\inventory\DropperInventory;
+use pocketmine\block\inventory\FurnaceInventory;
+use pocketmine\block\inventory\ShulkerBoxInventory;
 use pocketmine\block\tile\Container;
 use pocketmine\block\tile\Dropper as TileDropper;
+use pocketmine\block\tile\Furnace as TileFurnace;
+use pocketmine\block\tile\ShulkerBox as TileShulkerBox;
+use pocketmine\crafting\FurnaceType;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
@@ -174,5 +179,253 @@ final class DropperDispenseTest extends TestCase{
 
 		// Dropper item count unchanged because target container was full
 		self::assertSame(5, $dropperInv->getItem(0)->getCount());
+	}
+
+	public function testDropperDoesNotInsertNonFuelIntoFurnaceSide() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::NORTH);
+
+		$dropperPos = new Position(10, 20, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::NORTH);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaItems::DIAMOND()->setCount(5));
+
+		// Furnace with input full, fuel full, and result/output empty
+		$furnaceInv = new FurnaceInventory($targetPos, FurnaceType::FURNACE);
+		$furnaceInv->setSmelting(VanillaBlocks::COBBLESTONE()->asItem()->setCount(64));
+		$furnaceInv->setFuel(VanillaItems::COAL()->setCount(64));
+		// Output slot is empty
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$furnaceTile = $this->createMock(TileFurnace::class);
+		$furnaceTile->method("getInventory")->willReturn($furnaceInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $furnaceTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $furnaceTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 20, 30);
+		$dropperBlock->drop();
+
+		// Source diamond is left unchanged because diamond cannot be inserted into furnace side
+		self::assertSame(5, $dropperInv->getItem(0)->getCount());
+		// Output slot must remain empty and not have received the diamond
+		self::assertTrue($furnaceInv->getResult()->isNull());
+	}
+
+	public function testDropperDoesNotInsertDiamondIntoEmptyFurnaceOutputFromSideEvenWhenInputAndFuelEmpty() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::NORTH);
+
+		$dropperPos = new Position(10, 20, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::NORTH);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaItems::DIAMOND()->setCount(3));
+
+		// Completely empty furnace
+		$furnaceInv = new FurnaceInventory($targetPos, FurnaceType::FURNACE);
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$furnaceTile = $this->createMock(TileFurnace::class);
+		$furnaceTile->method("getInventory")->willReturn($furnaceInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $furnaceTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $furnaceTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 20, 30);
+		$dropperBlock->drop();
+
+		// Non-fuel cannot enter from side, even if slots are empty
+		self::assertSame(3, $dropperInv->getItem(0)->getCount());
+		self::assertTrue($furnaceInv->getSmelting()->isNull());
+		self::assertTrue($furnaceInv->getFuel()->isNull());
+		self::assertTrue($furnaceInv->getResult()->isNull());
+	}
+
+	public function testDropperInsertsFuelIntoFurnaceSide() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::NORTH);
+
+		$dropperPos = new Position(10, 20, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::NORTH);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaItems::COAL()->setCount(5));
+
+		$furnaceInv = new FurnaceInventory($targetPos, FurnaceType::FURNACE);
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$furnaceTile = $this->createMock(TileFurnace::class);
+		$furnaceTile->method("getInventory")->willReturn($furnaceInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $furnaceTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $furnaceTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 20, 30);
+		$dropperBlock->drop();
+
+		// 1 coal transferred to fuel slot
+		self::assertSame(4, $dropperInv->getItem(0)->getCount());
+		self::assertSame(1, $furnaceInv->getFuel()->getCount());
+		self::assertSame(VanillaItems::COAL()->getTypeId(), $furnaceInv->getFuel()->getTypeId());
+		self::assertTrue($furnaceInv->getResult()->isNull());
+	}
+
+	public function testDropperInsertsItemIntoFurnaceTop() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::DOWN); // Dropper above furnace facing down
+
+		$dropperPos = new Position(10, 21, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::DOWN);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaItems::DIAMOND()->setCount(5));
+
+		$furnaceInv = new FurnaceInventory($targetPos, FurnaceType::FURNACE);
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$furnaceTile = $this->createMock(TileFurnace::class);
+		$furnaceTile->method("getInventory")->willReturn($furnaceInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $furnaceTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $furnaceTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 21, 30);
+		$dropperBlock->drop();
+
+		// 1 diamond transferred to input/smelting slot
+		self::assertSame(4, $dropperInv->getItem(0)->getCount());
+		self::assertSame(1, $furnaceInv->getSmelting()->getCount());
+		self::assertSame(VanillaItems::DIAMOND()->getTypeId(), $furnaceInv->getSmelting()->getTypeId());
+		self::assertTrue($furnaceInv->getResult()->isNull());
+	}
+
+	public function testDropperDoesNotInsertIntoFurnaceBottom() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::UP); // Dropper below furnace facing up
+
+		$dropperPos = new Position(10, 19, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::UP);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaItems::DIAMOND()->setCount(5));
+
+		$furnaceInv = new FurnaceInventory($targetPos, FurnaceType::FURNACE);
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$furnaceTile = $this->createMock(TileFurnace::class);
+		$furnaceTile->method("getInventory")->willReturn($furnaceInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $furnaceTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $furnaceTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 19, 30);
+		$dropperBlock->drop();
+
+		// Insertion from bottom is invalid
+		self::assertSame(5, $dropperInv->getItem(0)->getCount());
+		self::assertTrue($furnaceInv->getResult()->isNull());
+		self::assertTrue($furnaceInv->getSmelting()->isNull());
+		self::assertTrue($furnaceInv->getFuel()->isNull());
+	}
+
+	public function testDropperDoesNotInsertShulkerBoxIntoShulkerBox() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$dropperBlock = VanillaBlocks::DROPPER();
+		$dropperBlock->setFacing(Facing::NORTH);
+
+		$dropperPos = new Position(10, 20, 30, $world);
+		$targetPos = $dropperPos->getSide(Facing::NORTH);
+
+		$dropperInv = new DropperInventory($dropperPos);
+		$dropperInv->setItem(0, VanillaBlocks::SHULKER_BOX()->asItem());
+
+		$shulkerInv = new ShulkerBoxInventory($targetPos);
+
+		$dropperTile = $this->createMock(TileDropper::class);
+		$dropperTile->method("getInventory")->willReturn($dropperInv);
+
+		$shulkerTile = $this->createMock(TileShulkerBox::class);
+		$shulkerTile->method("getInventory")->willReturn($shulkerInv);
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($dropperPos, $targetPos, $dropperTile, $shulkerTile) : ?Container{
+			if($pos->equals($dropperPos)){
+				return $dropperTile;
+			}
+			if($pos->equals($targetPos)){
+				return $shulkerTile;
+			}
+			return null;
+		});
+
+		$dropperBlock->position($world, 10, 20, 30);
+		$dropperBlock->drop();
+
+		// Shulker box cannot be inserted into another shulker box
+		self::assertFalse($dropperInv->getItem(0)->isNull());
+		self::assertTrue($shulkerInv->getItem(0)->isNull());
 	}
 }

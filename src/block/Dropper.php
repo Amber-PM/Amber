@@ -36,6 +36,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\ClickFailSound;
 use pocketmine\world\sound\ClickSound;
@@ -131,10 +132,7 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 		$targetTile = $world->getTile($targetPos);
 
 		if($targetTile instanceof Container){
-			$targetInv = $targetTile->getInventory();
-			$itemToDrop = (clone $sourceItem)->setCount(1);
-			if($targetInv->canAddItem($itemToDrop)){
-				$targetInv->addItem($itemToDrop);
+			if(HopperTicker::insertOne($targetTile, $sourceItem, Facing::opposite($this->facing))){
 				$sourceItem->pop();
 				$inventory->setItem($randomSlot, $sourceItem);
 				$world->addSound($this->position, new ClickSound());
