@@ -228,4 +228,33 @@ class ChestBoatTest extends TestCase{
 		self::assertTrue($interacted3);
 		self::assertSame($boat2->getInventory(), $sneakingOutsidePlayer->currentWindow);
 	}
+
+	public function testCreativeAttackDropsStoredItemsWithoutDroppingBoatItem() : void{
+		$droppedItems = [];
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("dropItem")->willReturnCallback(function(Vector3 $pos, \pocketmine\item\Item $item) use (&$droppedItems){
+			$droppedItems[] = $item;
+			return null;
+		});
+
+		$player = $this->createMock(Player::class);
+		$player->method("isCreative")->willReturn(true);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
+
+		$boat = $this->createTestChestBoat(BoatType::OAK, $world);
+		$boat->getInventory()->setItem(0, VanillaItems::DIAMOND()->setCount(12));
+
+		$attackEvent = $this->createMock(\pocketmine\event\entity\EntityDamageByEntityEvent::class);
+		$attackEvent->method("getDamager")->willReturn($player);
+		$attackEvent->method("isCancelled")->willReturn(false);
+
+		$boat->attack($attackEvent);
+
+		self::assertTrue($boat->isClosed());
+		self::assertCount(1, $droppedItems);
+		self::assertSame("Diamond", $droppedItems[0]->getName());
+		self::assertSame(12, $droppedItems[0]->getCount());
+	}
 }

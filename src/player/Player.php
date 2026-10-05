@@ -2152,6 +2152,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 		$this->setSneaking($sneak);
+		if($sneak){
+			\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+		}
 		return true;
 	}
 
@@ -2609,6 +2612,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		$this->disconnect("Player destroyed");
 		$this->cursorInventory->removeAllViewers();
 		$this->craftingGrid->removeAllViewers();
@@ -2684,6 +2688,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the
 		//main inventory and drops the rest on the ground.
 		$this->removeCurrentWindow();

@@ -75,7 +75,7 @@ class ChestBoat extends Boat implements InventoryHolder{
 		};
 	}
 
-	protected function destroyBoat() : void{
+	protected function destroyBoat(bool $dropBoat = true) : void{
 		$world = $this->getWorld();
 		if($world->isLoaded()){
 			foreach($this->inventory->getContents() as $item){
@@ -84,7 +84,7 @@ class ChestBoat extends Boat implements InventoryHolder{
 			$this->inventory->clearAll();
 		}
 
-		parent::destroyBoat();
+		parent::destroyBoat($dropBoat);
 	}
 
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{

@@ -44,10 +44,13 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\sound\BlockBreakSound;
+use WeakMap;
+use function abs;
 use function cos;
 use function count;
 use function deg2rad;
 use function floor;
+use function fmod;
 use function in_array;
 use function max;
 use function min;
@@ -63,19 +66,43 @@ class Boat extends Entity{
 	protected const TAG_TYPE = "Type";
 	protected const TAG_HEALTH = "Health";
 
+	/** @var \WeakMap<Entity, Boat>|null */
+	private static ?\WeakMap $vehicles = null;
+
+	public static function getVehicleOf(Entity $rider) : ?Boat{
+		return self::$vehicles !== null ? (self::$vehicles[$rider] ?? null) : null;
+	}
+
+	public static function resetVehicles() : void{
+		self::$vehicles = null;
+	}
+
 	protected BoatType $boatType;
 
 	protected float $paddleTimeLeft = 0.0;
 	protected float $paddleTimeRight = 0.0;
 	protected int $bubbleTime = 0;
 
+	/** @var array{float, float, bool, bool}|null */
+	protected ?array $riderInput = null;
+	protected int $riderInputTick = 0;
+
 	public function __construct(Location $location, BoatType|CompoundTag|null $typeOrNbt = null, ?CompoundTag $nbt = null){
 		if($typeOrNbt instanceof BoatType){
 			$this->boatType = $typeOrNbt;
 		}else{
-			$this->boatType = BoatType::OAK;
 			if($typeOrNbt instanceof CompoundTag){
 				$nbt = $typeOrNbt;
+			}
+			$this->boatType = BoatType::OAK;
+			if($nbt !== null && ($typeTag = $nbt->getTag(self::TAG_TYPE)) !== null){
+				$typeName = $nbt->getString(self::TAG_TYPE, "oak");
+				foreach(BoatType::cases() as $case){
+					if(strtolower($case->name) === strtolower($typeName)){
+						$this->boatType = $case;
+						break;
+					}
+				}
 			}
 		}
 		parent::__construct($location, $nbt);
@@ -167,24 +194,30 @@ class Boat extends Entity{
 		if($source instanceof EntityDamageByEntityEvent){
 			$damager = $source->getDamager();
 			if($damager instanceof Player && $damager->isCreative()){
-				$this->ejectRiders();
-				$this->close();
+				$source->call();
+				if($source->isCancelled()){
+					return;
+				}
+				$this->setLastDamageCause($source);
+				$this->destroyBoat(dropBoat: false);
 				return;
 			}
 		}
 
-		$newHealth = $this->getHealth() - $source->getFinalDamage();
-		$this->setHealth($newHealth);
+		parent::attack($source);
+		if($source->isCancelled()){
+			return;
+		}
 
-		if($newHealth <= 0.0){
-			$this->destroyBoat();
+		if($this->getHealth() <= 0.0){
+			$this->destroyBoat(dropBoat: true);
 		}else{
 			$this->networkProperties->setByte(EntityMetadataProperties::HURT_TIME, 10);
 			$this->networkProperties->setByte(EntityMetadataProperties::HURT_DIRECTION, 1);
 		}
 	}
 
-	protected function destroyBoat() : void{
+	protected function destroyBoat(bool $dropBoat = true) : void{
 		$this->ejectRiders();
 
 		$world = $this->getWorld();
@@ -203,7 +236,9 @@ class Boat extends Entity{
 			};
 			$world->addSound($this->location, new BlockBreakSound($planks));
 			$world->addParticle($this->location, new BlockBreakParticle($planks));
-			$world->dropItem($this->location, $this->getDropItem());
+			if($dropBoat){
+				$world->dropItem($this->location, $this->getDropItem());
+			}
 		}
 
 		$this->close();
@@ -257,7 +292,7 @@ class Boat extends Entity{
 	}
 
 	public function canAddRider(Entity $rider) : bool{
-		if($rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull()){
+		if($rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull() || self::getVehicleOf($rider) !== null){
 			return false;
 		}
 		return true;
@@ -281,6 +316,8 @@ class Boat extends Entity{
 		}
 
 		$this->riders[$seat] = $rider;
+		self::$vehicles ??= new \WeakMap();
+		self::$vehicles[$rider] = $this;
 
 		$properties = $rider->getNetworkProperties();
 		$properties->setGenericFlag(EntityMetadataFlags::RIDING, true);
@@ -297,6 +334,9 @@ class Boat extends Entity{
 		}
 
 		unset($this->riders[$seat]);
+		if(self::$vehicles !== null){
+			unset(self::$vehicles[$rider]);
+		}
 
 		$properties = $rider->getNetworkProperties();
 		$properties->setGenericFlag(EntityMetadataFlags::RIDING, false);
@@ -304,7 +344,7 @@ class Boat extends Entity{
 		$this->broadcastLink($rider, EntityLink::TYPE_REMOVE);
 
 		$world = $this->getWorld();
-		if($world->isLoaded() && !$rider->isClosed()){
+		if($world->isLoaded() && !$rider->isClosed() && $rider->isAlive()){
 			$yawRad = deg2rad($this->location->yaw + 90.0);
 			$dismountPos = $this->location->add(1.2 * cos($yawRad), 0.0, 1.2 * sin($yawRad));
 			$rider->teleport(Location::fromObject($dismountPos, $world, $rider->getLocation()->yaw, $rider->getLocation()->pitch));
@@ -317,6 +357,97 @@ class Boat extends Entity{
 		foreach($this->riders as $rider){
 			$this->removeRider($rider);
 		}
+	}
+
+	protected function updateRiders() : void{
+		foreach($this->riders as $seat => $rider){
+			if($rider->isClosed() || !$rider->isAlive() || $rider->getWorld() !== $this->getWorld() || $rider->getPosition()->distanceSquared($this->location) > 100){
+				$this->removeRider($rider);
+				continue;
+			}
+			if(!$rider instanceof Player){
+				$seatPos = $this->getSeatPosition($seat);
+				$yaw = deg2rad($this->location->yaw);
+				$x = (float) $seatPos->x;
+				$z = (float) $seatPos->z;
+				$target = $this->location->add($x * cos($yaw) - $z * sin($yaw), (float) $seatPos->y, $x * sin($yaw) + $z * cos($yaw));
+				$rider->teleport(Location::fromObject($target, $this->getWorld(), $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+			}
+		}
+	}
+
+	public static function setRiderInput(Player $player, float $strafe, float $forward, bool $paddleLeft = false, bool $paddleRight = false, ?float $yaw = null) : void{
+		$vehicle = self::getVehicleOf($player);
+		if($vehicle !== null && $vehicle->getDriver() === $player){
+			$vehicle->handleRiderInput($strafe, $forward, $paddleLeft, $paddleRight, $yaw);
+		}
+	}
+
+	public function handleRiderInput(float $strafe, float $forward, bool $paddleLeft = false, bool $paddleRight = false, ?float $yaw = null) : void{
+		$this->riderInput = [$strafe, $forward, $paddleLeft, $paddleRight];
+		$this->riderInputTick = $this->server->getTick();
+
+		if($yaw !== null){
+			$this->setRotation($yaw, 0.0);
+		}
+
+		if($paddleLeft){
+			$this->setPaddleTime(0, $this->paddleTimeLeft + 0.1);
+		}
+		if($paddleRight){
+			$this->setPaddleTime(1, $this->paddleTimeRight + 0.1);
+		}
+	}
+
+	protected function steerByRider() : bool{
+		$driver = $this->getDriver();
+		if(!$driver instanceof Player || $this->riderInput === null){
+			return false;
+		}
+
+		$currentTick = $this->server->getTick();
+		if($currentTick - $this->riderInputTick > 5){
+			return false;
+		}
+
+		[$strafe, $forward, $paddleLeft, $paddleRight] = $this->riderInput;
+
+		if($paddleLeft && $paddleRight && $forward === 0.0){
+			$forward = 1.0;
+		}elseif($paddleLeft && !$paddleRight){
+			$this->setRotation(fmod($this->location->yaw + 2.0, 360), 0.0);
+			if($forward === 0.0){
+				$forward = 0.5;
+			}
+		}elseif($paddleRight && !$paddleLeft){
+			$this->setRotation(fmod($this->location->yaw - 2.0 + 360, 360), 0.0);
+			if($forward === 0.0){
+				$forward = 0.5;
+			}
+		}
+
+		if(abs($forward) < 0.001 && abs($strafe) < 0.001){
+			return false;
+		}
+
+		$rad = deg2rad($this->location->yaw);
+		$dx = -sin($rad) * $forward + cos($rad) * $strafe;
+		$dz = cos($rad) * $forward + sin($rad) * $strafe;
+
+		$length = sqrt($dx * $dx + $dz * $dz);
+		if($length > 1.0){
+			$dx /= $length;
+			$dz /= $length;
+		}
+
+		$speed = 0.1;
+		$this->motion = new Vector3(
+			$this->motion->x + $dx * $speed,
+			$this->motion->y,
+			$this->motion->z + $dz * $speed
+		);
+
+		return true;
 	}
 
 	protected function broadcastLink(Entity $rider, int $type) : void{
@@ -362,6 +493,7 @@ class Boat extends Entity{
 				}
 			}
 		}
+		$this->setSize(new EntitySizeInfo($this->boatType->isRaft() ? 0.45 : 0.6, 1.4));
 		if($nbt->getTag(self::TAG_HEALTH) !== null){
 			$this->setHealth($nbt->getFloat(self::TAG_HEALTH, self::DEFAULT_MAX_HEALTH));
 		}
@@ -385,6 +517,8 @@ class Boat extends Entity{
 			parent::tryChangeMovement();
 			return;
 		}
+
+		$this->steerByRider();
 
 		$floorX = (int) floor($this->location->x);
 		$floorY = (int) floor($this->location->y);
@@ -472,6 +606,8 @@ class Boat extends Entity{
 		if($this->isClosed() || !$this->isAlive()){
 			return $hasUpdate;
 		}
+
+		$this->updateRiders();
 
 		$horizontalSpeedSq = $this->motion->x ** 2 + $this->motion->z ** 2;
 		if($horizontalSpeedSq > 0.0001){

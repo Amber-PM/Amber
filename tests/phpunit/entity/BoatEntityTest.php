@@ -160,4 +160,71 @@ class BoatEntityTest extends TestCase{
 		self::assertSame(BoatType::CHERRY, $newBoat->getBoatType());
 		self::assertEqualsWithDelta(25.0, $newBoat->getHealth(), 0.001);
 	}
+
+	public function testDamageEventCancellationPreventsDamageAndRocking() : void{
+		$boat = $this->createTestBoat(BoatType::OAK);
+		$initialHealth = $boat->getHealth();
+
+		$damageEvent = new EntityDamageEvent($boat, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 10.0);
+		$damageEvent->cancel();
+		$boat->attack($damageEvent);
+
+		self::assertEqualsWithDelta($initialHealth, $boat->getHealth(), 0.001);
+		self::assertFalse($boat->isClosed());
+		$props = $boat->getNetworkProperties()->getAll();
+		self::assertArrayNotHasKey(EntityMetadataProperties::HURT_TIME, $props);
+	}
+
+	public function testCreativeDamageEventCancellationPreventsDestruction() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$player = $this->createMock(Player::class);
+		$player->method("isCreative")->willReturn(true);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
+
+		$boat = $this->createTestBoat(BoatType::BIRCH, $world);
+
+		$creativeDamage = $this->createMock(EntityDamageByEntityEvent::class);
+		$creativeDamage->method("getDamager")->willReturn($player);
+		$creativeDamage->method("getFinalDamage")->willReturn(1.0);
+		$creativeDamage->method("isCancelled")->willReturn(true);
+		$boat->attack($creativeDamage);
+
+		self::assertFalse($boat->isClosed());
+	}
+
+	public function testNbtLoadedBambooRaftDimensions() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($this->createMock(\pocketmine\Server::class));
+		$world->method("addEntity")->willReturnCallback(function(){});
+
+		$location = new Location(0.0, 10.0, 0.0, $world, 0.0, 0.0);
+		$nbt = CompoundTag::create()->setString("Type", "bamboo");
+
+		// Test construction with null type and NBT (EntityFactory path)
+		$raft = new Boat($location, null, $nbt);
+		self::assertEqualsWithDelta(0.45, $raft->getSize()->getHeight(), 0.001);
+		self::assertEqualsWithDelta(1.4, $raft->getSize()->getWidth(), 0.001);
+		self::assertEqualsWithDelta(0.45, $raft->getBoundingBox()->maxY - $raft->getBoundingBox()->minY, 0.001);
+
+		// Test construction with NBT in second arg
+		$raft2 = new Boat($location, $nbt);
+		self::assertEqualsWithDelta(0.45, $raft2->getSize()->getHeight(), 0.001);
+		self::assertEqualsWithDelta(0.45, $raft2->getBoundingBox()->maxY - $raft2->getBoundingBox()->minY, 0.001);
+	}
+
+	public function testReadSaveDataBambooUpdatesDimensions() : void{
+		$boat = $this->createTestBoat(BoatType::OAK);
+		self::assertEqualsWithDelta(0.6, $boat->getSize()->getHeight(), 0.001);
+
+		$nbt = CompoundTag::create()->setString("Type", "bamboo");
+		(new ReflectionClass(Boat::class))->getMethod("readSaveData")->invoke($boat, $nbt);
+
+		self::assertSame(BoatType::BAMBOO, $boat->getBoatType());
+		self::assertEqualsWithDelta(0.45, $boat->getSize()->getHeight(), 0.001);
+		self::assertEqualsWithDelta(0.45, $boat->getBoundingBox()->maxY - $boat->getBoundingBox()->minY, 0.001);
+	}
 }
