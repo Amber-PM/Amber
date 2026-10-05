@@ -55,4 +55,49 @@ class ShieldBannerTest extends TestCase{
 		$tag = $nbt->getCompoundTag("tag");
 		self::assertTrue($tag === null || $tag->getCompoundTag("BlockEntityTag") === null);
 	}
+
+	public function testLegacyBlockEntityTagDeserialization() : void{
+		$shield = VanillaItems::SHIELD();
+		$nbt = $shield->nbtSerialize();
+
+		// Manually inject legacy Java-style BlockEntityTag
+		$tag = $nbt->getCompoundTag("tag") ?? \pocketmine\nbt\tag\CompoundTag::create();
+		$bet = \pocketmine\nbt\tag\CompoundTag::create();
+		$bet->setInt("Base", \pocketmine\data\bedrock\DyeColorIdMap::getInstance()->toInvertedId(DyeColor::CYAN));
+		$patterns = new \pocketmine\nbt\tag\ListTag();
+		$patterns->push(\pocketmine\nbt\tag\CompoundTag::create()
+			->setString("Pattern", \pocketmine\data\bedrock\BannerPatternTypeIdMap::getInstance()->toId(BannerPatternType::SKULL))
+			->setInt("Color", \pocketmine\data\bedrock\DyeColorIdMap::getInstance()->toInvertedId(DyeColor::PINK))
+		);
+		$bet->setTag("Patterns", $patterns);
+		$tag->setTag("BlockEntityTag", $bet);
+		$nbt->setTag("tag", $tag);
+
+		$deserialized = Item::nbtDeserialize($nbt);
+		self::assertInstanceOf(Shield::class, $deserialized);
+		self::assertSame(DyeColor::CYAN, $deserialized->getBaseColor());
+		self::assertCount(1, $deserialized->getPatterns());
+		self::assertSame(BannerPatternType::SKULL, $deserialized->getPatterns()[0]->getType());
+		self::assertSame(DyeColor::PINK, $deserialized->getPatterns()[0]->getColor());
+	}
+
+	public function testNetworkConversionRoundtrip() : void{
+		$shield = VanillaItems::SHIELD();
+		$layer1 = new BannerPatternLayer(BannerPatternType::SKULL, DyeColor::RED);
+		$layer2 = new BannerPatternLayer(BannerPatternType::FLOWER, DyeColor::BLUE);
+		$shield->setBaseColor(DyeColor::YELLOW);
+		$shield->setPatterns([$layer1, $layer2]);
+
+		$typeConverter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance();
+		$netItem = $typeConverter->coreItemStackToNet($shield);
+		$restored = $typeConverter->netItemStackToCore($netItem);
+
+		self::assertInstanceOf(Shield::class, $restored);
+		self::assertSame(DyeColor::YELLOW, $restored->getBaseColor());
+		self::assertCount(2, $restored->getPatterns());
+		self::assertSame(BannerPatternType::SKULL, $restored->getPatterns()[0]->getType());
+		self::assertSame(DyeColor::RED, $restored->getPatterns()[0]->getColor());
+		self::assertSame(BannerPatternType::FLOWER, $restored->getPatterns()[1]->getType());
+		self::assertSame(DyeColor::BLUE, $restored->getPatterns()[1]->getColor());
+	}
 }

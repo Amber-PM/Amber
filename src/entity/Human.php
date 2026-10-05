@@ -528,11 +528,12 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	}
 
 	public function applyDamageModifiers(EntityDamageEvent $source) : void{
-		parent::applyDamageModifiers($source);
-
 		if($this->isDamageBlocked($source)){
 			$source->setModifier(-$source->getFinalDamage(), EntityDamageEvent::MODIFIER_SHIELD);
+			return;
 		}
+
+		parent::applyDamageModifiers($source);
 
 		$type = $source->getCause();
 		if($type !== EntityDamageEvent::CAUSE_SUICIDE && $type !== EntityDamageEvent::CAUSE_VOID
@@ -546,28 +547,22 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	}
 
 	protected function applyPostDamageEffects(EntityDamageEvent $source) : void{
-		parent::applyPostDamageEffects($source);
-
-		if($source->getModifier(EntityDamageEvent::MODIFIER_SHIELD) < 0){
+		if($source->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
 			$this->broadcastSound(new ShieldBlockSound());
 
 			$durabilityLoss = self::calculateShieldDurabilityLoss($source->getBaseDamage());
 			$this->damageEquippedShield($durabilityLoss);
 
-			if($source instanceof EntityDamageByChildEntityEvent){
-				$child = $source->getChild();
-				if($child instanceof Projectile){
-					$child->setMotion($child->getMotion()->multiply(-0.5));
-				}
-			}
-
-			if($source instanceof EntityDamageByEntityEvent){
+			if($source instanceof EntityDamageByEntityEvent && !$source instanceof EntityDamageByChildEntityEvent){
 				$damager = $source->getDamager();
 				if($damager instanceof Human && $damager->getInventory()->getItemInHand() instanceof Axe){
 					$this->disableShield(100);
 				}
 			}
+			return;
 		}
+
+		parent::applyPostDamageEffects($source);
 
 		$totemModifier = $source->getModifier(EntityDamageEvent::MODIFIER_TOTEM);
 		if($totemModifier < 0){ //Totem prevented death

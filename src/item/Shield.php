@@ -98,21 +98,24 @@ class Shield extends Durable{
 		$this->patterns = [];
 		$this->baseColor = null;
 
+		$sourceTag = $tag;
 		$bet = $tag->getCompoundTag(self::TAG_BLOCK_ENTITY_TAG);
-		if($bet !== null){
-			if($bet->getTag(self::TAG_BASE) !== null){
-				$this->baseColor = DyeColorIdMap::getInstance()->fromInvertedId($bet->getInt(self::TAG_BASE));
-			}
-			$patterns = $bet->getListTag(self::TAG_PATTERNS, CompoundTag::class);
-			if($patterns !== null){
-				$colorIdMap = DyeColorIdMap::getInstance();
-				$patternIdMap = BannerPatternTypeIdMap::getInstance();
-				foreach($patterns as $t){
-					$color = $colorIdMap->fromInvertedId($t->getInt(self::TAG_PATTERN_COLOR)) ?? DyeColor::BLACK;
-					$type = $patternIdMap->fromId($t->getString(self::TAG_PATTERN_NAME));
-					if($type !== null){
-						$this->patterns[] = new BannerPatternLayer($type, $color);
-					}
+		if($bet !== null && $tag->getTag(self::TAG_BASE) === null && $tag->getTag(self::TAG_PATTERNS) === null){
+			$sourceTag = $bet;
+		}
+
+		if($sourceTag->getTag(self::TAG_BASE) !== null){
+			$this->baseColor = DyeColorIdMap::getInstance()->fromInvertedId($sourceTag->getInt(self::TAG_BASE));
+		}
+		$patterns = $sourceTag->getListTag(self::TAG_PATTERNS, CompoundTag::class);
+		if($patterns !== null){
+			$colorIdMap = DyeColorIdMap::getInstance();
+			$patternIdMap = BannerPatternTypeIdMap::getInstance();
+			foreach($patterns as $t){
+				$color = $colorIdMap->fromInvertedId($t->getInt(self::TAG_PATTERN_COLOR)) ?? DyeColor::BLACK;
+				$type = $patternIdMap->fromId($t->getString(self::TAG_PATTERN_NAME));
+				if($type !== null){
+					$this->patterns[] = new BannerPatternLayer($type, $color);
 				}
 			}
 		}
@@ -121,26 +124,27 @@ class Shield extends Durable{
 	protected function serializeCompoundTag(CompoundTag $tag) : void{
 		parent::serializeCompoundTag($tag);
 
-		if($this->baseColor !== null || count($this->patterns) > 0){
-			$bet = CompoundTag::create();
-			if($this->baseColor !== null){
-				$bet->setInt(self::TAG_BASE, DyeColorIdMap::getInstance()->toInvertedId($this->baseColor));
-			}
-			if(count($this->patterns) > 0){
-				$patterns = new ListTag();
-				$colorIdMap = DyeColorIdMap::getInstance();
-				$patternIdMap = BannerPatternTypeIdMap::getInstance();
-				foreach($this->patterns as $pattern){
-					$patterns->push(CompoundTag::create()
-						->setString(self::TAG_PATTERN_NAME, $patternIdMap->toId($pattern->getType()))
-						->setInt(self::TAG_PATTERN_COLOR, $colorIdMap->toInvertedId($pattern->getColor()))
-					);
-				}
-				$bet->setTag(self::TAG_PATTERNS, $patterns);
-			}
-			$tag->setTag(self::TAG_BLOCK_ENTITY_TAG, $bet);
+		if($this->baseColor !== null){
+			$tag->setInt(self::TAG_BASE, DyeColorIdMap::getInstance()->toInvertedId($this->baseColor));
 		}else{
-			$tag->removeTag(self::TAG_BLOCK_ENTITY_TAG);
+			$tag->removeTag(self::TAG_BASE);
 		}
+
+		if(count($this->patterns) > 0){
+			$patterns = new ListTag();
+			$colorIdMap = DyeColorIdMap::getInstance();
+			$patternIdMap = BannerPatternTypeIdMap::getInstance();
+			foreach($this->patterns as $pattern){
+				$patterns->push(CompoundTag::create()
+					->setString(self::TAG_PATTERN_NAME, $patternIdMap->toId($pattern->getType()))
+					->setInt(self::TAG_PATTERN_COLOR, $colorIdMap->toInvertedId($pattern->getColor()))
+				);
+			}
+			$tag->setTag(self::TAG_PATTERNS, $patterns);
+		}else{
+			$tag->removeTag(self::TAG_PATTERNS);
+		}
+
+		$tag->removeTag(self::TAG_BLOCK_ENTITY_TAG);
 	}
 }
