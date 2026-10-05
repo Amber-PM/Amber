@@ -198,7 +198,7 @@ class BoatEntityTest extends TestCase{
 	public function testNbtLoadedBambooRaftDimensions() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
-		$world->method("getServer")->willReturn($this->createMock(\pocketmine\Server::class));
+		$world->method("getServer")->willReturn((new ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor());
 		$world->method("addEntity")->willReturnCallback(function(){});
 
 		$location = new Location(0.0, 10.0, 0.0, $world, 0.0, 0.0);

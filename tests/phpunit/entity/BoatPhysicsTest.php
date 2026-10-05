@@ -26,14 +26,18 @@ namespace pocketmine\tests\entity;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\AttributeMap;
+use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\entity\object\Boat;
+use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\BoatType;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
+use pocketmine\player\Player;
 use pocketmine\world\World;
 use ReflectionClass;
 use ReflectionMethod;
@@ -59,9 +63,15 @@ class BoatPhysicsTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "motion"))->setValue($boat, clone $initialMotion);
 		(new ReflectionProperty(Entity::class, "lastMotion"))->setValue($boat, clone $initialMotion);
 		(new ReflectionProperty(Entity::class, "justCreated"))->setValue($boat, false);
+		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($boat, []);
 		(new ReflectionProperty(Entity::class, "gravityEnabled"))->setValue($boat, true);
 		(new ReflectionProperty(Entity::class, "drag"))->setValue($boat, 0.05);
 		(new ReflectionProperty(Entity::class, "gravity"))->setValue($boat, 0.04);
+
+		$server = (new ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(\pocketmine\Server::class, "tickCounter"))->setValue($server, 100);
+		$world->method("getServer")->willReturn($server);
+		(new ReflectionProperty(Entity::class, "server"))->setValue($boat, $server);
 
 		(new ReflectionClass(Boat::class))->getMethod("initBoatProperties")->invoke($boat);
 
@@ -199,5 +209,97 @@ class BoatPhysicsTest extends TestCase{
 		$props = $boat->getNetworkProperties()->getAll();
 		self::assertArrayHasKey(EntityMetadataProperties::PADDLE_TIME_LEFT, $props);
 		self::assertArrayHasKey(EntityMetadataProperties::PADDLE_TIME_RIGHT, $props);
+	}
+
+	private static int $playerId = 200;
+
+	private function createTestPlayer(World $world) : Player{
+		$player = $this->getMockBuilder(Player::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["isConnected", "teleport", "onDispose"])
+			->getMock();
+		$player->method("isConnected")->willReturn(false);
+		$player->method("teleport")->willReturn(true);
+
+		(new ReflectionProperty(Entity::class, "id"))->setValue($player, ++self::$playerId);
+		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($player, new EntityMetadataCollection());
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, false);
+		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
+		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($player, new ArmorInventory($player));
+		(new ReflectionProperty(Living::class, "effectManager"))->setValue($player, new EffectManager($player));
+		$loc = new Location(0.0, 10.0, 0.0, $world, 0.0, 0.0);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $loc);
+		(new ReflectionProperty(Entity::class, "lastLocation"))->setValue($player, clone $loc);
+		$zero = new Vector3(0.0, 0.0, 0.0);
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($player, $zero);
+		(new ReflectionProperty(Entity::class, "lastMotion"))->setValue($player, clone $zero);
+		(new ReflectionProperty(Entity::class, "justCreated"))->setValue($player, false);
+		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($player, []);
+		(new ReflectionProperty(Entity::class, "server"))->setValue($player, $world->getServer());
+
+		return $player;
+	}
+
+	public function testRiderInputAcceleratesBoat() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z){
+			if($y >= 10){
+				return VanillaBlocks::AIR();
+			}
+			return VanillaBlocks::WATER();
+		});
+
+		$boat = $this->createTestBoat($world, new Vector3(0.0, 0.0, 0.0), 10.0);
+		$player = $this->createTestPlayer($world);
+
+		$boat->addRider($player);
+		self::assertSame($boat, Boat::getVehicleOf($player));
+		self::assertSame($player, $boat->getDriver());
+
+		// Send forward input
+		Boat::setRiderInput($player, 0.0, 1.0, true, true, 0.0);
+
+		// Verify paddle time incremented
+		self::assertGreaterThan(0.0, $boat->getPaddleTime(0));
+		self::assertGreaterThan(0.0, $boat->getPaddleTime(1));
+
+		// Tick movement
+		$tryChangeMovement = new ReflectionMethod(Boat::class, "tryChangeMovement");
+		$tryChangeMovement->invoke($boat);
+
+		// With yaw 0.0 and forward 1.0, dx = 0, dz = 1.0, motion.z should increase by 0.1
+		self::assertGreaterThan(0.05, $boat->getMotion()->z);
+
+		// Clean up vehicle
+		$boat->removeRider($player);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		self::assertNull(Boat::getVehicleOf($player));
+	}
+
+	public function testRiderSteeringTurnsBoat() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z){
+			return VanillaBlocks::AIR();
+		});
+
+		$boat = $this->createTestBoat($world, new Vector3(0.0, 0.0, 0.0), 10.0);
+		$player = $this->createTestPlayer($world);
+
+		$boat->addRider($player);
+
+		// Left paddle only should turn yaw by +2.0
+		Boat::setRiderInput($player, 0.0, 0.0, true, false);
+		$initialYaw = $boat->getLocation()->yaw;
+
+		$tryChangeMovement = new ReflectionMethod(Boat::class, "tryChangeMovement");
+		$tryChangeMovement->invoke($boat);
+
+		self::assertEqualsWithDelta(fmod($initialYaw + 2.0, 360), $boat->getLocation()->yaw, 0.01);
+
+		// Clean up
+		$boat->removeRider($player);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
 	}
 }

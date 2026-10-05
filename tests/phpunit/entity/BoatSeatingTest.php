@@ -75,7 +75,7 @@ class BoatSeatingTest extends TestCase{
 
 	private static int $riderId = 200;
 
-	private function createTestRider() : Living{
+	private function createTestRider(?World $world = null) : Living{
 		$rider = (new ReflectionClass(TestRiderEntity::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "id"))->setValue($rider, ++self::$riderId);
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($rider, new EntityMetadataCollection());
@@ -84,8 +84,10 @@ class BoatSeatingTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($rider, new AxisAlignedBB(-0.3, 10.0, -0.3, 0.3, 11.8, 0.3));
 		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($rider, new \pocketmine\inventory\ArmorInventory($rider));
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($rider, new \pocketmine\entity\effect\EffectManager($rider));
-		$world = $this->createMock(World::class);
-		$world->method("isLoaded")->willReturn(true);
+		if($world === null){
+			$world = $this->createMock(World::class);
+			$world->method("isLoaded")->willReturn(true);
+		}
 		$loc = new Location(0.0, 10.0, 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($rider, $loc);
 		(new ReflectionProperty(Entity::class, "lastLocation"))->setValue($rider, clone $loc);
@@ -172,5 +174,56 @@ class BoatSeatingTest extends TestCase{
 		self::assertEmpty($boat->getRiders());
 		self::assertFalse($this->getGenericFlag($driver->getNetworkProperties(), EntityMetadataFlags::RIDING));
 		self::assertFalse($this->getGenericFlag($passenger->getNetworkProperties(), EntityMetadataFlags::RIDING));
+	}
+
+	public function testVehicleTracking() : void{
+		$boat = $this->createTestBoat();
+		$driver = $this->createTestRider();
+
+		self::assertNull(Boat::getVehicleOf($driver));
+		$boat->addRider($driver);
+		self::assertSame($boat, Boat::getVehicleOf($driver));
+		self::assertFalse($boat->canAddRider($driver));
+
+		$boat->removeRider($driver);
+		self::assertNull(Boat::getVehicleOf($driver));
+
+		$boat->addRider($driver);
+		self::assertSame($boat, Boat::getVehicleOf($driver));
+		$boat->ejectRiders();
+		self::assertNull(Boat::getVehicleOf($driver));
+	}
+
+	public function testUpdateRidersCarriesNonPlayerEntity() : void{
+		$boat = $this->createTestBoat();
+		$passenger = $this->createTestRider($boat->getWorld());
+
+		$boat->addRider($passenger);
+		self::assertSame($passenger, $boat->getDriver());
+
+		// Move boat to a new position
+		$newLoc = new Location(2.0, 10.0, 3.0, $boat->getWorld(), 0.0, 0.0);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($boat, $newLoc);
+
+		(new ReflectionClass(Boat::class))->getMethod("updateRiders")->invoke($boat);
+
+		// Non-player rider should be teleported near boat's new location + seat offset
+		$seat0Pos = $boat->getSeatPosition(0);
+		self::assertEqualsWithDelta(2.0 + $seat0Pos->x, $passenger->getLocation()->x, 0.1);
+		self::assertEqualsWithDelta(10.0 + $seat0Pos->y, $passenger->getLocation()->y, 0.1);
+		self::assertEqualsWithDelta(3.0 + $seat0Pos->z, $passenger->getLocation()->z, 0.1);
+	}
+
+	public function testUpdateRidersRemovesDeadOrClosedRiders() : void{
+		$boat = $this->createTestBoat();
+		$driver = $this->createTestRider($boat->getWorld());
+		$boat->addRider($driver);
+
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($driver, true);
+
+		(new ReflectionClass(Boat::class))->getMethod("updateRiders")->invoke($boat);
+
+		self::assertEmpty($boat->getRiders());
+		self::assertNull(Boat::getVehicleOf($driver));
 	}
 }
