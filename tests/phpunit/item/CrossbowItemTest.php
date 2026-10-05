@@ -89,7 +89,8 @@ final class CrossbowItemTest extends TestCase{
 	private function createMockPlayer(
 		bool $finiteResources = true,
 		int $itemUseDuration = 0,
-		?World $world = null
+		?World $world = null,
+		bool $isSpectator = false
 	) : Player{
 		if($world === null){
 			$worldMock = $this->createMock(World::class);
@@ -127,7 +128,7 @@ final class CrossbowItemTest extends TestCase{
 		$player->method("isCreative")->willReturn(!$finiteResources);
 		$player->method("getLocation")->willReturn(new Location(0.0, 64.0, 0.0, $world, 0.0, 0.0));
 		$player->method("getWorld")->willReturn($world);
-		$player->method("isSpectator")->willReturn(false);
+		$player->method("isSpectator")->willReturn($isSpectator);
 		$player->method("getEyePos")->willReturn(new Vector3(0.0, 65.6, 0.0));
 		$player->method("getDirectionVector")->willReturn(new Vector3(0.0, 0.0, 1.0));
 		$player->method("isConnected")->willReturn(false);
@@ -368,8 +369,7 @@ final class CrossbowItemTest extends TestCase{
 		$crossbow = new CrossbowRealArrowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
 		$crossbow->setChargedItem(VanillaItems::ARROW());
 
-		$player = $this->createMockPlayer();
-		$player->method("isSpectator")->willReturn(true);
+		$player = $this->createMockPlayer(isSpectator: true);
 		$returnedItems = [];
 		$result = $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems);
 
@@ -405,12 +405,12 @@ final class CrossbowItemTest extends TestCase{
 		$blockHitProp->setValue($center, new Vector3(0, 64, 0));
 		$blockHitProp->setValue($extraRight, new Vector3(0, 64, 0));
 
-		self::assertTrue($player->getInventory()->isEmpty());
+		self::assertEmpty($player->getInventory()->getContents());
 
 		// Attempt pickup on extra left arrow: should be denied in survival
 		$extraLeft->onCollideWithPlayer($player);
 		self::assertFalse($extraLeft->isFlaggedForDespawn());
-		self::assertTrue($player->getInventory()->isEmpty());
+		self::assertEmpty($player->getInventory()->getContents());
 
 		// Attempt pickup on center arrow: should succeed
 		$center->onCollideWithPlayer($player);
