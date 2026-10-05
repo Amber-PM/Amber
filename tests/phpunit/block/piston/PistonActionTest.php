@@ -25,13 +25,18 @@ namespace pocketmine\block\piston;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
+use pocketmine\block\Chest as ChestBlock;
 use pocketmine\block\Piston;
 use pocketmine\block\PistonHead;
 use pocketmine\block\StickyPiston;
+use pocketmine\block\tile\Chest as ChestTile;
+use pocketmine\block\tile\Tile;
 use pocketmine\block\Torch;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Entity;
+use pocketmine\item\Item;
 use pocketmine\item\StringToItemParser;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -55,19 +60,22 @@ final class PistonActionTest extends TestCase{
 
 	/**
 	 * @param Entity[] $entities
-	 * @return array{World, array<string, Block>}
+	 * @param array<string, Tile> $tiles
+	 * @param list<Item> $droppedItems
+	 * @return array{0: World, 1: array<string, Block>, 2: array<string, Tile>, 3: list<Item>}
 	 */
-	private function createTestWorld(array $entities = []) : array{
+	private function createTestWorld(array $entities = [], array &$tiles = [], array &$droppedItems = []) : array{
 		/** @var array<string, Block> $blocks */
 		$blocks = [];
 		$world = $this->getMockBuilder(World::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["getBlockAt", "setBlockAt", "getBlock", "setBlock", "isInWorld", "isChunkLoaded", "isLoaded", "useBreakOn", "addSound", "getNearbyEntities"])
+			->onlyMethods(["getBlockAt", "setBlockAt", "getBlock", "setBlock", "isInWorld", "isChunkLoaded", "isLoaded", "useBreakOn", "addSound", "getNearbyEntities", "getTile", "getTileAt", "addTile", "removeTile", "getDisplayName"])
 			->getMock();
 
 		$world->method("isInWorld")->willReturn(true);
 		$world->method("isChunkLoaded")->willReturn(true);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("getDisplayName")->willReturn("test_world");
 
 		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
 			$key = "$x:$y:$z";
@@ -85,25 +93,71 @@ final class PistonActionTest extends TestCase{
 			return $world->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		});
 
-		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block) use (&$blocks, $world) : bool{
+		$world->method("getTileAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$tiles) : ?Tile{
+			return $tiles["$x:$y:$z"] ?? null;
+		});
+
+		$world->method("getTile")->willReturnCallback(function(Vector3 $pos) use ($world) : ?Tile{
+			return $world->getTileAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		});
+
+		$world->method("addTile")->willReturnCallback(function(Tile $tile) use (&$tiles) : void{
+			$pos = $tile->getPosition();
+			$tiles[$pos->getFloorX() . ":" . $pos->getFloorY() . ":" . $pos->getFloorZ()] = $tile;
+		});
+
+		$world->method("removeTile")->willReturnCallback(function(Tile $tile) use (&$tiles) : void{
+			$pos = $tile->getPosition();
+			unset($tiles[$pos->getFloorX() . ":" . $pos->getFloorY() . ":" . $pos->getFloorZ()]);
+		});
+
+		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block) use (&$blocks, &$tiles, $world) : void{
 			$key = "$x:$y:$z";
 			$clone = clone $block;
 			$clone->position($world, $x, $y, $z);
 			$blocks[$key] = $clone;
-			return true;
+
+			$tileClass = $clone->getIdInfo()->getTileClass();
+			if(isset($tiles[$key])){
+				$oldTile = $tiles[$key];
+				if($tileClass === null || !($oldTile instanceof $tileClass)){
+					unset($tiles[$key]);
+					$oldTile->close();
+				}
+			}
+			if($tileClass !== null && !isset($tiles[$key])){
+				$newTile = new $tileClass($world, new Vector3($x, $y, $z));
+				$tiles[$key] = $newTile;
+			}
 		});
 
-		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $block) use (&$blocks, $world) : bool{
-			$key = $pos->getFloorX() . ":" . $pos->getFloorY() . ":" . $pos->getFloorZ();
-			$clone = clone $block;
-			$clone->position($world, $pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
-			$blocks[$key] = $clone;
-			return true;
+		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $block) use ($world) : void{
+			$world->setBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ(), $block);
 		});
 
-		$world->method("useBreakOn")->willReturnCallback(function(Vector3 $pos) use (&$blocks) : bool{
+		$world->method("useBreakOn")->willReturnCallback(function(Vector3 $pos) use (&$blocks, &$tiles, &$droppedItems) : bool{
 			$key = $pos->getFloorX() . ":" . $pos->getFloorY() . ":" . $pos->getFloorZ();
-			unset($blocks[$key]);
+			if(!isset($blocks[$key])){
+				return false;
+			}
+			$target = $blocks[$key];
+			$affected = $target->getAffectedBlocks();
+			foreach($affected as $affectedBlock){
+				$aPos = $affectedBlock->getPosition();
+				$aKey = $aPos->getFloorX() . ":" . $aPos->getFloorY() . ":" . $aPos->getFloorZ();
+				if(isset($blocks[$aKey])){
+					$b = $blocks[$aKey];
+					unset($blocks[$aKey]);
+					if(isset($tiles[$aKey])){
+						$t = $tiles[$aKey];
+						unset($tiles[$aKey]);
+						$t->onBlockDestroyed();
+					}
+					foreach($b->getDrops(VanillaItems::AIR()) as $drop){
+						$droppedItems[] = $drop;
+					}
+				}
+			}
 			return true;
 		});
 
@@ -119,7 +173,7 @@ final class PistonActionTest extends TestCase{
 			return $result;
 		});
 
-		return [$world, $blocks];
+		return [$world, $blocks, $tiles, $droppedItems];
 	}
 
 	private function setBlock(World $world, Vector3 $pos, Block $block) : void{
@@ -264,5 +318,259 @@ final class PistonActionTest extends TestCase{
 		self::assertInstanceOf(Piston::class, VanillaBlocks::PISTON());
 		self::assertInstanceOf(StickyPiston::class, VanillaBlocks::STICKY_PISTON());
 		self::assertInstanceOf(PistonHead::class, VanillaBlocks::PISTON_HEAD());
+	}
+
+	public function testPistonExtendPushChestPreservesInventory() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$pos = new Vector3(0, 64, 0);
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $piston);
+
+		$chestPos = new Vector3(0, 64, 1);
+		$chestBlock = VanillaBlocks::CHEST();
+		$this->setBlock($world, $chestPos, $chestBlock);
+
+		$chestTile = $world->getTile($chestPos);
+		self::assertInstanceOf(ChestTile::class, $chestTile);
+		$diamonds = VanillaItems::DIAMOND()->setCount(12);
+		$chestTile->getInventory()->setItem(0, $diamonds);
+
+		self::assertTrue($piston->extend());
+		self::assertTrue($piston->isExtended());
+
+		// (0, 64, 1) should now have PistonHead and no chest tile
+		$head = $world->getBlock($chestPos);
+		self::assertInstanceOf(PistonHead::class, $head);
+
+		// (0, 64, 2) should now have Chest with the 12 diamonds preserved
+		$destPos = new Vector3(0, 64, 2);
+		$destBlock = $world->getBlock($destPos);
+		self::assertInstanceOf(ChestBlock::class, $destBlock);
+		$destTile = $world->getTile($destPos);
+		self::assertInstanceOf(ChestTile::class, $destTile);
+		$item = $destTile->getInventory()->getItem(0);
+		self::assertTrue($item->equalsExact($diamonds));
+		self::assertSame(12, $item->getCount());
+	}
+
+	public function testStickyPistonRetractPullChestPreservesInventory() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$pos = new Vector3(0, 64, 0);
+		$sticky = VanillaBlocks::STICKY_PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $sticky);
+
+		$chestPos = new Vector3(0, 64, 1);
+		$chestBlock = VanillaBlocks::CHEST();
+		$this->setBlock($world, $chestPos, $chestBlock);
+
+		$chestTile = $world->getTile($chestPos);
+		self::assertInstanceOf(ChestTile::class, $chestTile);
+		$diamonds = VanillaItems::DIAMOND()->setCount(12);
+		$chestTile->getInventory()->setItem(0, $diamonds);
+
+		// Extend sticky piston, pushing chest to (0, 64, 2)
+		self::assertTrue($sticky->extend());
+		self::assertTrue($sticky->isExtended());
+
+		$destPos = new Vector3(0, 64, 2);
+		$destTile = $world->getTile($destPos);
+		self::assertInstanceOf(ChestTile::class, $destTile);
+		self::assertTrue($destTile->getInventory()->getItem(0)->equalsExact($diamonds));
+
+		// Retract sticky piston, pulling chest back to (0, 64, 1)
+		self::assertTrue($sticky->retract());
+		self::assertFalse($sticky->isExtended());
+
+		$pulledBlock = $world->getBlock($chestPos);
+		self::assertInstanceOf(ChestBlock::class, $pulledBlock);
+		$pulledTile = $world->getTile($chestPos);
+		self::assertInstanceOf(ChestTile::class, $pulledTile);
+		$item = $pulledTile->getInventory()->getItem(0);
+		self::assertTrue($item->equalsExact($diamonds));
+		self::assertSame(12, $item->getCount());
+
+		// (0, 64, 2) should now be AIR with no tile
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($destPos)->getTypeId());
+		self::assertNull($world->getTile($destPos));
+	}
+
+	public function testBreakExtendedPistonBaseRemovesHeadAndDropsPiston() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$basePos = new Vector3(0, 64, 0);
+		$headPos = new Vector3(0, 64, 1);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $basePos, $piston);
+		self::assertTrue($piston->extend());
+
+		self::assertInstanceOf(Piston::class, $world->getBlock($basePos));
+		self::assertInstanceOf(PistonHead::class, $world->getBlock($headPos));
+
+		// Break base
+		self::assertTrue($world->useBreakOn($basePos));
+
+		// Both base and head should now be AIR
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($basePos)->getTypeId());
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($headPos)->getTypeId());
+
+		// Exactly 1 piston dropped
+		self::assertCount(1, $droppedItems);
+		self::assertSame(VanillaBlocks::PISTON()->asItem()->getTypeId(), $droppedItems[0]->getTypeId());
+	}
+
+	public function testBreakExtendedPistonHeadRemovesBaseAndDropsPiston() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$basePos = new Vector3(0, 64, 0);
+		$headPos = new Vector3(0, 64, 1);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $basePos, $piston);
+		self::assertTrue($piston->extend());
+
+		self::assertInstanceOf(Piston::class, $world->getBlock($basePos));
+		self::assertInstanceOf(PistonHead::class, $world->getBlock($headPos));
+
+		// Break head
+		self::assertTrue($world->useBreakOn($headPos));
+
+		// Both base and head should now be AIR
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($basePos)->getTypeId());
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($headPos)->getTypeId());
+
+		// Exactly 1 piston dropped from the base
+		self::assertCount(1, $droppedItems);
+		self::assertSame(VanillaBlocks::PISTON()->asItem()->getTypeId(), $droppedItems[0]->getTypeId());
+	}
+
+	public function testOrphanedPistonHeadCleansUpWhenBaseDisappears() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$basePos = new Vector3(0, 64, 0);
+		$headPos = new Vector3(0, 64, 1);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $basePos, $piston);
+		self::assertTrue($piston->extend());
+
+		$head = $world->getBlock($headPos);
+		self::assertInstanceOf(PistonHead::class, $head);
+
+		// Directly replace base with AIR (simulating base destruction that bypassed useBreakOn)
+		$world->setBlock($basePos, VanillaBlocks::AIR());
+
+		// Head receives neighbor update
+		$head->onNearbyBlockChange();
+
+		// Head should have cleaned itself up
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($headPos)->getTypeId());
+	}
+
+	public function testOrphanedPistonBaseCleansUpWhenHeadDisappears() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$basePos = new Vector3(0, 64, 0);
+		$headPos = new Vector3(0, 64, 1);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $basePos, $piston);
+		self::assertTrue($piston->extend());
+
+		$base = $world->getBlock($basePos);
+		self::assertInstanceOf(Piston::class, $base);
+
+		// Directly replace head with AIR (simulating head removal bypassing useBreakOn)
+		$world->setBlock($headPos, VanillaBlocks::AIR());
+
+		// Base receives neighbor update
+		$base->onNearbyBlockChange();
+
+		// Base should have cleaned itself up
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock($basePos)->getTypeId());
+		self::assertCount(1, $droppedItems);
+		self::assertSame(VanillaBlocks::PISTON()->asItem()->getTypeId(), $droppedItems[0]->getTypeId());
+	}
+
+	public function testPushUnsupportedTileEntityRejected() : void{
+		[$world, $blocks] = $this->createTestWorld();
+		$pos = new Vector3(0, 64, 0);
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $piston);
+
+		$targetPos = new Vector3(0, 64, 1);
+		// Monster Spawner is an immovable tile entity
+		$this->setBlock($world, $targetPos, VanillaBlocks::MONSTER_SPAWNER());
+
+		self::assertFalse($piston->extend());
+		self::assertFalse($piston->isExtended());
+		// Target block remains unmodified
+		self::assertSame(VanillaBlocks::MONSTER_SPAWNER()->getTypeId(), $world->getBlock($targetPos)->getTypeId());
+	}
+
+	public function testPistonPushPairedChestsPreservesBothInventories() : void{
+		/** @var array<string, Tile> $tiles */
+		$tiles = [];
+		/** @var list<Item> $droppedItems */
+		$droppedItems = [];
+		[$world, $blocks] = $this->createTestWorld([], $tiles, $droppedItems);
+
+		$pos = new Vector3(0, 64, 0);
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $piston);
+
+		$chest1Pos = new Vector3(0, 64, 1);
+		$chest2Pos = new Vector3(0, 64, 2);
+		$this->setBlock($world, $chest1Pos, VanillaBlocks::CHEST());
+		$this->setBlock($world, $chest2Pos, VanillaBlocks::CHEST());
+
+		$tile1 = $world->getTile($chest1Pos);
+		$tile2 = $world->getTile($chest2Pos);
+		self::assertInstanceOf(ChestTile::class, $tile1);
+		self::assertInstanceOf(ChestTile::class, $tile2);
+
+		$diamonds = VanillaItems::DIAMOND()->setCount(12);
+		$emeralds = VanillaItems::EMERALD()->setCount(8);
+		$tile1->getInventory()->setItem(0, $diamonds);
+		$tile2->getInventory()->setItem(0, $emeralds);
+
+		self::assertTrue($piston->extend());
+		self::assertTrue($piston->isExtended());
+
+		// (0, 64, 2) now has Chest 1 with 12 diamonds
+		$newTile1 = $world->getTile(new Vector3(0, 64, 2));
+		self::assertInstanceOf(ChestTile::class, $newTile1);
+		self::assertTrue($newTile1->getInventory()->getItem(0)->equalsExact($diamonds));
+
+		// (0, 64, 3) now has Chest 2 with 8 emeralds
+		$newTile2 = $world->getTile(new Vector3(0, 64, 3));
+		self::assertInstanceOf(ChestTile::class, $newTile2);
+		self::assertTrue($newTile2->getInventory()->getItem(0)->equalsExact($emeralds));
 	}
 }

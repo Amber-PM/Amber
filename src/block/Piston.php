@@ -23,17 +23,23 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\piston\PistonMoveRules;
 use pocketmine\block\piston\PistonStructureCalculator;
+use pocketmine\block\tile\Chest;
+use pocketmine\block\tile\Spawnable;
+use pocketmine\block\tile\Tile;
+use pocketmine\block\tile\TileFactory;
 use pocketmine\block\utils\AnyFacing;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\RedstoneReceiver;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
-use pocketmine\block\VanillaBlocks;
-use pocketmine\math\AxisAlignedBB;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\PistonExtendSound;
@@ -126,6 +132,106 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 			->setSticky($this->isSticky());
 	}
 
+	/**
+	 * @return Block[]
+	 */
+	public function getAffectedBlocks() : array{
+		if($this->isExtended() && $this->position->isValid()){
+			$headPos = $this->position->getSide($this->facing);
+			$head = $this->position->getWorld()->getBlock($headPos);
+			if($head instanceof PistonHead && $head->getFacing() === $this->facing){
+				return [$this, $head];
+			}
+		}
+
+		return parent::getAffectedBlocks();
+	}
+
+	public function onNearbyBlockChange() : void{
+		if($this->extended && $this->position->isValid()){
+			$headPos = $this->position->getSide($this->facing);
+			$head = $this->position->getWorld()->getBlock($headPos);
+			if(!$head instanceof PistonHead || $head->getFacing() !== $this->facing){
+				$this->position->getWorld()->useBreakOn($this->position);
+			}
+		}
+	}
+
+	/**
+	 * @param Vector3[] $blocks
+	 */
+	protected function validateTilesSupport(World $world, array $blocks) : bool{
+		foreach($blocks as $pos){
+			$block = $world->getBlock($pos);
+			if($block->getIdInfo()->getTileClass() === null){
+				continue;
+			}
+			$tile = $world->getTile($pos);
+			if($tile !== null && !PistonMoveRules::isTileSupported($tile)){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * @param Vector3[] $blocksToMove
+	 * @return list<Vector3>
+	 */
+	protected function moveBlocks(World $world, array $blocksToMove, int $direction) : array{
+		/** @var array<string, CompoundTag> $tilePayloads */
+		$tilePayloads = [];
+
+		foreach($blocksToMove as $movePos){
+			$block = $world->getBlock($movePos);
+			if($block->getIdInfo()->getTileClass() === null){
+				continue;
+			}
+			$tile = $world->getTile($movePos);
+			if($tile !== null){
+				if($tile instanceof Chest && $tile->isPaired()){
+					$tile->unpair();
+				}
+				$posKey = $movePos->getFloorX() . ":" . $movePos->getFloorY() . ":" . $movePos->getFloorZ();
+				$tilePayloads[$posKey] = $tile->saveNBT();
+			}
+		}
+
+		$displacedPositions = [];
+		foreach($blocksToMove as $movePos){
+			$targetPos = $movePos->getSide($direction);
+			$block = $world->getBlock($movePos);
+			$posKey = $movePos->getFloorX() . ":" . $movePos->getFloorY() . ":" . $movePos->getFloorZ();
+			$savedTileNbt = $tilePayloads[$posKey] ?? null;
+
+			$world->setBlock($movePos, VanillaBlocks::AIR(), false);
+			$world->setBlock($targetPos, $block, true);
+
+			if($savedTileNbt !== null){
+				$savedTileNbt->setInt(Tile::TAG_X, $targetPos->getFloorX());
+				$savedTileNbt->setInt(Tile::TAG_Y, $targetPos->getFloorY());
+				$savedTileNbt->setInt(Tile::TAG_Z, $targetPos->getFloorZ());
+
+				$newTile = $world->getTile($targetPos);
+				if($newTile !== null){
+					$newTile->readSaveData($savedTileNbt);
+					if($newTile instanceof Spawnable){
+						$newTile->clearSpawnCompoundCache();
+					}
+				}else{
+					$tile = TileFactory::getInstance()->createFromData($world, $savedTileNbt);
+					if($tile !== null){
+						$world->addTile($tile);
+					}
+				}
+			}
+
+			$displacedPositions[] = $targetPos;
+		}
+
+		return $displacedPositions;
+	}
+
 	public function extend() : bool{
 		$world = $this->position->getWorld();
 		$calculator = new PistonStructureCalculator($world, $this->position, $this->facing, true);
@@ -133,18 +239,16 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 			return false;
 		}
 
+		$blocksToMove = $calculator->getBlocksToMove();
+		if(!$this->validateTilesSupport($world, $blocksToMove)){
+			return false;
+		}
+
 		foreach($calculator->getBlocksToDestroy() as $destroyPos){
 			$world->useBreakOn($destroyPos);
 		}
 
-		$displacedPositions = [];
-		foreach($calculator->getBlocksToMove() as $movePos){
-			$targetPos = $movePos->getSide($this->facing);
-			$block = $world->getBlock($movePos);
-			$world->setBlock($movePos, VanillaBlocks::AIR(), false);
-			$world->setBlock($targetPos, $block, true);
-			$displacedPositions[] = $targetPos;
-		}
+		$displacedPositions = $this->moveBlocks($world, $blocksToMove, $this->facing);
 
 		$headPos = $this->position->getSide($this->facing);
 		$world->setBlock($headPos, $this->createPistonHead(), true);
@@ -164,6 +268,9 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 		$headPos = $this->position->getSide($this->facing);
 		$headBlock = $world->getBlock($headPos);
 
+		$this->extended = false;
+		$world->setBlock($this->position, $this, false);
+
 		if($headBlock instanceof PistonHead){
 			$world->setBlock($headPos, VanillaBlocks::AIR(), true);
 		}
@@ -171,20 +278,15 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 		if($this->isSticky()){
 			$calculator = new PistonStructureCalculator($world, $this->position, $this->facing, false);
 			if($calculator->calculate()){
-				$pullDir = Facing::opposite($this->facing);
-				$displacedPositions = [];
-				foreach($calculator->getBlocksToMove() as $movePos){
-					$targetPos = $movePos->getSide($pullDir);
-					$block = $world->getBlock($movePos);
-					$world->setBlock($movePos, VanillaBlocks::AIR(), false);
-					$world->setBlock($targetPos, $block, true);
-					$displacedPositions[] = $targetPos;
+				$blocksToMove = $calculator->getBlocksToMove();
+				if($this->validateTilesSupport($world, $blocksToMove)){
+					$pullDir = Facing::opposite($this->facing);
+					$displacedPositions = $this->moveBlocks($world, $blocksToMove, $pullDir);
+					$this->displaceEntities($world, $displacedPositions, $pullDir);
 				}
-				$this->displaceEntities($world, $displacedPositions, $pullDir);
 			}
 		}
 
-		$this->extended = false;
 		$world->setBlock($this->position, $this, true);
 		$world->addSound($this->position, new PistonRetractSound());
 

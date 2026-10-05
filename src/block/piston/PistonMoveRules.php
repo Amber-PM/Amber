@@ -27,8 +27,41 @@ use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\Flowable;
 use pocketmine\block\PistonHead;
+use pocketmine\block\ShulkerBox;
+use pocketmine\block\tile\EnchantTable;
+use pocketmine\block\tile\EnderChest;
+use pocketmine\block\tile\MonsterSpawner;
+use pocketmine\block\tile\Tile;
+use pocketmine\block\tile\TileFactory;
+use function get_class;
 
 final class PistonMoveRules{
+
+	/**
+	 * @phpstan-param class-string<Tile> $tileClass
+	 */
+	public static function isTileClassSupported(string $tileClass) : bool{
+		if(
+			$tileClass === MonsterSpawner::class ||
+			$tileClass === EnchantTable::class ||
+			$tileClass === EnderChest::class
+		){
+			return false;
+		}
+
+		return TileFactory::getInstance()->isRegistered($tileClass);
+	}
+
+	/**
+	 * Returns true if the tile entity is supported for movement by pistons.
+	 */
+	public static function isTileSupported(Tile $tile) : bool{
+		if($tile->isClosed()){
+			return false;
+		}
+
+		return self::isTileClassSupported(get_class($tile));
+	}
 
 	/**
 	 * Returns true if the block cannot be moved by pistons (neither pushed nor pulled).
@@ -58,6 +91,20 @@ final class PistonMoveRules{
 			return true;
 		}
 
+		$tileClass = $block->getIdInfo()->getTileClass();
+		if($tileClass !== null){
+			if(!self::isTileClassSupported($tileClass)){
+				return true;
+			}
+			$pos = $block->getPosition();
+			if($pos->isValid()){
+				$tile = $pos->getWorld()->getTile($pos);
+				if($tile !== null && !self::isTileSupported($tile)){
+					return true;
+				}
+			}
+		}
+
 		return false;
 	}
 
@@ -67,6 +114,10 @@ final class PistonMoveRules{
 	public static function isBreakableOnPush(Block $block) : bool{
 		if($block->canBeReplaced()){
 			return false;
+		}
+
+		if($block instanceof ShulkerBox){
+			return true;
 		}
 
 		return $block instanceof Flowable;

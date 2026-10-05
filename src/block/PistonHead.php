@@ -58,11 +58,37 @@ class PistonHead extends Transparent implements AnyFacing{
 		return $this;
 	}
 
+	public function getDrops(Item $item) : array{
+		return [];
+	}
+
 	public function getDropsForCompatibleTool(Item $item) : array{
 		return [];
 	}
 
 	public function isSolid() : bool{
 		return false;
+	}
+
+	public function getAffectedBlocks() : array{
+		if($this->position->isValid()){
+			$basePos = $this->position->getSide(Facing::opposite($this->facing));
+			$base = $this->position->getWorld()->getBlock($basePos);
+			if($base instanceof Piston && $base->getFacing() === $this->facing){
+				return [$this, $base];
+			}
+		}
+
+		return parent::getAffectedBlocks();
+	}
+
+	public function onNearbyBlockChange() : void{
+		if($this->position->isValid()){
+			$basePos = $this->position->getSide(Facing::opposite($this->facing));
+			$base = $this->position->getWorld()->getBlock($basePos);
+			if(!$base instanceof Piston || $base->getFacing() !== $this->facing){
+				$this->position->getWorld()->useBreakOn($this->position);
+			}
+		}
 	}
 }
