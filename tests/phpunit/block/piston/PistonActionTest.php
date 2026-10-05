@@ -40,6 +40,7 @@ use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\World;
 
 class TestPistonEntity extends Entity{
@@ -572,5 +573,68 @@ final class PistonActionTest extends TestCase{
 		$newTile2 = $world->getTile(new Vector3(0, 64, 3));
 		self::assertInstanceOf(ChestTile::class, $newTile2);
 		self::assertTrue($newTile2->getInventory()->getItem(0)->equalsExact($emeralds));
+	}
+
+	private function createTestRedstoneEngine(World $world) : RedstoneEngine{
+		$engine = (new \ReflectionClass(RedstoneEngine::class))->newInstanceWithoutConstructor();
+		(new \ReflectionProperty(RedstoneEngine::class, "world"))->setValue($engine, $world);
+		return $engine;
+	}
+
+	public function testReconstructedExtendedPistonRetractsWhenPowerRemoved() : void{
+		[$world, $blocks] = $this->createTestWorld();
+		$pos = new Vector3(0, 64, 0);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $piston);
+
+		// Extend piston
+		self::assertTrue($piston->extend());
+		self::assertTrue($piston->isExtended());
+		self::assertInstanceOf(PistonHead::class, $world->getBlock(new Vector3(0, 64, 1)));
+
+		// Simulate block reconstruction: fresh object with default false for powered and extended
+		$reconstructed = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$reconstructed->position($world, $pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		self::assertFalse($reconstructed->isPowered());
+
+		// Reconstructing dynamic state from world
+		$reconstructed->readStateFromWorld();
+		self::assertTrue($reconstructed->isExtended());
+
+		// Redstone engine with 0 received power (no power sources around)
+		$engine = $this->createTestRedstoneEngine($world);
+
+		// Trigger redstone update with power removed
+		$reconstructed->onRedstoneUpdate($engine);
+
+		// Piston should have retracted: head is removed from (0, 64, 1)
+		self::assertFalse($reconstructed->isExtended());
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
+	}
+
+	public function testReconstructedPistonWithoutReadStateRetractsOnRedstoneUpdate() : void{
+		[$world, $blocks] = $this->createTestWorld();
+		$pos = new Vector3(0, 64, 0);
+
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, $pos, $piston);
+
+		// Extend piston
+		self::assertTrue($piston->extend());
+		self::assertInstanceOf(PistonHead::class, $world->getBlock(new Vector3(0, 64, 1)));
+
+		// Fresh reconstructed instance where both powered and extended are false
+		$freshPiston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$freshPiston->position($world, $pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		self::assertFalse($freshPiston->isPowered());
+
+		$engine = $this->createTestRedstoneEngine($world);
+
+		// onRedstoneUpdate should detect actual extension state in the world and retract
+		$freshPiston->onRedstoneUpdate($engine);
+
+		self::assertFalse($freshPiston->isExtended());
+		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
 	}
 }

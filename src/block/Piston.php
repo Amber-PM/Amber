@@ -70,9 +70,7 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 	public function isExtended() : bool{
 		if($this->position->isValid()){
 			$headBlock = $this->position->getWorld()->getBlock($this->position->getSide($this->facing));
-			if($headBlock instanceof PistonHead && $headBlock->getFacing() === $this->facing){
-				return true;
-			}
+			return $headBlock instanceof PistonHead && $headBlock->getFacing() === $this->facing;
 		}
 		return $this->extended;
 	}
@@ -97,6 +95,19 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 		return false;
 	}
 
+	public function readStateFromWorld() : Block{
+		parent::readStateFromWorld();
+		if($this->position->isValid()){
+			$this->extended = $this->isExtended();
+			$engine = $this->position->getWorld()->getRedstoneEngine();
+			if($engine !== null){
+				$this->powered = $engine->getReceivedPower($this->position) > 0;
+			}
+		}
+
+		return $this;
+	}
+
 	public function place(BlockTransaction $tx, Item $item, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, ?Player $player = null) : bool{
 		if($player !== null){
 			$pitch = $player->getLocation()->pitch;
@@ -114,13 +125,15 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Redsto
 
 	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
 		$isPowered = $engine->getReceivedPower($this->position) > 0;
-		if($isPowered !== $this->powered){
+		$isExtended = $this->isExtended();
+		if($isPowered !== $this->powered || $isPowered !== $isExtended){
 			$this->powered = $isPowered;
-			if($isPowered && !$this->extended){
+			if($isPowered && !$isExtended){
 				$this->extend();
-			}elseif(!$isPowered && $this->extended){
+			}elseif(!$isPowered && $isExtended){
 				$this->retract();
 			}else{
+				$this->extended = $isExtended;
 				$engine->getWorld()->setBlock($this->position, $this);
 			}
 		}
