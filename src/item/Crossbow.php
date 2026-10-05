@@ -253,24 +253,26 @@ class Crossbow extends Tool implements Releasable{
 			}
 			$rocket = new FireworkRocketEntity($spawnLocation, 60, $explosions);
 			$rocket->setOwningEntity($player);
-			$rocket->setMotion($dir->multiply(1.6));
+			$rocket->setMotion($dir);
 			$rocket->setShotFromCrossbow(true);
-			$rocket->spawnToAll();
-			return true;
+			$projectile = $rocket;
+			$force = 1.6;
+		}else{
+			$arrow = $this->createArrow($spawnLocation, $player);
+			$arrow->setMotion($dir);
+
+			if($isExtra || !$player->hasFiniteResources()){
+				$arrow->setPickupMode(ArrowEntity::PICKUP_CREATIVE);
+			}
+
+			if(($pierceLevel = $this->getEnchantmentLevel(VanillaEnchantments::PIERCING())) > 0){
+				$arrow->setPierceLevel($pierceLevel);
+			}
+			$projectile = $arrow;
+			$force = 3.15;
 		}
 
-		$arrow = $this->createArrow($spawnLocation, $player);
-		$arrow->setMotion($dir);
-
-		if($isExtra || !$player->hasFiniteResources()){
-			$arrow->setPickupMode(ArrowEntity::PICKUP_CREATIVE);
-		}
-
-		if(($pierceLevel = $this->getEnchantmentLevel(VanillaEnchantments::PIERCING())) > 0){
-			$arrow->setPierceLevel($pierceLevel);
-		}
-
-		$ev = new EntityShootBowEvent($player, $this, $arrow, 3.15);
+		$ev = new EntityShootBowEvent($player, $this, $projectile, $force);
 		if($player->isSpectator()){
 			$ev->cancel();
 		}

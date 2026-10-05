@@ -30,7 +30,12 @@ use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\entity\object\FireworkRocket as FireworkRocketEntity;
 use pocketmine\entity\projectile\Arrow as ArrowEntity;
+use pocketmine\event\entity\EntityShootBowEvent;
+use pocketmine\event\EventPriority;
+use pocketmine\event\HandlerListManager;
+use pocketmine\event\RegisteredListener;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\enchantment\EnchantmentInstance;
@@ -38,6 +43,9 @@ use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\plugin\Plugin;
+use pocketmine\Server;
+use pocketmine\timings\TimingsHandler;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
 use pocketmine\world\World;
 use ReflectionClass;
@@ -140,6 +148,100 @@ final class CrossbowItemTest extends TestCase{
 		$crossbow = VanillaItems::CROSSBOW();
 		self::assertSame(465, $crossbow->getMaxDurability());
 		self::assertSame(300, $crossbow->getFuelTime());
+	}
+
+	private function createFireworkPlayer(array &$entities, bool $isSpectator = false) : Player{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($this->createMock(Server::class));
+		$world->method("addEntity")->willReturnCallback(function(Entity $entity) use (&$entities) : void{
+			$entities[] = $entity;
+		});
+		$player = $this->createMockPlayer(world: $world, isSpectator: $isSpectator);
+		(new ReflectionProperty(Entity::class, "id"))->setValue($player, 100);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, false);
+		return $player;
+	}
+
+	public function testFireworkShootEventCancellationPreservesCharge() : void{
+		$entities = [];
+		$player = $this->createFireworkPlayer($entities);
+		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::FIREWORK_ROCKET());
+		$calls = 0;
+		$list = HandlerListManager::global()->getListFor(EntityShootBowEvent::class);
+		$listener = new RegisteredListener(function(EntityShootBowEvent $event) use (&$calls, $player, $crossbow) : void{
+			++$calls;
+			self::assertSame($player, $event->getEntity());
+			self::assertSame($crossbow, $event->getBow());
+			self::assertInstanceOf(FireworkRocketEntity::class, $event->getProjectile());
+			$event->cancel();
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), true, new TimingsHandler("crossbow firework cancellation"));
+		$list->register($listener);
+		try{
+			$returnedItems = [];
+			$result = $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems);
+			self::assertSame(1, $calls);
+			self::assertSame(ItemUseResult::FAIL, $result);
+			self::assertTrue($crossbow->isCharged());
+			self::assertSame(0, $crossbow->getDamage());
+			self::assertCount(1, $entities);
+			self::assertTrue($entities[0]->isFlaggedForDespawn());
+		}finally{
+			$list->unregister($listener);
+			foreach($entities as $entity){
+				$entity->close();
+			}
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testFireworkShootEventCanChangeForce() : void{
+		$entities = [];
+		$player = $this->createFireworkPlayer($entities);
+		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::FIREWORK_ROCKET());
+		$list = HandlerListManager::global()->getListFor(EntityShootBowEvent::class);
+		$listener = new RegisteredListener(function(EntityShootBowEvent $event) : void{
+			self::assertSame(1.6, $event->getForce());
+			$event->setForce(2.0);
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), true, new TimingsHandler("crossbow firework force"));
+		$list->register($listener);
+		try{
+			$returnedItems = [];
+			$result = $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems);
+			self::assertSame(ItemUseResult::SUCCESS, $result);
+			self::assertFalse($crossbow->isCharged());
+			self::assertSame(1, $crossbow->getDamage());
+			self::assertCount(1, $entities);
+			self::assertInstanceOf(FireworkRocketEntity::class, $entities[0]);
+			self::assertEqualsWithDelta(2.0, $entities[0]->getMotion()->length(), 0.00001);
+			self::assertTrue($entities[0]->isShotFromCrossbow());
+			self::assertFalse($entities[0]->isFlaggedForDespawn());
+		}finally{
+			$list->unregister($listener);
+			foreach($entities as $entity){
+				$entity->close();
+			}
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testSpectatorFireworkShotPreservesCharge() : void{
+		$entities = [];
+		$player = $this->createFireworkPlayer($entities, isSpectator: true);
+		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::FIREWORK_ROCKET());
+		try{
+			$returnedItems = [];
+			self::assertSame(ItemUseResult::FAIL, $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems));
+			self::assertTrue($crossbow->isCharged());
+			self::assertSame(0, $crossbow->getDamage());
+			self::assertCount(1, $entities);
+			self::assertTrue($entities[0]->isFlaggedForDespawn());
+		}finally{
+			foreach($entities as $entity){
+				$entity->close();
+			}
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
 	}
 
 	public function testRegistryAndParser() : void{
