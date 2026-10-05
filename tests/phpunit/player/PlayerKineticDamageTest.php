@@ -21,12 +21,14 @@ use pocketmine\inventory\PlayerCraftingInventory;
 use pocketmine\inventory\PlayerCursorInventory;
 use pocketmine\inventory\PlayerEnderInventory;
 use pocketmine\inventory\PlayerInventory;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
+use pocketmine\player\GameMode;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use ReflectionClass;
@@ -34,7 +36,7 @@ use ReflectionProperty;
 
 class PlayerKineticDamageTest extends TestCase{
 
-	private function createTestPlayer() : Player{
+	private function createTestPlayer(?World $world = null) : Player{
 		$session = $this->getMockBuilder(NetworkSession::class)->disableOriginalConstructor()->getMock();
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
@@ -53,8 +55,12 @@ class PlayerKineticDamageTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "size"))->setValue($player, new EntitySizeInfo(1.8, 0.6, 1.62));
 		(new ReflectionProperty(Entity::class, "scale"))->setValue($player, 1.0);
 
-		$world = $this->createMock(World::class);
-		$world->method("isLoaded")->willReturn(true);
+		if($world === null){
+			$world = $this->createMock(World::class);
+			$world->method("isLoaded")->willReturn(true);
+			$world->method("isInLoadedTerrain")->willReturn(true);
+			$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		}
 		$location = new Location(0.0, 10.0, 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $location);
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(
@@ -74,6 +80,7 @@ class PlayerKineticDamageTest extends TestCase{
 		(new ReflectionProperty(Human::class, "hungerManager"))->setValue($player, new HungerManager($player));
 		(new ReflectionProperty(Human::class, "xpManager"))->setValue($player, new ExperienceManager($player));
 		(new ReflectionProperty(Entity::class, "onGround"))->setValue($player, false);
+		(new ReflectionProperty(Player::class, "gamemode"))->setValue($player, GameMode::SURVIVAL);
 
 		$player->method("getName")->willReturn("KineticTester");
 		$player->method("getUniqueId")->willReturn(Uuid::uuid4());
@@ -133,6 +140,106 @@ class PlayerKineticDamageTest extends TestCase{
 		self::assertFalse($damaged);
 		self::assertSame($initialHealth, $player->getHealth());
 		self::assertTrue($player->isGliding());
+
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+	}
+
+	public function testMovementIntoWallAppliesKineticDamage() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInLoadedTerrain")->willReturn(true);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		// Wall block from x=1.0 to 2.0
+		$wallBox = new AxisAlignedBB(1.0, 9.0, -1.0, 2.0, 12.0, 1.0);
+		$world->method("getBlockCollisionBoxes")->willReturn([$wallBox]);
+
+		$player = $this->createTestPlayer($world);
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		self::assertTrue($player->isGliding());
+
+		$initialHealth = $player->getHealth();
+
+		// High speed movement into wall: dx = 1.5 >= 0.75
+		$moveMethod = (new ReflectionClass(Player::class))->getMethod("move");
+		$moveMethod->invoke($player, 1.5, 0.0, 0.0);
+
+		// Kinetic damage: floor(1.5 * 10) = 15.0 damage applied and glide terminated
+		self::assertSame($initialHealth - 15.0, $player->getHealth());
+		self::assertFalse($player->isGliding());
+
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+	}
+
+	public function testMovementIntoWallBelowThresholdDealsNoDamage() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInLoadedTerrain")->willReturn(true);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		$wallBox = new AxisAlignedBB(1.0, 9.0, -1.0, 2.0, 12.0, 1.0);
+		$world->method("getBlockCollisionBoxes")->willReturn([$wallBox]);
+
+		$player = $this->createTestPlayer($world);
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		self::assertTrue($player->isGliding());
+
+		$initialHealth = $player->getHealth();
+
+		// Slow speed movement into wall: dx = 0.5 < 0.75
+		$moveMethod = (new ReflectionClass(Player::class))->getMethod("move");
+		$moveMethod->invoke($player, 0.5, 0.0, 0.0);
+
+		self::assertSame($initialHealth, $player->getHealth());
+		self::assertTrue($player->isGliding());
+
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+	}
+
+	public function testMovementInOpenAirDoesNotCauseKineticDamage() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInLoadedTerrain")->willReturn(true);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		$world->method("getBlockCollisionBoxes")->willReturn([]);
+
+		$player = $this->createTestPlayer($world);
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		self::assertTrue($player->isGliding());
+
+		$initialHealth = $player->getHealth();
+
+		// High speed movement in open air: dx = 1.5, no collision boxes
+		$moveMethod = (new ReflectionClass(Player::class))->getMethod("move");
+		$moveMethod->invoke($player, 1.5, 0.0, 0.0);
+
+		self::assertSame($initialHealth, $player->getHealth());
+		self::assertTrue($player->isGliding());
+
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+	}
+
+	public function testHandleMovementIntoWallTriggersKineticDamage() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInLoadedTerrain")->willReturn(true);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		$wallBox = new AxisAlignedBB(1.0, 9.0, -1.0, 2.0, 12.0, 1.0);
+		$world->method("getBlockCollisionBoxes")->willReturn([$wallBox]);
+
+		$player = $this->createTestPlayer($world);
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		self::assertTrue($player->isGliding());
+
+		$initialHealth = $player->getHealth();
+
+		// Client sends movement packet to (1.5, 10, 0)
+		$player->handleMovement(new Vector3(1.5, 10.0, 0.0));
+
+		self::assertSame($initialHealth - 15.0, $player->getHealth());
+		self::assertFalse($player->isGliding());
 
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
 	}

@@ -1352,6 +1352,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function checkGroundState(float $wantedX, float $wantedY, float $wantedZ, float $dx, float $dy, float $dz) : void{
+		$this->isCollidedVertically = $wantedY !== $dy;
+		$this->isCollidedHorizontally = ($wantedX !== $dx || $wantedZ !== $dz);
+
 		if(!$this->blockCollision){
 			$this->onGround = false;
 		}else{
@@ -1363,8 +1366,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			//the old and new positions (running down stairs necessitates this)
 			$bb = $bb->addCoord(-$dx, -$dy, -$dz);
 
-			$this->onGround = $this->isCollided = count($this->getWorld()->getCollisionBlocks($bb, true)) > 0;
+			$this->onGround = count($this->getWorld()->getCollisionBlocks($bb, true)) > 0;
 		}
+		$this->isCollided = ($this->isCollidedHorizontally || $this->isCollidedVertically || $this->onGround);
 	}
 
 	public function canBeMovedByCurrents() : bool{
@@ -1511,6 +1515,30 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->sendPosition($from, $from->yaw, $from->pitch, MovePlayerPacket::MODE_RESET);
 	}
 
+	protected function move(float $dx, float $dy, float $dz) : void{
+		$horizontalSpeed = sqrt($dx ** 2 + $dz ** 2);
+
+		parent::move($dx, $dy, $dz);
+
+		if($this->isGliding()){
+			$this->checkGlidingKineticDamage($horizontalSpeed, $this->isCollidedHorizontally);
+		}
+	}
+
+	protected function updateFallState(float $distanceThisTick, bool $onGround) : ?float{
+		if($this->isGliding()){
+			$this->resetFallDistance();
+			return null;
+		}
+
+		return parent::updateFallState($distanceThisTick, $onGround);
+	}
+
+	public function setGliding(bool $value = true) : void{
+		parent::setGliding($value);
+		$this->resetFallDistance();
+	}
+
 	protected int $glideFlightTicks = 0;
 
 	protected function calculateFallDamage(float $fallDistance) : float{
@@ -1521,18 +1549,21 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
 		if($this->isGliding()){
+			$this->resetFallDistance();
 			if(!$this->canGlide()){
 				$this->setGliding(false);
 			}else{
 				$this->glideFlightTicks += $tickDiff;
 				if($this->glideFlightTicks >= 20){
 					$this->glideFlightTicks = 0;
-					$chest = $this->armorInventory->getChestplate();
-					if($chest instanceof Elytra){
-						if($chest->applyDamage(1)){
-							$this->armorInventory->setChestplate($chest);
-							if($chest->isBroken()){
-								$this->setGliding(false);
+					if($this->hasFiniteResources()){
+						$chest = $this->armorInventory->getChestplate();
+						if($chest instanceof Elytra){
+							if($chest->applyDamage(1)){
+								$this->armorInventory->setChestplate($chest);
+								if($chest->isBroken()){
+									$this->setGliding(false);
+								}
 							}
 						}
 					}
