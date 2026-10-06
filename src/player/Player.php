@@ -1564,6 +1564,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->timings->startTiming();
 
 		if($this->spawned){
+			$this->checkItemCooldowns();
 			Timings::$playerMove->startTiming();
 			$this->processMostRecentMovements();
 			$this->motion = Vector3::zero(); //TODO: HACK! (Fixes player knockback being messed up)
