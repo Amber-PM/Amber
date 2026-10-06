@@ -38,8 +38,8 @@ use ReflectionClass;
 final class DispenserDropperBlockTest extends TestCase{
 
 	public function testBlockTypeIds() : void{
-		self::assertSame(10827, BlockTypeIds::DISPENSER);
-		self::assertSame(10828, BlockTypeIds::DROPPER);
+		self::assertSame(10828, BlockTypeIds::DISPENSER);
+		self::assertSame(10829, BlockTypeIds::DROPPER);
 	}
 
 	public function testVanillaBlocksAccessors() : void{

@@ -527,7 +527,7 @@ abstract class Living extends Entity{
 
 		$armor = $this->armorInventory->getContents();
 		foreach($armor as $slotId => $item){
-			if($item instanceof Armor){
+			if($item instanceof Armor && $item->takesDamageFromAttack()){
 				$oldItem = clone $item;
 				$this->damageItem($item, $durabilityRemoved);
 				if(!$item->equalsExact($oldItem)){

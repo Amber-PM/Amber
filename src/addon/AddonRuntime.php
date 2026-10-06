@@ -845,6 +845,7 @@ final class AddonRuntime extends PluginBase{
 			EntityDamageEvent::CAUSE_PROJECTILE => "projectile",
 			EntityDamageEvent::CAUSE_SUFFOCATION => "suffocation",
 			EntityDamageEvent::CAUSE_FALL => "fall",
+			EntityDamageEvent::CAUSE_FLY_INTO_WALL => "flyIntoWall",
 			EntityDamageEvent::CAUSE_FIRE => "fire",
 			EntityDamageEvent::CAUSE_FIRE_TICK => "fireTick",
 			EntityDamageEvent::CAUSE_LAVA => "lava",
