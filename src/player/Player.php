@@ -820,15 +820,21 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if($ticks > 0){
 			$this->usedItemsCooldown[$item->getCooldownTag() ?? $item->getStateId()] = $this->server->getTick() + $ticks;
 			$this->getNetworkSession()->onItemCooldownChanged($item, $ticks);
+			$this->updateBlockingState();
 		}
 	}
 
 	protected function checkItemCooldowns() : void{
 		$serverTick = $this->server->getTick();
+		$hadCooldown = false;
 		foreach($this->usedItemsCooldown as $itemId => $cooldownUntil){
 			if($cooldownUntil <= $serverTick){
 				unset($this->usedItemsCooldown[$itemId]);
+				$hadCooldown = true;
 			}
+		}
+		if($hadCooldown){
+			$this->updateBlockingState();
 		}
 	}
 
@@ -1753,6 +1759,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->timings->startTiming();
 
 		if($this->spawned){
+			$this->checkItemCooldowns();
 			Timings::$playerMove->startTiming();
 			$this->processMostRecentMovements();
 			$this->motion = Vector3::zero(); //TODO: HACK! (Fixes player knockback being messed up)

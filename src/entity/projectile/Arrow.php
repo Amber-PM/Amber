@@ -198,6 +198,9 @@ class Arrow extends Projectile{
 			$this->piercedEntityIds[$entityHit->getId()] = true;
 		}
 		parent::onHitEntity($entityHit, $hitResult);
+		if($this->hitBlocked){
+			return;
+		}
 		if($this->punchKnockback > 0){
 			$horizontalSpeed = sqrt($this->motion->x ** 2 + $this->motion->z ** 2);
 			if($horizontalSpeed > 0){
