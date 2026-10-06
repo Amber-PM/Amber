@@ -25,7 +25,7 @@ namespace pocketmine\item;
 
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\enchantment\ItemEnchantmentTags;
-use pocketmine\item\VanillaArmorMaterials as ArmorMaterials;
+use pocketmine\world\sound\ArmorEquipElytraSound;
 use function min;
 
 class Elytra extends Armor{
@@ -34,7 +34,7 @@ class Elytra extends Armor{
 		parent::__construct(
 			$identifier,
 			$name,
-			new ArmorTypeInfo(0, 432, ArmorInventory::SLOT_CHEST, material: ArmorMaterials::LEATHER()),
+			new ArmorTypeInfo(0, 432, ArmorInventory::SLOT_CHEST, material: new ArmorMaterial(0, new ArmorEquipElytraSound())),
 			[ItemEnchantmentTags::ELYTRA]
 		);
 	}
@@ -49,10 +49,17 @@ class Elytra extends Armor{
 			return false;
 		}
 
-		// In vanilla, Elytra stops at 1 durability remaining (damage = 431) and does not break or pop
 		$maxDamage = $this->getMaxDurability() - 1;
 		$this->damage = min($this->damage + $amount, $maxDamage);
 		return true;
+	}
+
+	protected function getUnbreakingDamageReduction(int $amount) : int{
+		return Durable::getUnbreakingDamageReduction($amount);
+	}
+
+	public function takesDamageFromAttack() : bool{
+		return false;
 	}
 
 	public function isBroken() : bool{

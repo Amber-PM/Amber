@@ -1,0 +1,310 @@
+{
+  "source": {
+    "serverVersion": "1.26.44.3",
+    "build": 49326048,
+    "commit": "93e8d22a83f100c68e6c3a3fb04b74549cc23e10",
+    "method": "Official Bedrock Dedicated Server Script API GameTest simulated Survival player; velocity is actual tick displacement on clear trajectory. Not a captured client wire packet."
+  },
+  "normal": [
+    {
+      "previousTick": 8588,
+      "previousVelocity": {
+        "x": 1.5047988891601562,
+        "y": -0.28604888916015625,
+        "z": 0.05608177185058594
+      },
+      "previousDirection": {
+        "x": 0.09326156973838806,
+        "y": 0.9951565265655518,
+        "z": 0.031077444553375244
+      },
+      "previousRotation": {
+        "x": -84.36077880859375,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8589,
+      "expectedMotion": {
+        "x": 1.4318370819091797,
+        "y": -0.16983795166015625,
+        "z": 0.08031368255615234
+      }
+    },
+    {
+      "previousTick": 8589,
+      "previousVelocity": {
+        "x": 1.4318370819091797,
+        "y": -0.16983795166015625,
+        "z": 0.08031368255615234
+      },
+      "previousDirection": {
+        "x": 0.07623036950826645,
+        "y": 0.9967666268348694,
+        "z": 0.02540215663611889
+      },
+      "previousRotation": {
+        "x": -85.39335632324219,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8590,
+      "expectedMotion": {
+        "x": 1.3622627258300781,
+        "y": -0.06499481201171875,
+        "z": 0.10038185119628906
+      }
+    },
+    {
+      "previousTick": 8590,
+      "previousVelocity": {
+        "x": 1.3622627258300781,
+        "y": -0.06499481201171875,
+        "z": 0.10038185119628906
+      },
+      "previousDirection": {
+        "x": 0.060445092618465424,
+        "y": 0.997968316078186,
+        "z": 0.020142048597335815
+      },
+      "previousRotation": {
+        "x": -86.34806823730469,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8591,
+      "expectedMotion": {
+        "x": 1.2960281372070312,
+        "y": 0.02919769287109375,
+        "z": 0.11684894561767578
+      }
+    },
+    {
+      "previousTick": 8591,
+      "previousVelocity": {
+        "x": 1.2960281372070312,
+        "y": 0.02919769287109375,
+        "z": 0.11684894561767578
+      },
+      "previousDirection": {
+        "x": 0.046187687665224075,
+        "y": 0.9988142251968384,
+        "z": 0.01539106946438551
+      },
+      "previousRotation": {
+        "x": -87.21482849121094,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8592,
+      "expectedMotion": {
+        "x": 1.2330436706542969,
+        "y": 0.1134033203125,
+        "z": 0.13019847869873047
+      }
+    },
+    {
+      "previousTick": 8592,
+      "previousVelocity": {
+        "x": 1.2330436706542969,
+        "y": 0.1134033203125,
+        "z": 0.13019847869873047
+      },
+      "previousDirection": {
+        "x": 0.03382863104343414,
+        "y": 0.9993640780448914,
+        "z": 0.011272675357758999
+      },
+      "previousRotation": {
+        "x": -87.95964050292969,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8593,
+      "expectedMotion": {
+        "x": 1.1732006072998047,
+        "y": 0.1882476806640625,
+        "z": 0.1408519744873047
+      }
+    },
+    {
+      "previousTick": 8593,
+      "previousVelocity": {
+        "x": 1.1732006072998047,
+        "y": 0.1882476806640625,
+        "z": 0.1408519744873047
+      },
+      "previousDirection": {
+        "x": 0.02510100230574608,
+        "y": 0.9996499419212341,
+        "z": 0.008364377543330193
+      },
+      "previousRotation": {
+        "x": -88.48664855957031,
+        "y": -71.56504821777344
+      },
+      "nextTick": 8594,
+      "expectedMotion": {
+        "x": 1.1163625717163086,
+        "y": 0.25429534912109375,
+        "z": 0.1491718292236328
+      }
+    }
+  ],
+  "wall": [
+    {
+      "tick": 8590,
+      "incomingMotionFromIdenticalClearControl": {
+        "x": 1.3622627258300781,
+        "y": -0.06499481201171875,
+        "z": 0.10038185119628906
+      },
+      "remainingMotionFromZeroingBlockedX": {
+        "x": 0,
+        "y": -0.06499481201171875,
+        "z": 0.10038185119628906
+      },
+      "wallAcceptedDisplacement": {
+        "x": 0.2633638381958008,
+        "y": -0.06499481201171875,
+        "z": 0.10038232803344727
+      },
+      "actualDamage": 9.655743598937988,
+      "damageComputed": 9.655743158294278
+    }
+  ],
+  "boost": [
+    {
+      "previousTick": 9529,
+      "previousVelocity": {
+        "x": 0,
+        "y": -0.008819580078125,
+        "z": 0.8423919677734375
+      },
+      "previousDirection": {
+        "x": 8.742277657347586e-08,
+        "y": 0,
+        "z": 1
+      },
+      "previousRotation": {
+        "x": 0,
+        "y": 0
+      },
+      "nextTick": 9530,
+      "expectedMotion": {
+        "x": 0,
+        "y": -0.0127105712890625,
+        "z": 1.2597675323486328
+      }
+    },
+    {
+      "previousTick": 9530,
+      "previousVelocity": {
+        "x": 0,
+        "y": -0.0127105712890625,
+        "z": 1.2597675323486328
+      },
+      "previousDirection": {
+        "x": 8.742277657347586e-08,
+        "y": 0,
+        "z": 1
+      },
+      "previousRotation": {
+        "x": 0,
+        "y": 0
+      },
+      "nextTick": 9531,
+      "expectedMotion": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0144195556640625,
+        "z": 1.4665412902832031
+      }
+    },
+    {
+      "previousTick": 9531,
+      "previousVelocity": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0144195556640625,
+        "z": 1.4665412902832031
+      },
+      "previousDirection": {
+        "x": 8.742277657347586e-08,
+        "y": 0,
+        "z": 1
+      },
+      "previousRotation": {
+        "x": 0,
+        "y": 0
+      },
+      "nextTick": 9532,
+      "expectedMotion": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0151824951171875,
+        "z": 1.5689716339111328
+      }
+    },
+    {
+      "previousTick": 9532,
+      "previousVelocity": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0151824951171875,
+        "z": 1.5689716339111328
+      },
+      "previousDirection": {
+        "x": 8.742277657347586e-08,
+        "y": 0,
+        "z": 1
+      },
+      "previousRotation": {
+        "x": 0,
+        "y": 0
+      },
+      "nextTick": 9533,
+      "expectedMotion": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0155181884765625,
+        "z": 1.6197090148925781
+      }
+    },
+    {
+      "previousTick": 9533,
+      "previousVelocity": {
+        "x": 2.384185791015625e-07,
+        "y": -0.0155181884765625,
+        "z": 1.6197090148925781
+      },
+      "previousDirection": {
+        "x": 8.742277657347586e-08,
+        "y": 0,
+        "z": 1
+      },
+      "previousRotation": {
+        "x": 0,
+        "y": 0
+      },
+      "nextTick": 9534,
+      "expectedMotion": {
+        "x": 2.384185791015625e-07,
+        "y": -0.015655517578125,
+        "z": 1.6448383331298828
+      }
+    }
+  ],
+  "rocketLifetimes": [
+    {
+      "tick": 9527,
+      "type": "minecraft:fireworks_rocket",
+      "end": 9553,
+      "duration": 26,
+      "id": "-51539607546"
+    },
+    {
+      "tick": 9572,
+      "type": "minecraft:fireworks_rocket",
+      "end": 9604,
+      "duration": 32,
+      "id": "-51539607545"
+    },
+    {
+      "tick": 9617,
+      "type": "minecraft:fireworks_rocket",
+      "end": 9666,
+      "duration": 49,
+      "id": "-51539607544"
+    }
+  ]
+}

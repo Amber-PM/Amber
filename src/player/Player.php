@@ -23,12 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\player;
 
+use pocketmine\addon\entity\AddonEntity;
 use pocketmine\block\BaseSign;
 use pocketmine\block\Bed;
 use pocketmine\block\BlockTypeTags;
 use pocketmine\block\RespawnAnchor;
 use pocketmine\block\UnknownBlock;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\block\Water;
 use pocketmine\camera\PlayerCamera;
 use pocketmine\command\CommandSender;
 use pocketmine\crafting\CraftingGrid;
@@ -42,10 +44,12 @@ use pocketmine\entity\Attribute;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Human;
+use pocketmine\entity\GlidePhysics;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\entity\NeverSavedWithChunkEntity;
 use pocketmine\entity\object\ItemEntity;
+use pocketmine\entity\object\FireworkRocket as FireworkEntity;
 use pocketmine\entity\projectile\Arrow;
 use pocketmine\entity\Skin;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
@@ -111,12 +115,16 @@ use pocketmine\item\Releasable;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Language;
 use pocketmine\lang\Translatable;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
+use pocketmine\network\mcpe\protocol\MovementEffectPacket;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\network\mcpe\protocol\types\MovementEffectType;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
@@ -144,7 +152,6 @@ use pocketmine\world\Position;
 use pocketmine\world\sound\EntityAttackNoDamageSound;
 use pocketmine\world\sound\EntityAttackSound;
 use pocketmine\world\sound\FireExtinguishSound;
-use pocketmine\world\sound\FireworkLaunchSound;
 use pocketmine\world\sound\ItemBreakSound;
 use pocketmine\world\sound\RespawnAnchorDepleteSound;
 use pocketmine\world\sound\Sound;
@@ -163,10 +170,12 @@ use function count;
 use function explode;
 use function floor;
 use function get_class;
+use function intdiv;
 use function max;
 use function mb_strlen;
 use function microtime;
 use function min;
+use function mt_rand;
 use function preg_match;
 use function spl_object_id;
 use function sqrt;
@@ -302,6 +311,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	protected bool $allowFlight = false;
 	protected bool $blockCollision = true;
 	protected bool $flying = false;
+	private ?Vector3 $lastGlideVelocity = null;
+	private ?int $lastGlideInputTick = null;
+	private int $lastPlayerInputTick = 0;
+	private bool $glideCollisionDamageHandled = false;
+	private bool $processingGlideInput = false;
+	private bool $movementInputAccepted = false;
+	private array $glideBoosts = [];
+	protected int $glideFlightTicks = 0;
 	protected bool $sneakPressed = false;
 
 	protected float $flightSpeedMultiplier = self::DEFAULT_FLIGHT_SPEED_MULTIPLIER;
@@ -1391,6 +1408,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		return $this->inAirTicks;
 	}
 
+	public function setLastPlayerInputTick(int $tick) : void{
+		$this->lastPlayerInputTick = max($this->lastPlayerInputTick, $tick);
+	}
+
 	/**
 	 * Attempts to move the player to the given coordinates. Unless you have some particularly specialized logic, you
 	 * probably want to use teleport() instead of this.
@@ -1402,16 +1423,60 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	public function handleMovement(Vector3 $newPos) : void{
 		Timings::$playerMove->startTiming();
 		try{
-			$this->actuallyHandleMovement($newPos);
+			if(!$this->processingGlideInput){
+				$this->glideCollisionDamageHandled = false;
+				$this->lastGlideVelocity = null;
+				$this->lastGlideInputTick = null;
+			}
+			$this->movementInputAccepted = $this->actuallyHandleMovement($newPos);
 		}finally{
 			Timings::$playerMove->stopTiming();
 		}
 	}
 
-	private function actuallyHandleMovement(Vector3 $newPos) : void{
+	public function handleMovementInput(Vector3 $newPos, int $inputTick, Vector3 $velocity) : void{
+		$previousBox = $this->lastGlideVelocity !== null ? clone $this->getBoundingBox() : null;
+		$previousOnGround = $this->onGround;
+		$this->movementInputAccepted = false;
+		$this->glideCollisionDamageHandled = false;
+		$this->processingGlideInput = true;
+		try{
+			$this->handleMovement($newPos);
+			if(!$this->movementInputAccepted){
+				$this->lastGlideVelocity = null;
+				$this->lastGlideInputTick = null;
+				return;
+			}
+			if($this->isGliding()){
+				if($this->lastGlideInputTick !== null && $inputTick <= $this->lastGlideInputTick){
+					$this->lastGlideVelocity = null;
+					$this->lastGlideInputTick = null;
+					return;
+				}
+				$previous = $this->lastGlideVelocity;
+				if($previous !== null && $previousBox !== null && $this->lastGlideInputTick === $inputTick - 1 && !$this->glideCollisionDamageHandled){
+					$predicted = GlidePhysics::calculateMotion($previous, $this->getDirectionVector(), count($this->glideBoosts) > 0);
+					$remaining = $this->getGlidingCollisionMotion($predicted, $previousBox, $previousOnGround);
+					$previousSpeed = sqrt($predicted->x ** 2 + $predicted->z ** 2);
+					$currentSpeed = sqrt($remaining->x ** 2 + $remaining->z ** 2);
+					$this->checkGlidingKineticDamage($previousSpeed - $currentSpeed);
+				}
+				$this->lastGlideVelocity = $velocity->lengthSquared() <= 225 ? clone $velocity : null;
+				$this->lastGlideInputTick = $inputTick;
+			}else{
+				$this->lastGlideVelocity = null;
+				$this->lastGlideInputTick = null;
+			}
+		}finally{
+			$this->processingGlideInput = false;
+			$this->movementInputAccepted = false;
+		}
+	}
+
+	private function actuallyHandleMovement(Vector3 $newPos) : bool{
 		$this->moveRateLimit--;
 		if($this->moveRateLimit < 0){
-			return;
+			return false;
 		}
 
 		$oldPos = $this->location;
@@ -1450,6 +1515,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if($revert){
 			$this->revertMovement($oldPos);
 		}
+		return !$revert;
 	}
 
 	/**
@@ -1511,18 +1577,71 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function revertMovement(Location $from) : void{
+		$this->lastGlideVelocity = null;
+		$this->lastGlideInputTick = null;
 		$this->setPosition($from);
 		$this->sendPosition($from, $from->yaw, $from->pitch, MovePlayerPacket::MODE_RESET);
 	}
 
 	protected function move(float $dx, float $dy, float $dz) : void{
 		$horizontalSpeed = sqrt($dx ** 2 + $dz ** 2);
+		$oldPos = $this->location->asVector3();
 
 		parent::move($dx, $dy, $dz);
 
-		if($this->isGliding()){
-			$this->checkGlidingKineticDamage($horizontalSpeed, $this->isCollidedHorizontally);
+		if($this->isGliding() && !$this->processingGlideInput){
+			$displacement = $this->location->subtractVector($oldPos);
+			$remainingX = abs($displacement->x - $dx) > 0.0001 ? 0.0 : $dx;
+			$remainingZ = abs($displacement->z - $dz) > 0.0001 ? 0.0 : $dz;
+			$remainingSpeed = sqrt($remainingX ** 2 + $remainingZ ** 2);
+			$this->glideCollisionDamageHandled = $this->checkGlidingKineticDamage($horizontalSpeed - $remainingSpeed, $this->isCollidedHorizontally);
 		}
+	}
+
+	private function getGlidingCollisionMotion(Vector3 $motion, AxisAlignedBB $previousBox, bool $previousOnGround) : Vector3{
+		if(!$this->blockCollision){
+			return $motion;
+		}
+		$sweepBox = clone $previousBox;
+		$sweepBoxes = $this->getWorld()->getBlockCollisionBoxes($sweepBox->addCoord($motion->x, $motion->y, $motion->z));
+		$sweepY = $motion->y;
+		foreach($sweepBoxes as $collisionBox){
+			$sweepY = $collisionBox->calculateYOffset($sweepBox, $sweepY);
+		}
+		$sweepBox->offset(0, $sweepY, 0);
+		$sweepX = $motion->x;
+		foreach($sweepBoxes as $collisionBox){
+			$sweepX = $collisionBox->calculateXOffset($sweepBox, $sweepX);
+		}
+		$sweepBox->offset($sweepX, 0, 0);
+		$sweepZ = $motion->z;
+		foreach($sweepBoxes as $collisionBox){
+			$sweepZ = $collisionBox->calculateZOffset($sweepBox, $sweepZ);
+		}
+		$stepHeight = $this->getStepHeight();
+		if($stepHeight > 0 && ($previousOnGround || ($sweepY !== $motion->y && $motion->y < 0)) && ($sweepX !== $motion->x || $sweepZ !== $motion->z)){
+			$stepBox = clone $previousBox;
+			$stepBoxes = $this->getWorld()->getBlockCollisionBoxes($stepBox->addCoord($motion->x, $stepHeight, $motion->z));
+			$stepY = $stepHeight;
+			foreach($stepBoxes as $collisionBox){
+				$stepY = $collisionBox->calculateYOffset($stepBox, $stepY);
+			}
+			$stepBox->offset(0, $stepY, 0);
+			$stepX = $motion->x;
+			foreach($stepBoxes as $collisionBox){
+				$stepX = $collisionBox->calculateXOffset($stepBox, $stepX);
+			}
+			$stepBox->offset($stepX, 0, 0);
+			$stepZ = $motion->z;
+			foreach($stepBoxes as $collisionBox){
+				$stepZ = $collisionBox->calculateZOffset($stepBox, $stepZ);
+			}
+			if($stepX ** 2 + $stepZ ** 2 > $sweepX ** 2 + $sweepZ ** 2){
+				$sweepX = $stepX;
+				$sweepZ = $stepZ;
+			}
+		}
+		return $motion->withComponents($sweepX !== $motion->x ? 0.0 : null, null, $sweepZ !== $motion->z ? 0.0 : null);
 	}
 
 	protected function updateFallState(float $distanceThisTick, bool $onGround) : ?float{
@@ -1535,11 +1654,18 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	public function setGliding(bool $value = true) : void{
+		if($value !== $this->isGliding()){
+			$this->lastGlideVelocity = null;
+			$this->lastGlideInputTick = null;
+			$this->glideFlightTicks = 0;
+			$this->resetFallDistance();
+		}
 		parent::setGliding($value);
-		$this->resetFallDistance();
+		if(!$value && count($this->glideBoosts) > 0){
+			$this->glideBoosts = [];
+			$this->sendGlideBoost(0);
+		}
 	}
-
-	protected int $glideFlightTicks = 0;
 
 	protected function calculateFallDamage(float $fallDistance) : float{
 		return ($this->flying || $this->isGliding()) ? 0.0 : parent::calculateFallDamage($fallDistance);
@@ -1555,11 +1681,12 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			}else{
 				$this->glideFlightTicks += $tickDiff;
 				if($this->glideFlightTicks >= 20){
-					$this->glideFlightTicks = 0;
+					$durabilityDamage = intdiv($this->glideFlightTicks, 20);
+					$this->glideFlightTicks %= 20;
 					if($this->hasFiniteResources()){
 						$chest = $this->armorInventory->getChestplate();
 						if($chest instanceof Elytra){
-							if($chest->applyDamage(1)){
+							if($chest->applyDamage($durabilityDamage)){
 								$this->armorInventory->setChestplate($chest);
 								if($chest->isBroken()){
 									$this->setGliding(false);
@@ -1630,6 +1757,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			}else{
 				$this->inAirTicks += $tickDiff;
 			}
+			$this->processingGlideInput = false;
 			Timings::$playerMove->stopTiming();
 
 			Timings::$entityBaseTick->startTiming();
@@ -2245,11 +2373,28 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 
-		return !$this->onGround &&
+		return $this->isAlive() && !$this->onGround &&
 			!$this->flying &&
-			!$this->isUnderwater() &&
+			!$this->isTouchingWater() &&
 			!$this->isSwimming() &&
-			!$this->isSleeping();
+			!$this->isSleeping() &&
+			AddonEntity::getVehicleOf($this) === null;
+	}
+
+	private function isTouchingWater() : bool{
+		$box = $this->getBoundingBox();
+		$world = $this->getWorld();
+		for($x = (int) floor($box->minX + 0.001); $x <= (int) floor($box->maxX - 0.001); ++$x){
+			for($y = (int) floor($box->minY + 0.001); $y <= (int) floor($box->maxY - 0.001); ++$y){
+				for($z = (int) floor($box->minZ + 0.001); $z <= (int) floor($box->maxZ - 0.001); ++$z){
+					$block = $world->getBlockAt($x, $y, $z);
+					if($block instanceof Water && $box->minY < $y + 1 - $block->getFluidHeightPercent() + 1 / 9){
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	public function toggleGlide(bool $glide) : bool{
@@ -2269,28 +2414,61 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	public function checkGlidingKineticDamage(float $horizontalSpeed, bool $horizontalCollision = true) : bool{
-		if($this->isGliding() && $horizontalCollision && $horizontalSpeed >= 0.75){
-			$damage = (float) floor($horizontalSpeed * 10.0);
+		$damage = $horizontalSpeed * 10.0 - 3.0;
+		if($this->isGliding() && $horizontalCollision && $damage > 0.0){
 			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FLY_INTO_WALL, $damage);
 			$this->attack($ev);
-			$this->setGliding(false);
 			return true;
 		}
 
 		return false;
 	}
 
-	public function boostGlideWithFirework(FireworkRocket $firework) : void{
-		$boostMultiplier = 1.5 * (1.0 + ($firework->getFlightTimeMultiplier() - 1) * 0.25);
-		$dir = $this->getDirectionVector();
-		$this->setMotion($this->getMotion()->add($dir->x * $boostMultiplier, $dir->y * $boostMultiplier, $dir->z * $boostMultiplier));
-		$this->broadcastSound(new FireworkLaunchSound());
+	public function boostGlideWithFirework(FireworkRocket $firework) : bool{
+		if(!$this->isGliding() || !$this->canGlide()){
+			return false;
+		}
+		$duration = ($firework->getFlightTimeMultiplier() + 1) * 10 + mt_rand(0, 12);
+		$rocket = new FireworkEntity(clone $this->location, $duration, $firework->getExplosions());
+		$rocket->attachTo($this);
+		$rocket->spawnToAll();
+		return true;
+	}
 
-		$explosions = $firework->getExplosions();
-		if(count($explosions) > 0){
-			$damage = (float) (count($explosions) * 2.0);
-			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_ENTITY_EXPLOSION, $damage);
-			$this->attack($ev);
+	public function addGlideBoost(FireworkEntity $rocket) : void{
+		$this->glideBoosts[$rocket->getId()] = $rocket;
+		$this->sendGlideBoost($this->getGlideBoostDuration());
+	}
+
+	public function removeGlideBoost(FireworkEntity $rocket) : void{
+		if(isset($this->glideBoosts[$rocket->getId()])){
+			unset($this->glideBoosts[$rocket->getId()]);
+			$this->sendGlideBoost($this->getGlideBoostDuration());
+		}
+	}
+
+	private function getGlideBoostDuration() : int{
+		$duration = 0;
+		foreach($this->glideBoosts as $rocket){
+			$duration = max($duration, $rocket->getRemainingFlightTimeTicks());
+		}
+		return $duration;
+	}
+
+	private function sendGlideBoost(int $duration) : void{
+		$session = $this->getNetworkSession();
+		if($session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_40){
+			$session->sendDataPacket(MovementEffectPacket::create($this->getId(), MovementEffectType::GLIDE_BOOST, $duration, $this->lastPlayerInputTick));
+		}
+	}
+
+	private function discardGlideBoosts() : void{
+		foreach($this->glideBoosts as $rocket){
+			$rocket->flagForDespawn();
+		}
+		if(count($this->glideBoosts) > 0){
+			$this->glideBoosts = [];
+			$this->sendGlideBoost(0);
 		}
 	}
 
@@ -2715,6 +2893,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
 		$this->cursorInventory->removeAllViewers();
 		$this->craftingGrid->removeAllViewers();
@@ -2790,6 +2969,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		$this->discardGlideBoosts();
+		$this->setGliding(false);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the
 		//main inventory and drops the rest on the ground.
 		$this->removeCurrentWindow();
@@ -2992,6 +3173,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 	public function teleport(Vector3 $pos, ?float $yaw = null, ?float $pitch = null) : bool{
 		if(parent::teleport($pos, $yaw, $pitch)){
+			$this->discardGlideBoosts();
+			$this->lastGlideVelocity = null;
+			$this->lastGlideInputTick = null;
 
 			$this->removeCurrentWindow();
 			$this->stopSleep();

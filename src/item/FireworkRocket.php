@@ -93,6 +93,10 @@ class FireworkRocket extends Item{
 	}
 
 	public function onInteractBlock(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, array &$returnedItems) : ItemUseResult{
+		if($player->isGliding()){
+			return $this->onClickAir($player, $player->getDirectionVector(), $returnedItems);
+		}
+
 		//TODO: this would be nicer if Vector3::getSide() accepted floats for distance
 		$position = $blockClicked->getPosition()->addVector($clickVector)->addVector(Vector3::zero()->getSide($face)->multiply(0.15));
 
@@ -113,8 +117,7 @@ class FireworkRocket extends Item{
 	}
 
 	public function onClickAir(Player $player, Vector3 $directionVector, array &$returnedItems) : ItemUseResult{
-		if($player->isGliding()){
-			$player->boostGlideWithFirework($this);
+		if($player->isGliding() && $player->boostGlideWithFirework($this)){
 			if($player->hasFiniteResources()){
 				$this->pop();
 			}

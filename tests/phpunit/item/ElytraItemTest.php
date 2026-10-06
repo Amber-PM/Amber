@@ -12,12 +12,22 @@ use pocketmine\world\format\io\GlobalItemDataHandlers;
 
 class ElytraItemTest extends TestCase{
 
+	public function testUnbreakingUsesDurableItemProbability() : void{
+		$elytra = VanillaItems::ELYTRA();
+		$elytra->addEnchantment(new \pocketmine\item\enchantment\EnchantmentInstance(\pocketmine\item\enchantment\VanillaEnchantments::UNBREAKING(), 3));
+		$reduction = (new \ReflectionClass(Elytra::class))->getMethod("getUnbreakingDamageReduction")->invoke($elytra, 10000);
+		self::assertGreaterThan(7000, $reduction);
+		self::assertLessThan(8000, $reduction);
+	}
+
 	public function testElytraProperties() : void{
 		$elytra = VanillaItems::ELYTRA();
 		self::assertInstanceOf(Elytra::class, $elytra);
 		self::assertSame(432, $elytra->getMaxDurability());
 		self::assertSame(ArmorInventory::SLOT_CHEST, $elytra->getArmorSlot());
 		self::assertSame(0, $elytra->getDefensePoints());
+		self::assertSame(0, $elytra->getEnchantability());
+		self::assertInstanceOf(\pocketmine\world\sound\ArmorEquipElytraSound::class, $elytra->getMaterial()->getEquipSound());
 		self::assertSame(1, $elytra->getMaxStackSize());
 		self::assertContains(ItemEnchantmentTags::ELYTRA, $elytra->getEnchantmentTags());
 		self::assertFalse($elytra->isBroken());

@@ -37,6 +37,7 @@ use pocketmine\item\FireworkRocketExplosion;
 use pocketmine\math\VoxelRayTrace;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
+use pocketmine\player\Player;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
@@ -45,6 +46,7 @@ use pocketmine\utils\Utils;
 use pocketmine\world\sound\FireworkCrackleSound;
 use pocketmine\world\sound\FireworkLaunchSound;
 use function count;
+use function max;
 use function sqrt;
 
 class FireworkRocket extends Entity implements Explosive, NeverSavedWithChunkEntity{
@@ -52,6 +54,33 @@ class FireworkRocket extends Entity implements Explosive, NeverSavedWithChunkEnt
 	public static function getNetworkTypeId() : string{ return EntityIds::FIREWORKS_ROCKET; }
 
 	protected int $maxFlightTimeTicks;
+	private bool $attachedToPlayer = false;
+
+	public function attachTo(Player $player) : void{
+		$this->detachBoost();
+		$this->setOwningEntity($player);
+		$this->attachedToPlayer = true;
+		$this->setPosition($player->getPosition());
+		$player->addGlideBoost($this);
+	}
+
+	public function getRemainingFlightTimeTicks() : int{
+		return max(0, $this->maxFlightTimeTicks - $this->ticksLived);
+	}
+
+	private function detachBoost() : void{
+		if($this->attachedToPlayer){
+			$owner = $this->getOwningEntity();
+			if($owner instanceof Player && !$owner->isClosed()){
+				$owner->removeGlideBoost($this);
+			}
+		}
+	}
+
+	protected function onDispose() : void{
+		$this->detachBoost();
+		parent::onDispose();
+	}
 
 	/** @var FireworkRocketExplosion[] */
 	protected array $explosions = [];
@@ -120,23 +149,34 @@ class FireworkRocket extends Entity implements Explosive, NeverSavedWithChunkEnt
 	}
 
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		if($this->attachedToPlayer){
+			$owner = $this->getOwningEntity();
+			if(!$owner instanceof Player || $owner->isClosed() || !$owner->isAlive() || $owner->getWorld() !== $this->getWorld()){
+				$this->detachBoost();
+				$this->flagForDespawn();
+				return false;
+			}
+			$this->setPosition($owner->getPosition());
+			$this->updateMovement();
+		}
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
 		if(!$this->isFlaggedForDespawn()){
 			//Don't keep accelerating long-lived fireworks - this gets very rapidly out of control and makes the server
 			//die. Vanilla fireworks will only live for about 52 ticks maximum anyway, so this only makes sure plugin
 			//created fireworks don't murder the server
-			if($this->ticksLived < 60){
+			if(!$this->attachedToPlayer && $this->ticksLived < 60){
 				$this->addMotion($this->motion->x * 0.15, 0.04, $this->motion->z * 0.15);
 			}
 
 			if($this->ticksLived >= $this->maxFlightTimeTicks){
+				$this->detachBoost();
 				$this->flagForDespawn();
 				$this->explode();
 			}
 		}
 
-		return $hasUpdate;
+		return $hasUpdate || $this->attachedToPlayer;
 	}
 
 	public function explode() : void{
@@ -167,9 +207,11 @@ class FireworkRocket extends Entity implements Explosive, NeverSavedWithChunkEnt
 				$height = $entity->getBoundingBox()->getYLength();
 				for($i = 0; $i < 2; $i++){
 					$target = $position->add(0, 0.5 * $i * $height, 0);
-					foreach(VoxelRayTrace::betweenPoints($this->location, $target) as $blockPos){
-						if($world->getBlock($blockPos)->calculateIntercept($this->location, $target) !== null){
-							continue 2; //obstruction, try another path
+					if(!$target->equals($this->location)){
+						foreach(VoxelRayTrace::betweenPoints($this->location, $target) as $blockPos){
+							if($world->getBlock($blockPos)->calculateIntercept($this->location, $target) !== null){
+								continue 2;
+							}
 						}
 					}
 

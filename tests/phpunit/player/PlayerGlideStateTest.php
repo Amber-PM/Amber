@@ -6,6 +6,8 @@ namespace pocketmine\player;
 
 use Logger;
 use PHPUnit\Framework\TestCase;
+use pocketmine\addon\entity\AddonEntity;
+use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\Entity;
@@ -31,6 +33,154 @@ use ReflectionClass;
 use ReflectionProperty;
 
 class PlayerGlideStateTest extends TestCase{
+
+	public function testDisablingInactiveGlidePreservesNormalFallDamage() : void{
+		$player = $this->createTestPlayer();
+		$updateFallState = (new ReflectionClass(Player::class))->getMethod("updateFallState");
+		try{
+			$updateFallState->invoke($player, -8.0, false);
+			self::assertSame(8.0, $player->getFallDistance());
+			$player->setGliding(false);
+			self::assertSame(8.0, $player->getFallDistance());
+			$updateFallState->invoke($player, -1.0, true);
+			self::assertSame(14.0, $player->getHealth());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testGlideTransitionsClearFallDistance() : void{
+		$player = $this->createTestPlayer();
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		try{
+			$player->setFallDistance(8.0);
+			$player->setGliding(true);
+			self::assertSame(0.0, $player->getFallDistance());
+			$player->setFallDistance(8.0);
+			$player->setGliding(false);
+			self::assertSame(0.0, $player->getFallDistance());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	private function createVehicle(Player $player) : AddonEntity{
+		$definition = AddonEntityDefinition::fromJson(["minecraft:entity" => [
+			"description" => ["identifier" => "test:glide_mount"],
+			"components" => ["minecraft:health" => ["value" => 10, "max" => 10], "minecraft:rideable" => ["seat_count" => 1]],
+		]], "glide-mount.json", "test");
+		return new AddonEntity(clone $player->getLocation(), $definition);
+	}
+
+	public function testAirborneRiderCannotBeginGliding() : void{
+		$player = $this->createTestPlayer();
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$vehicle = $this->createVehicle($player);
+		try{
+			self::assertTrue($vehicle->addRider($player));
+			self::assertSame($vehicle, AddonEntity::getVehicleOf($player));
+			self::assertFalse($player->toggleGlide(true));
+			self::assertFalse($player->isGliding());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+			$vehicle->close();
+		}
+	}
+
+	public function testMountingStopsGlideAndRejectsRocketBoost() : void{
+		$player = $this->createTestPlayer();
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		$vehicle = $this->createVehicle($player);
+		try{
+			self::assertTrue($vehicle->addRider($player));
+			self::assertFalse($player->boostGlideWithFirework(VanillaItems::FIREWORK_ROCKET()));
+			(new ReflectionClass(Player::class))->getMethod("entityBaseTick")->invoke($player, 20);
+			self::assertFalse($player->isGliding());
+			self::assertSame(0, $player->getArmorInventory()->getChestplate()->getDamage());
+			self::assertSame($vehicle, AddonEntity::getVehicleOf($player));
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+			$vehicle->close();
+		}
+	}
+
+	public function testDeathResetsGlidingPose() : void{
+		$player = $this->createTestPlayer();
+		(new ReflectionProperty(Entity::class, "server"))->setValue($player, $this->createMock(\pocketmine\Server::class));
+		(new ReflectionProperty(Player::class, "displayName"))->setValue($player, "GlideTester");
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		try{
+			$player->kill();
+			self::assertFalse($player->isGliding());
+			self::assertGreaterThan(0.6, $player->getBoundingBox()->getYLength());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testCombatDoesNotWearElytraButWearsArmor() : void{
+		$player = $this->createTestPlayer();
+		try{
+			$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+			$player->attack(new \pocketmine\event\entity\EntityDamageEvent($player, \pocketmine\event\entity\EntityDamageEvent::CAUSE_ENTITY_ATTACK, 4));
+			self::assertSame(16.0, $player->getHealth());
+			self::assertSame(0, $player->getArmorInventory()->getChestplate()->getDamage());
+			$player->getArmorInventory()->setChestplate(VanillaItems::DIAMOND_CHESTPLATE());
+			$player->damageArmor(4);
+			self::assertSame(1, $player->getArmorInventory()->getChestplate()->getDamage());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testWaterAtFeetPreventsGlideEvenWithEyesAboveWater() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockAt")->willReturnCallback(fn(int $x, int $y, int $z) => $y === 10 ? \pocketmine\block\VanillaBlocks::WATER() : \pocketmine\block\VanillaBlocks::AIR());
+		$player = $this->createTestPlayer($world);
+		try{
+			$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+			self::assertFalse($player->isUnderwater());
+			self::assertFalse($player->toggleGlide(true));
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testDelayedFlightTickPreservesDurabilityIntervals() : void{
+		$player = $this->createTestPlayer();
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		$tick = (new ReflectionClass(Player::class))->getMethod("entityBaseTick");
+		try{
+			$tick->invoke($player, 45);
+			self::assertSame(2, $player->getArmorInventory()->getChestplate()->getDamage());
+			$tick->invoke($player, 15);
+			self::assertSame(3, $player->getArmorInventory()->getChestplate()->getDamage());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testSeparateFlightsDoNotShareDurabilityCounter() : void{
+		$player = $this->createTestPlayer();
+		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
+		$player->toggleGlide(true);
+		$tick = (new ReflectionClass(Player::class))->getMethod("entityBaseTick");
+		try{
+			$tick->invoke($player, 19);
+			$player->toggleGlide(false);
+			$player->toggleGlide(true);
+			$tick->invoke($player, 1);
+			self::assertSame(0, $player->getArmorInventory()->getChestplate()->getDamage());
+			$tick->invoke($player, 19);
+			self::assertSame(1, $player->getArmorInventory()->getChestplate()->getDamage());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
 
 	private function createTestPlayer(?World $world = null, ?Vector3 $pos = null) : Player{
 		$session = $this->getMockBuilder(NetworkSession::class)->disableOriginalConstructor()->getMock();

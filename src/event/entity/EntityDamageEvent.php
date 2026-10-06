@@ -159,6 +159,7 @@ class EntityDamageEvent extends EntityEvent implements Cancellable{
 			case self::CAUSE_DROWNING:
 			case self::CAUSE_STARVATION:
 			case self::CAUSE_FALL:
+			case self::CAUSE_FLY_INTO_WALL:
 			case self::CAUSE_VOID:
 			case self::CAUSE_MAGIC:
 			case self::CAUSE_SUICIDE:
