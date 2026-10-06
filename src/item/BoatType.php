@@ -31,11 +31,14 @@ use pocketmine\utils\LegacyEnumShimTrait;
  *  These are retained for backwards compatibility only.
  *
  * @method static BoatType ACACIA()
+ * @method static BoatType BAMBOO()
  * @method static BoatType BIRCH()
+ * @method static BoatType CHERRY()
  * @method static BoatType DARK_OAK()
  * @method static BoatType JUNGLE()
  * @method static BoatType MANGROVE()
  * @method static BoatType OAK()
+ * @method static BoatType PALE_OAK()
  * @method static BoatType SPRUCE()
  */
 enum BoatType{
@@ -48,6 +51,9 @@ enum BoatType{
 	case ACACIA;
 	case DARK_OAK;
 	case MANGROVE;
+	case BAMBOO;
+	case CHERRY;
+	case PALE_OAK;
 
 	public function getWoodType() : WoodType{
 		return match($this){
@@ -58,6 +64,28 @@ enum BoatType{
 			self::ACACIA => WoodType::ACACIA,
 			self::DARK_OAK => WoodType::DARK_OAK,
 			self::MANGROVE => WoodType::MANGROVE,
+			self::BAMBOO => WoodType::BAMBOO,
+			self::CHERRY => WoodType::CHERRY,
+			self::PALE_OAK => WoodType::PALE_OAK,
+		};
+	}
+
+	public function isRaft() : bool{
+		return $this === self::BAMBOO;
+	}
+
+	public function getVariantId() : int{
+		return match($this){
+			self::OAK => 0,
+			self::SPRUCE => 1,
+			self::BIRCH => 2,
+			self::JUNGLE => 3,
+			self::ACACIA => 4,
+			self::DARK_OAK => 5,
+			self::MANGROVE => 6,
+			self::BAMBOO => 7,
+			self::CHERRY => 8,
+			self::PALE_OAK => 9,
 		};
 	}
 

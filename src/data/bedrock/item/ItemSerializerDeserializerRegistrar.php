@@ -169,19 +169,23 @@ final class ItemSerializerDeserializerRegistrar{
 	 */
 	private function register1to1ItemMappings() : void{
 		$this->map1to1Item(Ids::ACACIA_BOAT, Items::ACACIA_BOAT());
+		$this->map1to1Item(Ids::ACACIA_CHEST_BOAT, Items::ACACIA_CHEST_BOAT());
 		$this->map1to1Item(Ids::ACACIA_HANGING_SIGN, Items::ACACIA_HANGING_SIGN());
 		$this->map1to1Item(Ids::ACACIA_SIGN, Items::ACACIA_SIGN());
 		$this->map1to1Item(Ids::AMETHYST_SHARD, Items::AMETHYST_SHARD());
 		$this->map1to1Item(Ids::APPLE, Items::APPLE());
 		$this->map1to1Item(Ids::ARMOR_STAND, Items::ARMOR_STAND());
 		$this->map1to1Item(Ids::BAKED_POTATO, Items::BAKED_POTATO());
+		$this->map1to1Item(Ids::BAMBOO_CHEST_RAFT, Items::BAMBOO_CHEST_RAFT());
 		$this->map1to1Item(Ids::BAMBOO_HANGING_SIGN, Items::BAMBOO_HANGING_SIGN());
+		$this->map1to1Item(Ids::BAMBOO_RAFT, Items::BAMBOO_RAFT());
 		$this->map1to1Item(Ids::BAMBOO_SIGN, Items::BAMBOO_SIGN());
 		$this->map1to1Item(Ids::BEEF, Items::RAW_BEEF());
 		$this->map1to1Item(Ids::BEETROOT, Items::BEETROOT());
 		$this->map1to1Item(Ids::BEETROOT_SEEDS, Items::BEETROOT_SEEDS());
 		$this->map1to1Item(Ids::BEETROOT_SOUP, Items::BEETROOT_SOUP());
 		$this->map1to1Item(Ids::BIRCH_BOAT, Items::BIRCH_BOAT());
+		$this->map1to1Item(Ids::BIRCH_CHEST_BOAT, Items::BIRCH_CHEST_BOAT());
 		$this->map1to1Item(Ids::BIRCH_HANGING_SIGN, Items::BIRCH_HANGING_SIGN());
 		$this->map1to1Item(Ids::BIRCH_SIGN, Items::BIRCH_SIGN());
 		$this->map1to1Item(Ids::BLAZE_POWDER, Items::BLAZE_POWDER());
@@ -202,6 +206,8 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::CHAINMAIL_HELMET, Items::CHAINMAIL_HELMET());
 		$this->map1to1Item(Ids::CHAINMAIL_LEGGINGS, Items::CHAINMAIL_LEGGINGS());
 		$this->map1to1Item(Ids::CHARCOAL, Items::CHARCOAL());
+		$this->map1to1Item(Ids::CHERRY_BOAT, Items::CHERRY_BOAT());
+		$this->map1to1Item(Ids::CHERRY_CHEST_BOAT, Items::CHERRY_CHEST_BOAT());
 		$this->map1to1Item(Ids::CHERRY_HANGING_SIGN, Items::CHERRY_HANGING_SIGN());
 		$this->map1to1Item(Ids::CHERRY_SIGN, Items::CHERRY_SIGN());
 		$this->map1to1Item(Ids::CHICKEN, Items::RAW_CHICKEN());
@@ -236,6 +242,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::CRIMSON_SIGN, Items::CRIMSON_SIGN());
 		$this->map1to1Item(Ids::CROSSBOW, Items::CROSSBOW());
 		$this->map1to1Item(Ids::DARK_OAK_BOAT, Items::DARK_OAK_BOAT());
+		$this->map1to1Item(Ids::DARK_OAK_CHEST_BOAT, Items::DARK_OAK_CHEST_BOAT());
 		$this->map1to1Item(Ids::DARK_OAK_HANGING_SIGN, Items::DARK_OAK_HANGING_SIGN());
 		$this->map1to1Item(Ids::DARK_OAK_SIGN, Items::DARK_OAK_SIGN());
 		$this->map1to1Item(Ids::DIAMOND, Items::DIAMOND());
@@ -308,6 +315,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::IRON_SHOVEL, Items::IRON_SHOVEL());
 		$this->map1to1Item(Ids::IRON_SWORD, Items::IRON_SWORD());
 		$this->map1to1Item(Ids::JUNGLE_BOAT, Items::JUNGLE_BOAT());
+		$this->map1to1Item(Ids::JUNGLE_CHEST_BOAT, Items::JUNGLE_CHEST_BOAT());
 		$this->map1to1Item(Ids::JUNGLE_HANGING_SIGN, Items::JUNGLE_HANGING_SIGN());
 		$this->map1to1Item(Ids::JUNGLE_SIGN, Items::JUNGLE_SIGN());
 		$this->map1to1Item(Ids::LAPIS_LAZULI, Items::LAPIS_LAZULI());
@@ -319,6 +327,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::LEATHER_LEGGINGS, Items::LEATHER_PANTS());
 		$this->map1to1Item(Ids::MAGMA_CREAM, Items::MAGMA_CREAM());
 		$this->map1to1Item(Ids::MANGROVE_BOAT, Items::MANGROVE_BOAT());
+		$this->map1to1Item(Ids::MANGROVE_CHEST_BOAT, Items::MANGROVE_CHEST_BOAT());
 		$this->map1to1Item(Ids::MANGROVE_HANGING_SIGN, Items::MANGROVE_HANGING_SIGN());
 		$this->map1to1Item(Ids::MANGROVE_SIGN, Items::MANGROVE_SIGN());
 		$this->map1to1Item(Ids::MELON_SEEDS, Items::MELON_SEEDS());
@@ -364,9 +373,12 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::NETHERITE_SWORD, Items::NETHERITE_SWORD());
 		$this->map1to1Item(Ids::NETHERITE_UPGRADE_SMITHING_TEMPLATE, Items::NETHERITE_UPGRADE_SMITHING_TEMPLATE());
 		$this->map1to1Item(Ids::OAK_BOAT, Items::OAK_BOAT());
+		$this->map1to1Item(Ids::OAK_CHEST_BOAT, Items::OAK_CHEST_BOAT());
 		$this->map1to1Item(Ids::OAK_HANGING_SIGN, Items::OAK_HANGING_SIGN());
 		$this->map1to1Item(Ids::OAK_SIGN, Items::OAK_SIGN());
 		$this->map1to1Item(Ids::PAINTING, Items::PAINTING());
+		$this->map1to1Item(Ids::PALE_OAK_BOAT, Items::PALE_OAK_BOAT());
+		$this->map1to1Item(Ids::PALE_OAK_CHEST_BOAT, Items::PALE_OAK_CHEST_BOAT());
 		$this->map1to1Item(Ids::PALE_OAK_HANGING_SIGN, Items::PALE_OAK_HANGING_SIGN());
 		$this->map1to1Item(Ids::PALE_OAK_SIGN, Items::PALE_OAK_SIGN());
 		$this->map1to1Item(Ids::PAPER, Items::PAPER());
@@ -410,6 +422,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::SPIDER_SPAWN_EGG, Items::SPIDER_SPAWN_EGG());
 		$this->map1to1Item(Ids::SPIRE_ARMOR_TRIM_SMITHING_TEMPLATE, Items::SPIRE_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$this->map1to1Item(Ids::SPRUCE_BOAT, Items::SPRUCE_BOAT());
+		$this->map1to1Item(Ids::SPRUCE_CHEST_BOAT, Items::SPRUCE_CHEST_BOAT());
 		$this->map1to1Item(Ids::SPRUCE_HANGING_SIGN, Items::SPRUCE_HANGING_SIGN());
 		$this->map1to1Item(Ids::SPRUCE_SIGN, Items::SPRUCE_SIGN());
 		$this->map1to1Item(Ids::SPYGLASS, Items::SPYGLASS());

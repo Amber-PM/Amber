@@ -1264,6 +1264,19 @@ final class StringToItemParser extends StringToTParser{
 	private static function registerItems(self $result) : void{
 
 		$result->register("acacia_boat", fn() => Items::ACACIA_BOAT());
+		$result->register("acacia_chest_boat", fn() => Items::ACACIA_CHEST_BOAT());
+		$result->register("bamboo_chest_raft", fn() => Items::BAMBOO_CHEST_RAFT());
+		$result->register("bamboo_raft", fn() => Items::BAMBOO_RAFT());
+		$result->register("birch_chest_boat", fn() => Items::BIRCH_CHEST_BOAT());
+		$result->register("cherry_boat", fn() => Items::CHERRY_BOAT());
+		$result->register("cherry_chest_boat", fn() => Items::CHERRY_CHEST_BOAT());
+		$result->register("dark_oak_chest_boat", fn() => Items::DARK_OAK_CHEST_BOAT());
+		$result->register("jungle_chest_boat", fn() => Items::JUNGLE_CHEST_BOAT());
+		$result->register("mangrove_chest_boat", fn() => Items::MANGROVE_CHEST_BOAT());
+		$result->register("oak_chest_boat", fn() => Items::OAK_CHEST_BOAT());
+		$result->register("pale_oak_boat", fn() => Items::PALE_OAK_BOAT());
+		$result->register("pale_oak_chest_boat", fn() => Items::PALE_OAK_CHEST_BOAT());
+		$result->register("spruce_chest_boat", fn() => Items::SPRUCE_CHEST_BOAT());
 		$result->register("acacia_hanging_sign", fn() => Items::ACACIA_HANGING_SIGN());
 		$result->register("amethyst_shard", fn() => Items::AMETHYST_SHARD());
 		$result->register("antidote", fn() => Items::MEDICINE()->setType(MedicineType::ANTIDOTE));

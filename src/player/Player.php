@@ -847,6 +847,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->usedChunks = [];
 				$this->loadQueue = [];
 				$this->getNetworkSession()->onEnterWorld();
+				if($oldWorld !== null){
+					\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+					AddonEntity::getVehicleOf($this)?->removeRider($this);
+				}
 			}
 
 			return true;
@@ -2346,6 +2350,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 		$this->setSneaking($sneak);
+		if($sneak){
+			\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+		}
 		return true;
 	}
 
@@ -2895,6 +2902,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
@@ -2972,6 +2980,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->setGliding(false);
