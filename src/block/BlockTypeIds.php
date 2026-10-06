@@ -854,6 +854,7 @@ final class BlockTypeIds{
 	public const BAMBOO_MOSAIC_STAIRS = 10824;
 	public const AZALEA = 10825;
 	public const FLOWERING_AZALEA = 10826;
+	public const END_PORTAL = 10827;
 
 	public const PISTON = 10830;
 	public const STICKY_PISTON = 10831;

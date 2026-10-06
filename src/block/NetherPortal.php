@@ -28,6 +28,7 @@ use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\entity\Entity;
 use pocketmine\item\Item;
 use pocketmine\math\Axis;
+use pocketmine\math\Facing;
 
 class NetherPortal extends Transparent{
 
@@ -73,8 +74,40 @@ class NetherPortal extends Transparent{
 		return [];
 	}
 
+	public function onNearbyBlockChange() : void{
+		if(!$this->isValid()){
+			$this->position->getWorld()->setBlock($this->position, VanillaBlocks::AIR());
+		}
+	}
+
+	public function isValid() : bool{
+		$checkNeighbor = function(int $facing) : bool{
+			$side = $this->getSide($facing);
+			if($side instanceof NetherPortal && $side->getAxis() === $this->axis){
+				return true;
+			}
+			return $side->getTypeId() === BlockTypeIds::OBSIDIAN;
+		};
+
+		if(!$checkNeighbor(Facing::UP) || !$checkNeighbor(Facing::DOWN)){
+			return false;
+		}
+
+		if($this->axis === Axis::X){
+			return $checkNeighbor(Facing::WEST) && $checkNeighbor(Facing::EAST);
+		}
+
+		return $checkNeighbor(Facing::NORTH) && $checkNeighbor(Facing::SOUTH);
+	}
+
+	public function hasEntityCollision() : bool{
+		return true;
+	}
+
 	public function onEntityInside(Entity $entity) : bool{
-		//TODO
+		if($entity instanceof \pocketmine\player\Player){
+			\pocketmine\world\portal\PortalTeleporter::handlePlayerInNetherPortal($entity);
+		}
 		return true;
 	}
 }
