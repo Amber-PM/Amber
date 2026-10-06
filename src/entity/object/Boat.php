@@ -36,16 +36,21 @@ use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\SetActorLinkPacket;
+use pocketmine\network\mcpe\protocol\types\entity\Attribute as NetworkAttribute;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityLink;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
+use pocketmine\network\mcpe\protocol\types\entity\PropertySyncData;
 use pocketmine\player\Player;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\sound\BlockBreakSound;
 use WeakMap;
 use function abs;
+use function array_keys;
+use function array_map;
 use function cos;
 use function count;
 use function deg2rad;
@@ -212,8 +217,8 @@ class Boat extends Entity{
 		if($this->getHealth() <= 0.0){
 			$this->destroyBoat(dropBoat: true);
 		}else{
-			$this->networkProperties->setByte(EntityMetadataProperties::HURT_TIME, 10);
-			$this->networkProperties->setByte(EntityMetadataProperties::HURT_DIRECTION, 1);
+			$this->networkProperties->setInt(EntityMetadataProperties::HURT_TIME, 10);
+			$this->networkProperties->setInt(EntityMetadataProperties::HURT_DIRECTION, 1);
 		}
 	}
 
@@ -292,7 +297,7 @@ class Boat extends Entity{
 	}
 
 	public function canAddRider(Entity $rider) : bool{
-		if($rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull() || self::getVehicleOf($rider) !== null){
+		if($this->isClosed() || $rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull() || self::getVehicleOf($rider) !== null || \pocketmine\addon\entity\AddonEntity::getVehicleOf($rider) !== null){
 			return false;
 		}
 		return true;
@@ -343,8 +348,8 @@ class Boat extends Entity{
 
 		$this->broadcastLink($rider, EntityLink::TYPE_REMOVE);
 
-		$world = $this->getWorld();
-		if($world->isLoaded() && !$rider->isClosed() && $rider->isAlive()){
+		$world = $this->location->isValid() ? $this->getWorld() : null;
+		if($world !== null && $world->isLoaded() && !$rider->isClosed() && $rider->isAlive() && $rider->getLocation()->isValid() && $rider->getWorld() === $world){
 			$yawRad = deg2rad($this->location->yaw + 90.0);
 			$dismountPos = $this->location->add(1.2 * cos($yawRad), 0.0, 1.2 * sin($yawRad));
 			$rider->teleport(Location::fromObject($dismountPos, $world, $rider->getLocation()->yaw, $rider->getLocation()->pitch));
@@ -386,6 +391,7 @@ class Boat extends Entity{
 	public function handleRiderInput(float $strafe, float $forward, bool $paddleLeft = false, bool $paddleRight = false, ?float $yaw = null) : void{
 		$this->riderInput = [$strafe, $forward, $paddleLeft, $paddleRight];
 		$this->riderInputTick = $this->server->getTick();
+		$this->scheduleUpdate();
 
 		if($yaw !== null){
 			$this->setRotation($yaw, 0.0);
@@ -397,6 +403,10 @@ class Boat extends Entity{
 		if($paddleRight){
 			$this->setPaddleTime(1, $this->paddleTimeRight + 0.1);
 		}
+	}
+
+	public function hasMovementUpdate() : bool{
+		return parent::hasMovementUpdate() || ($this->getDriver() instanceof Player && $this->riderInput !== null && $this->server->getTick() - $this->riderInputTick <= 5);
 	}
 
 	protected function steerByRider() : bool{
@@ -464,6 +474,31 @@ class Boat extends Entity{
 				$viewer->getNetworkSession()->sendDataPacket($packet);
 			}
 		}
+	}
+
+	protected function sendSpawnPacket(Player $player) : void{
+		$player->getNetworkSession()->sendDataPacket(AddActorPacket::create(
+			$this->getId(),
+			$this->getId(),
+			static::getNetworkTypeId(),
+			$this->getOffsetPosition($this->location->asVector3()),
+			$this->getMotion(),
+			$this->location->pitch,
+			$this->location->yaw,
+			$this->location->yaw,
+			$this->location->yaw,
+			array_map(function(Attribute $attr) : NetworkAttribute{
+				return new NetworkAttribute($attr->getId(), $attr->getMinValue(), $attr->getMaxValue(), $attr->getValue());
+			}, $this->attributeMap->getAll()),
+			$this->getAllNetworkData(),
+			new PropertySyncData([], []),
+			array_map(fn(int $seat) : EntityLink => new EntityLink($this->getId(), $this->riders[$seat]->getId(), $seat === 0 ? EntityLink::TYPE_RIDER : EntityLink::TYPE_PASSENGER, true, false, 0.0), array_keys($this->riders))
+		));
+	}
+
+	protected function onDispose() : void{
+		$this->ejectRiders();
+		parent::onDispose();
 	}
 
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{

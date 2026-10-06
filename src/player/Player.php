@@ -847,6 +847,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->usedChunks = [];
 				$this->loadQueue = [];
 				$this->getNetworkSession()->onEnterWorld();
+				if($oldWorld !== null){
+					\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+					AddonEntity::getVehicleOf($this)?->removeRider($this);
+				}
 			}
 
 			return true;

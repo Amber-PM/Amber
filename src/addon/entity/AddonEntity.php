@@ -1830,7 +1830,7 @@ class AddonEntity extends Living{
 	/** Whether the entity may ride this one: minecraft:rideable, a free seat, and its family allowed. */
 	public function canAddRider(Entity $rider) : bool{
 		$rideable = $this->components["minecraft:rideable"] ?? null;
-		if(!is_array($rideable) || $rider === $this || $rider->isClosed() || !$rider->isAlive() || self::getVehicleOf($rider) !== null || $rider->getWorld() !== $this->getWorld()){
+		if(!is_array($rideable) || $rider === $this || $rider->isClosed() || !$rider->isAlive() || self::getVehicleOf($rider) !== null || \pocketmine\entity\object\Boat::getVehicleOf($rider) !== null || $rider->getWorld() !== $this->getWorld()){
 			return false;
 		}
 		if(count($this->riders) >= count($this->seats())){
@@ -1872,11 +1872,13 @@ class AddonEntity extends Living{
 		$this->broadcastLink($rider, EntityLink::TYPE_REMOVE);
 		if(!$rider->isClosed()){
 			$this->applyRiderMetadata($rider, (int) $seat, false);
-			$exit = $this->location->add(0, $this->size->getHeight() + 0.1, 0);
-			if($rider instanceof Player){
-				$rider->teleport($exit);
-			}else{
-				$rider->teleport(Location::fromObject($exit, $this->getWorld(), $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+			if($this->location->isValid() && $rider->getLocation()->isValid() && $rider->getWorld() === $this->getWorld()){
+				$exit = $this->location->add(0, $this->size->getHeight() + 0.1, 0);
+				if($rider instanceof Player){
+					$rider->teleport($exit);
+				}else{
+					$rider->teleport(Location::fromObject($exit, $this->getWorld(), $rider->getLocation()->yaw, $rider->getLocation()->pitch));
+				}
 			}
 		}
 		$rideable = is_array($this->components["minecraft:rideable"] ?? null) ? $this->components["minecraft:rideable"] : [];

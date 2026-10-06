@@ -87,6 +87,11 @@ class ChestBoat extends Boat implements InventoryHolder{
 		parent::destroyBoat($dropBoat);
 	}
 
+	protected function onDispose() : void{
+		$this->inventory->removeAllViewers();
+		parent::onDispose();
+	}
+
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		if($player->isSneaking()){
 			if($this->isRider($player)){
