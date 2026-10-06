@@ -200,6 +200,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("dye", fn(IID $id) => new Dye($id, "Dye"));
 		self::register("echo_shard", fn(IID $id) => new Item($id, "Echo Shard"));
 		self::register("egg", fn(IID $id) => new Egg($id, "Egg"));
+		self::registerDelayed("elytra", fn(string $name) : Elytra => new Elytra(self::makeIID($name), "Elytra"));
 		self::register("emerald", fn(IID $id) => new Item($id, "Emerald"));
 		self::register("enchanted_book", fn(IID $id) => new EnchantedBook($id, "Enchanted Book", [EnchantmentTags::ALL]));
 		self::register("enchanted_golden_apple", fn(IID $id) => new GoldenAppleEnchanted($id, "Enchanted Golden Apple"));
