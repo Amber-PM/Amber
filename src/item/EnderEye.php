@@ -24,23 +24,28 @@ declare(strict_types=1);
 namespace pocketmine\item;
 
 use pocketmine\block\Block;
-use pocketmine\block\BlockTypeIds;
-use pocketmine\block\VanillaBlocks;
+use pocketmine\block\EndPortalFrame;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
-use pocketmine\world\sound\BlazeShootSound;
+use pocketmine\world\portal\EndPortalDetector;
+use pocketmine\world\sound\EndPortalFrameFillSound;
 
-class FireCharge extends Item{
+class EnderEye extends Item{
+
+	public function getMaxStackSize() : int{
+		return 64;
+	}
 
 	public function onInteractBlock(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, array &$returnedItems) : ItemUseResult{
-		if($blockReplace->getTypeId() === BlockTypeIds::AIR){
+		if($blockClicked instanceof EndPortalFrame && !$blockClicked->hasEye()){
+			$blockClicked->setEye(true);
 			$world = $player->getWorld();
-			$world->setBlock($blockReplace->getPosition(), VanillaBlocks::FIRE());
-			$world->addSound($blockReplace->getPosition()->add(0.5, 0.5, 0.5), new BlazeShootSound());
+			$world->setBlock($blockClicked->getPosition(), $blockClicked);
+			$world->addSound($blockClicked->getPosition()->add(0.5, 0.5, 0.5), new EndPortalFrameFillSound());
 
 			$this->pop();
 
-			\pocketmine\world\portal\NetherPortalDetector::tryActivate($world, $blockReplace->getPosition());
+			EndPortalDetector::tryActivate($world, $blockClicked->getPosition());
 
 			return ItemUseResult::SUCCESS;
 		}

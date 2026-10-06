@@ -340,6 +340,7 @@ final class VanillaBlockMappings{
 		$reg->mapSimple(Blocks::EMERALD(), Ids::EMERALD_BLOCK);
 		$reg->mapSimple(Blocks::EMERALD_ORE(), Ids::EMERALD_ORE);
 		$reg->mapSimple(Blocks::ENCHANTING_TABLE(), Ids::ENCHANTING_TABLE);
+		$reg->mapSimple(Blocks::END_PORTAL(), Ids::END_PORTAL);
 		$reg->mapSimple(Blocks::END_STONE(), Ids::END_STONE);
 		$reg->mapSimple(Blocks::END_STONE_BRICKS(), Ids::END_BRICKS);
 		$reg->mapSimple(Blocks::FERN(), Ids::FERN);

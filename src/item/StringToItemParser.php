@@ -659,6 +659,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("enchantment_table", fn() => Blocks::ENCHANTING_TABLE());
 		$result->registerBlock("end_brick_stairs", fn() => Blocks::END_STONE_BRICK_STAIRS());
 		$result->registerBlock("end_bricks", fn() => Blocks::END_STONE_BRICKS());
+		$result->registerBlock("end_portal", fn() => Blocks::END_PORTAL());
 		$result->registerBlock("end_portal_frame", fn() => Blocks::END_PORTAL_FRAME());
 		$result->registerBlock("end_rod", fn() => Blocks::END_ROD());
 		$result->registerBlock("end_stone", fn() => Blocks::END_STONE());
@@ -1407,7 +1408,9 @@ final class StringToItemParser extends StringToTParser{
 		$result->register("enchanted_golden_apple", fn() => Items::ENCHANTED_GOLDEN_APPLE());
 		$result->register("enchanting_bottle", fn() => Items::EXPERIENCE_BOTTLE());
 		$result->register("end_crystal", fn() => Items::END_CRYSTAL());
+		$result->register("ender_eye", fn() => Items::ENDER_EYE());
 		$result->register("ender_pearl", fn() => Items::ENDER_PEARL());
+		$result->register("eye_of_ender", fn() => Items::ENDER_EYE());
 		$result->register("experience_bottle", fn() => Items::EXPERIENCE_BOTTLE());
 		$result->register("eye_armor_trim_smithing_template", fn() => Items::EYE_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$result->register("eye_drops", fn() => Items::MEDICINE()->setType(MedicineType::EYE_DROPS));

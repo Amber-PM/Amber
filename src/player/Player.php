@@ -1781,6 +1781,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			if($this->isUsingItem() && $this->getItemUseDuration() % 4 === 0 && ($item = $this->inventory->getItemInHand()) instanceof ConsumableItem){
 				$this->broadcastAnimation(new ConsumingItemAnimation($this, $item));
 			}
+
+			\pocketmine\world\portal\PortalTeleporter::onPlayerUpdate($this);
 		}
 
 		$this->timings->stopTiming();
@@ -2893,6 +2895,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
 		$this->cursorInventory->removeAllViewers();
@@ -2969,6 +2972,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->setGliding(false);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the
