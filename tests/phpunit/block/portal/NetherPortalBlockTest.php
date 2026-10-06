@@ -121,7 +121,11 @@ final class NetherPortalBlockTest extends TestCase{
 	public function testEntityUpdatePathTriggersOnEntityInside() : void{
 		$world = $this->createMockWorld();
 		$portal = VanillaBlocks::NETHER_PORTAL();
-		$world->setBlockAt(0, 64, 0, $portal);
+		for($x = 0; $x <= 1; ++$x){
+			for($y = 64; $y <= 65; ++$y){
+				$world->setBlockAt($x, $y, 0, $portal, false);
+			}
+		}
 
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
@@ -134,7 +138,7 @@ final class NetherPortalBlockTest extends TestCase{
 
 		(new ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, new Location(0.5, 64.0, 0.5, $world, 0.0, 0.0));
-		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(0.2, 64.0, 0.2, 0.8, 65.8, 0.8));
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(0.7, 64.0, 0.2, 1.3, 65.8, 0.8));
 
 		$checkIntersections = new ReflectionMethod(Entity::class, "checkBlockIntersections");
 		$checkIntersections->invoke($player);

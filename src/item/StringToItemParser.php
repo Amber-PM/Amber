@@ -1381,6 +1381,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->register("copper_shovel", fn() => Items::COPPER_SHOVEL());
 		$result->register("copper_sword", fn() => Items::COPPER_SWORD());
 		$result->register("crimson_hanging_sign", fn() => Items::CRIMSON_HANGING_SIGN());
+		$result->register("crossbow", fn() => Items::CROSSBOW());
 		$result->register("dark_oak_boat", fn() => Items::DARK_OAK_BOAT());
 		$result->register("dark_oak_hanging_sign", fn() => Items::DARK_OAK_HANGING_SIGN());
 		$result->register("diamond", fn() => Items::DIAMOND());
@@ -1401,6 +1402,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->register("echo_shard", fn() => Items::ECHO_SHARD());
 		$result->register("egg", fn() => Items::EGG());
 		$result->register("elixir", fn() => Items::MEDICINE()->setType(MedicineType::ELIXIR));
+		$result->register("elytra", fn() => Items::ELYTRA());
 		$result->register("emerald", fn() => Items::EMERALD());
 		$result->register("enchanted_book", fn() => Items::ENCHANTED_BOOK());
 		$result->register("enchanted_golden_apple", fn() => Items::ENCHANTED_GOLDEN_APPLE());

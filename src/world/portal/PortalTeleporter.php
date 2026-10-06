@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\world\portal;
 
+use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Axis;
@@ -34,9 +35,9 @@ use pocketmine\world\sound\PortalTravelSound;
 use pocketmine\world\World;
 use function array_values;
 use function floor;
+use function in_array;
 use function max;
 use function min;
-use function str_contains;
 use function strtolower;
 
 final class PortalTeleporter{
@@ -53,6 +54,8 @@ final class PortalTeleporter{
 
 	/** @var \WeakMap<Player, bool>|null */
 	private static ?\WeakMap $inPortalThisTick = null;
+
+	private static ?\WeakMap $lastPortalTicks = null;
 
 	/** @var (\Closure(Player, int) : ?World)|null */
 	private static ?\Closure $destinationResolver = null;
@@ -76,6 +79,7 @@ final class PortalTeleporter{
 		/** @var \WeakMap<Player, bool> $inPortalThisTick */
 		$inPortalThisTick = new \WeakMap();
 		self::$inPortalThisTick ??= $inPortalThisTick;
+		self::$lastPortalTicks ??= new \WeakMap();
 	}
 
 	public static function scaleCoordinates(Vector3 $pos, int $sourceDimension, int $targetDimension) : Vector3{
@@ -101,6 +105,11 @@ final class PortalTeleporter{
 	}
 
 	public static function registerPortal(string $worldName, Vector3 $center) : void{
+		foreach(self::$registeredPortals[$worldName] ?? [] as $registered){
+			if($registered->equals($center)){
+				return;
+			}
+		}
 		self::$registeredPortals[$worldName][] = $center;
 	}
 
@@ -129,49 +138,64 @@ final class PortalTeleporter{
 	}
 
 	public static function findNearestPortal(World $world, Vector3 $targetPos, int $searchRadius = 128) : ?Vector3{
-		$worldName = $world->getDisplayName();
-		$nearest = null;
-		$minDistSq = (float) ($searchRadius * $searchRadius);
-
-		// 1. Check registered portals in memory
-		if(isset(self::$registeredPortals[$worldName])){
-			foreach(self::$registeredPortals[$worldName] as $center){
-				$dx = $center->x - $targetPos->x;
-				$dz = $center->z - $targetPos->z;
-				$distSq = $dx * $dx + $dz * $dz;
-				if($distSq <= $minDistSq){
-					$b = $world->getBlockAt($center->getFloorX(), $center->getFloorY(), $center->getFloorZ());
-					if($b->getTypeId() === BlockTypeIds::NETHER_PORTAL){
-						$minDistSq = $distSq;
-						$nearest = $center;
-					}
-				}
-			}
+		if($searchRadius < 0){
+			throw new \InvalidArgumentException("Search radius must not be negative");
 		}
-
-		if($nearest !== null){
-			return $nearest;
-		}
-
-		// 2. Fallback scan around targetPos (+- 4 blocks horizontal, 32..120 Y)
 		$tx = $targetPos->getFloorX();
 		$tz = $targetPos->getFloorZ();
-		$localRadius = min($searchRadius, 4);
-
-		for($x = $tx - $localRadius; $x <= $tx + $localRadius; ++$x){
-			for($z = $tz - $localRadius; $z <= $tz + $localRadius; ++$z){
-				for($y = max(World::Y_MIN, 32); $y <= min(World::Y_MAX, 120); ++$y){
-					$b = $world->getBlockAt($x, $y, $z);
-					if($b->getTypeId() === BlockTypeIds::NETHER_PORTAL){
-						$center = new Vector3($x + 0.5, $y, $z + 0.5);
-						self::registerPortal($worldName, $center);
-						return $center;
+		$nearest = null;
+		$minDistSq = INF;
+		for($chunkX = ($tx - $searchRadius) >> 4; $chunkX <= ($tx + $searchRadius) >> 4; ++$chunkX){
+			for($chunkZ = ($tz - $searchRadius) >> 4; $chunkZ <= ($tz + $searchRadius) >> 4; ++$chunkZ){
+				$chunk = $world->loadChunk($chunkX, $chunkZ);
+				if($chunk === null){
+					continue;
+				}
+				foreach($chunk->getSubChunks() as $subY => $subChunk){
+					$layers = $subChunk->getBlockLayers();
+					if($layers === []){
+						continue;
+					}
+					$portalStates = [];
+					foreach($layers[0]->getPalette() as $stateId){
+						if(($stateId >> Block::INTERNAL_STATE_DATA_BITS) === BlockTypeIds::NETHER_PORTAL){
+							$portalStates[$stateId] = true;
+						}
+					}
+					if($portalStates === []){
+						continue;
+					}
+					for($x = max(0, $tx - $searchRadius - ($chunkX << 4)); $x <= min(15, $tx + $searchRadius - ($chunkX << 4)); ++$x){
+						for($z = max(0, $tz - $searchRadius - ($chunkZ << 4)); $z <= min(15, $tz + $searchRadius - ($chunkZ << 4)); ++$z){
+							$worldX = ($chunkX << 4) + $x;
+							$worldZ = ($chunkZ << 4) + $z;
+							if(($worldX - $tx) ** 2 + ($worldZ - $tz) ** 2 > $searchRadius ** 2){
+								continue;
+							}
+							for($y = 0; $y < 16; ++$y){
+								$worldY = ($subY << 4) + $y;
+								if($worldY < $world->getMinY() || $worldY >= $world->getMaxY() || !isset($portalStates[$layers[0]->get($x, $y, $z)])){
+									continue;
+								}
+								if($worldY > $world->getMinY() && ($chunk->getBlockStateId($x, $worldY - 1, $z) >> Block::INTERNAL_STATE_DATA_BITS) === BlockTypeIds::NETHER_PORTAL){
+									continue;
+								}
+								$center = new Vector3($worldX + 0.5, $worldY, $worldZ + 0.5);
+								$distance = $center->distanceSquared($targetPos);
+								if($distance < $minDistSq){
+									$nearest = $center;
+									$minDistSq = $distance;
+								}
+							}
+						}
 					}
 				}
 			}
 		}
-
-		return null;
+		if($nearest !== null){
+			self::registerPortal($world->getDisplayName(), $nearest);
+		}
+		return $nearest;
 	}
 
 	public static function createNetherPortal(World $world, Vector3 $targetPos, int $axis = Axis::X) : Vector3{
@@ -291,10 +315,10 @@ final class PortalTeleporter{
 		}catch(\Error){
 			$folderName = $name;
 		}
-		if(str_contains($name, "nether") || str_contains($folderName, "nether") || str_contains($name, "hell") || str_contains($folderName, "hell")){
+		if(in_array($folderName, ["nether", "world_nether", "hell"], true) || in_array($name, ["nether", "world_nether", "hell"], true)){
 			return DimensionIds::NETHER;
 		}
-		if(str_contains($name, "end") || str_contains($folderName, "end")){
+		if(in_array($folderName, ["the_end", "end", "world_the_end", "world_end"], true) || in_array($name, ["the_end", "end", "world_the_end", "world_end"], true)){
 			return DimensionIds::THE_END;
 		}
 		return DimensionIds::OVERWORLD;
@@ -311,11 +335,14 @@ final class PortalTeleporter{
 		try{
 			$worldManager = $player->getServer()->getWorldManager();
 		}catch(\Throwable){
-			return $player->getWorld();
+			return null;
 		}
 
 		if($targetDimension === DimensionIds::OVERWORLD){
-			return $worldManager->getDefaultWorld() ?? $player->getWorld();
+			$defaultWorld = $worldManager->getDefaultWorld();
+			if($defaultWorld !== null && self::getDimensionId($defaultWorld) === DimensionIds::OVERWORLD){
+				return $defaultWorld;
+			}
 		}
 
 		$candidates = match($targetDimension){
@@ -341,7 +368,7 @@ final class PortalTeleporter{
 			}
 		}
 
-		return $worldManager->getDefaultWorld() ?? $player->getWorld();
+		return null;
 	}
 
 	public static function recordTeleport(Player $player, int $currentTick) : void{
@@ -383,6 +410,12 @@ final class PortalTeleporter{
 
 		if(!self::canTeleport($player, $currentTick)){
 			return false;
+		}
+		if(self::$lastPortalTicks !== null){
+			if((self::$lastPortalTicks[$player] ?? null) === $currentTick){
+				return false;
+			}
+			self::$lastPortalTicks[$player] = $currentTick;
 		}
 
 		$wait = 1;
@@ -437,6 +470,9 @@ final class PortalTeleporter{
 		self::init();
 		if(self::$portalWaitTicks !== null){
 			unset(self::$portalWaitTicks[$player]);
+		}
+		if(self::$lastPortalTicks !== null){
+			unset(self::$lastPortalTicks[$player]);
 		}
 	}
 

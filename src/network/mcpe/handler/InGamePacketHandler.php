@@ -182,7 +182,7 @@ class InGamePacketHandler extends PacketHandler{
 		$rawPos = $packet->getPosition();
 		$rawYaw = $packet->getYaw();
 		$rawPitch = $packet->getPitch();
-		foreach([$rawPos->x, $rawPos->y, $rawPos->z, $rawYaw, $packet->getHeadYaw(), $rawPitch] as $float){
+		foreach([$rawPos->x, $rawPos->y, $rawPos->z, $rawYaw, $packet->getHeadYaw(), $rawPitch, $packet->getDelta()->x, $packet->getDelta()->y, $packet->getDelta()->z] as $float){
 			if(is_infinite($float) || is_nan($float)){
 				$this->session->getLogger()->debug("Invalid movement received, contains NAN/INF components");
 				return false;
@@ -219,6 +219,7 @@ class InGamePacketHandler extends PacketHandler{
 		}
 
 		$inputFlags = $packet->getInputFlags();
+		$this->player->setLastPlayerInputTick($packet->getTick());
 		//steering an add-on mount (a no-op unless the player rides one)
 		\pocketmine\addon\entity\AddonEntity::setRiderInput($this->player, $packet->getMoveVecX(), $packet->getMoveVecZ(), $inputFlags->get(PlayerAuthInputFlags::JUMPING));
 		if($this->lastPlayerAuthInputFlags === null || !$inputFlags->equals($this->lastPlayerAuthInputFlags)){
@@ -252,10 +253,10 @@ class InGamePacketHandler extends PacketHandler{
 			$this->player->missSwing();
 		}
 
-		if(!$this->forceMoveSync && $hasMoved){
+		if(!$this->forceMoveSync && ($hasMoved || $this->player->isGliding())){
 			$this->lastPlayerAuthInputPosition = $rawPos;
 			//TODO: this packet has WAYYYYY more useful information that we're not using
-			$this->player->handleMovement($newPos);
+			$this->player->handleMovementInput($newPos, $packet->getTick(), $packet->getDelta());
 		}
 
 		$packetHandled = true;

@@ -102,6 +102,9 @@ final class EndPortalBlockTest extends TestCase{
 
 	public function testEntityUpdatePathTriggersOnEntityInside() : void{
 		$world = $this->createMockWorld();
+		$destination = $this->createMock(World::class);
+		$destination->method("isLoaded")->willReturn(true);
+		PortalTeleporter::setDestinationResolver(static fn(Player $player, int $dimension) : World => $destination);
 		$portal = VanillaBlocks::END_PORTAL();
 		$world->setBlockAt(0, 64, 0, $portal);
 
@@ -120,6 +123,7 @@ final class EndPortalBlockTest extends TestCase{
 
 		$checkIntersections = new ReflectionMethod(Entity::class, "checkBlockIntersections");
 		$checkIntersections->invoke($player);
+		PortalTeleporter::setDestinationResolver(null);
 
 		self::assertFalse(PortalTeleporter::canTeleport($player, 200));
 	}

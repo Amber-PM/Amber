@@ -144,6 +144,7 @@ final class VanillaItems{
 	private static CoralFan $_mCORAL_FAN;
 	private static HangingSign $_mCRIMSON_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mCRIMSON_SIGN;
+	private static Crossbow $_mCROSSBOW;
 	private static Boat $_mDARK_OAK_BOAT;
 	private static HangingSign $_mDARK_OAK_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mDARK_OAK_SIGN;
@@ -164,6 +165,7 @@ final class VanillaItems{
 	private static Dye $_mDYE;
 	private static Item $_mECHO_SHARD;
 	private static Egg $_mEGG;
+	private static Elytra $_mELYTRA;
 	private static Item $_mEMERALD;
 	private static EnchantedBook $_mENCHANTED_BOOK;
 	private static GoldenAppleEnchanted $_mENCHANTED_GOLDEN_APPLE;
@@ -508,6 +510,7 @@ final class VanillaItems{
 			"coral_fan" => fn(CoralFan $v) => self::$_mCORAL_FAN = $v,
 			"crimson_hanging_sign" => fn(HangingSign $v) => self::$_mCRIMSON_HANGING_SIGN = $v,
 			"crimson_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mCRIMSON_SIGN = $v,
+			"crossbow" => fn(Crossbow $v) => self::$_mCROSSBOW = $v,
 			"dark_oak_boat" => fn(Boat $v) => self::$_mDARK_OAK_BOAT = $v,
 			"dark_oak_hanging_sign" => fn(HangingSign $v) => self::$_mDARK_OAK_HANGING_SIGN = $v,
 			"dark_oak_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mDARK_OAK_SIGN = $v,
@@ -528,6 +531,7 @@ final class VanillaItems{
 			"dye" => fn(Dye $v) => self::$_mDYE = $v,
 			"echo_shard" => fn(Item $v) => self::$_mECHO_SHARD = $v,
 			"egg" => fn(Egg $v) => self::$_mEGG = $v,
+			"elytra" => fn(Elytra $v) => self::$_mELYTRA = $v,
 			"emerald" => fn(Item $v) => self::$_mEMERALD = $v,
 			"enchanted_book" => fn(EnchantedBook $v) => self::$_mENCHANTED_BOOK = $v,
 			"enchanted_golden_apple" => fn(GoldenAppleEnchanted $v) => self::$_mENCHANTED_GOLDEN_APPLE = $v,
@@ -1300,6 +1304,11 @@ final class VanillaItems{
 		return clone self::$_mCRIMSON_SIGN;
 	}
 
+	public static function CROSSBOW() : Crossbow{
+		if(!isset(self::$_mCROSSBOW)){ self::init(); }
+		return clone self::$_mCROSSBOW;
+	}
+
 	public static function DARK_OAK_BOAT() : Boat{
 		if(!isset(self::$_mDARK_OAK_BOAT)){ self::init(); }
 		return clone self::$_mDARK_OAK_BOAT;
@@ -1398,6 +1407,11 @@ final class VanillaItems{
 	public static function EGG() : Egg{
 		if(!isset(self::$_mEGG)){ self::init(); }
 		return clone self::$_mEGG;
+	}
+
+	public static function ELYTRA() : Elytra{
+		if(!isset(self::$_mELYTRA)){ self::init(); }
+		return clone self::$_mELYTRA;
 	}
 
 	public static function EMERALD() : Item{

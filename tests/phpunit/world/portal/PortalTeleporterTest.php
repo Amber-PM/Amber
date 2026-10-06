@@ -32,37 +32,54 @@ use pocketmine\math\Axis;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\player\Player;
+use pocketmine\Server;
+use pocketmine\world\format\Chunk;
 use pocketmine\world\sound\Sound;
 use pocketmine\world\World;
+use pocketmine\world\WorldManager;
 
 final class PortalTeleporterTest extends TestCase{
-
-	/** @var array<string, Block> */
-	private array $blocks = [];
 
 	protected function setUp() : void{
 		parent::setUp();
 		PortalTeleporter::clearRegisteredPortals();
+		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	protected function tearDown() : void{
+		PortalTeleporter::setDestinationResolver(null);
+		parent::tearDown();
 	}
 
 	private function createMockWorld(string $name = "world") : World{
-		$this->blocks = [];
+		$blocks = [];
+		$chunks = [];
 		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods([
 			"getBlockAt",
 			"setBlockAt",
 			"setBlock",
 			"isInWorld",
 			"getDisplayName",
+			"getFolderName",
+			"loadChunk",
+			"getMinY",
+			"getMaxY",
 			"addSound"
 		])->getMock();
 
 		$world->method("isInWorld")->willReturn(true);
 		$world->method("getDisplayName")->willReturn($name);
+		$world->method("getFolderName")->willReturn($name);
+		$world->method("getMinY")->willReturn(-64);
+		$world->method("getMaxY")->willReturn(320);
+		$world->method("loadChunk")->willReturnCallback(static function(int $x, int $z) use (&$chunks) : ?Chunk{
+			return $chunks["$x:$z"] ?? null;
+		});
 
-		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use ($world) : Block{
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use ($world, &$blocks) : Block{
 			$key = "$x:$y:$z";
-			if(isset($this->blocks[$key])){
-				$b = clone $this->blocks[$key];
+			if(isset($blocks[$key])){
+				$b = clone $blocks[$key];
 				$b->position($world, $x, $y, $z);
 				return $b;
 			}
@@ -71,11 +88,13 @@ final class PortalTeleporterTest extends TestCase{
 			return $air;
 		});
 
-		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block, bool $update = true) use ($world) : void{
+		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block, bool $update = true) use ($world, &$chunks, &$blocks) : void{
 			$key = "$x:$y:$z";
 			$clone = clone $block;
 			$clone->position($world, $x, $y, $z);
-			$this->blocks[$key] = $clone;
+			$blocks[$key] = $clone;
+			$chunk = $chunks[($x >> 4) . ":" . ($z >> 4)] ??= new Chunk([], true);
+			$chunk->setBlockStateId($x & 15, $y, $z & 15, $block->getStateId());
 		});
 
 		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $block, bool $update = true) use ($world) : void{
@@ -89,15 +108,18 @@ final class PortalTeleporterTest extends TestCase{
 		return $world;
 	}
 
-	private function createMockPlayer(World $world, bool $isCreative = false) : Player{
+	private function createMockPlayer(World $world, bool $isCreative = false, ?Server $server = null) : Player{
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["getWorld", "getPosition", "isCreative", "teleport"])
+			->onlyMethods(["getWorld", "getPosition", "getServer", "isCreative", "teleport"])
 			->getMock();
 		$player->method("getWorld")->willReturn($world);
 		$player->method("getPosition")->willReturn(new \pocketmine\world\Position(0, 65, 0, $world));
 		$player->method("isCreative")->willReturn($isCreative);
 		$player->method("teleport")->willReturn(true);
+		$server ??= $this->getMockBuilder(Server::class)->disableOriginalConstructor()->onlyMethods(["getTick"])->getMock();
+		$server->method("getTick")->willReturn(100);
+		$player->method("getServer")->willReturn($server);
 
 		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($player, true);
 		(new \ReflectionProperty(Player::class, "logger"))->setValue($player, $this->createMock(\Logger::class));
@@ -228,7 +250,7 @@ final class PortalTeleporterTest extends TestCase{
 		self::assertSame(0, PortalTeleporter::getPlayerWaitTicks($survivalPlayer));
 		PortalTeleporter::handlePlayerInNetherPortal($survivalPlayer);
 		self::assertSame(1, PortalTeleporter::getPlayerWaitTicks($survivalPlayer));
-		PortalTeleporter::handlePlayerInNetherPortal($survivalPlayer);
+		PortalTeleporter::handlePlayerInNetherPortal($survivalPlayer, 101);
 		self::assertSame(2, PortalTeleporter::getPlayerWaitTicks($survivalPlayer));
 
 		PortalTeleporter::resetPortalWait($survivalPlayer);
@@ -268,12 +290,12 @@ final class PortalTeleporterTest extends TestCase{
 		});
 
 		for($i = 1; $i < 80; ++$i){
-			$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+			$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100 + $i);
 			self::assertFalse($result);
 			self::assertSame($i, PortalTeleporter::getPlayerWaitTicks($player));
 		}
 
-		$result = PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+		$result = PortalTeleporter::handlePlayerInNetherPortal($player, 180);
 		self::assertTrue($result);
 		self::assertSame(0, PortalTeleporter::getPlayerWaitTicks($player));
 		self::assertFalse(PortalTeleporter::canTeleport($player, 200));
@@ -318,7 +340,7 @@ final class PortalTeleporterTest extends TestCase{
 		$player = $this->createMockPlayer($world, false);
 
 		for($i = 0; $i < 40; ++$i){
-			PortalTeleporter::handlePlayerInNetherPortal($player, 100);
+			PortalTeleporter::handlePlayerInNetherPortal($player, 100 + $i);
 		}
 		self::assertSame(40, PortalTeleporter::getPlayerWaitTicks($player));
 
@@ -384,5 +406,80 @@ final class PortalTeleporterTest extends TestCase{
 		self::assertSame(DimensionIds::NETHER, $resolvedDimension);
 
 		PortalTeleporter::setDestinationResolver(null);
+	}
+
+	public function testRepeatedCallbacksInSameTickCountOnce() : void{
+		$player = $this->createMockPlayer($this->createMockWorld());
+		for($i = 0; $i < 4; ++$i){
+			self::assertFalse(PortalTeleporter::handlePlayerInNetherPortal($player, 100));
+		}
+		self::assertSame(1, PortalTeleporter::getPlayerWaitTicks($player));
+		PortalTeleporter::handlePlayerInNetherPortal($player, 101);
+		self::assertSame(2, PortalTeleporter::getPlayerWaitTicks($player));
+		PortalTeleporter::resetPortalWait($player);
+		PortalTeleporter::handlePlayerInNetherPortal($player, 101);
+		self::assertSame(1, PortalTeleporter::getPlayerWaitTicks($player));
+	}
+
+	public function testMissingDestinationDoesNotTeleportOrModifyOverworld() : void{
+		$world = $this->createMockWorld();
+		$world->expects(self::never())->method("setBlockAt");
+		$manager = $this->getMockBuilder(WorldManager::class)->disableOriginalConstructor()->onlyMethods([
+			"isWorldLoaded", "isWorldGenerated", "getDefaultWorld", "getWorlds"
+		])->getMock();
+		$manager->method("isWorldLoaded")->willReturn(false);
+		$manager->method("isWorldGenerated")->willReturn(false);
+		$manager->method("getDefaultWorld")->willReturn($world);
+		$manager->method("getWorlds")->willReturn([$world]);
+		$server = $this->getMockBuilder(Server::class)->disableOriginalConstructor()->onlyMethods(["getTick", "getWorldManager"])->getMock();
+		$server->method("getWorldManager")->willReturn($manager);
+		$player = $this->createMockPlayer($world, true, $server);
+		$player->expects(self::never())->method("teleport");
+		self::assertNull(PortalTeleporter::resolveDestinationWorld($player, DimensionIds::NETHER));
+		self::assertNull(PortalTeleporter::resolveDestinationWorld($player, DimensionIds::THE_END));
+		self::assertFalse(PortalTeleporter::handlePlayerInEndPortal($player, 100));
+		self::assertFalse(PortalTeleporter::handlePlayerInNetherPortal($player, 101));
+		self::assertTrue(PortalTeleporter::canTeleport($player, 102));
+	}
+
+	public function testUncachedIgnitedPortalWithinSearchRadiusIsFound() : void{
+		$world = $this->createMockWorld("nether");
+		NetherPortalDetector::activate($world, new NetherPortalDetection(Axis::X, 8, 9, 64, 66, 0));
+		$found = PortalTeleporter::findNearestPortal($world, new Vector3(0, 64, 0));
+		self::assertNotNull($found);
+		self::assertSame(8.5, $found->x);
+		self::assertSame(64, $found->y);
+	}
+
+	public function testPersistedHighPortalOverridesFartherCachedPortal() : void{
+		$world = $this->createMockWorld();
+		PortalTeleporter::createNetherPortal($world, new Vector3(50, 64, 0));
+		NetherPortalDetector::activate($world, new NetherPortalDetection(Axis::X, -9, -8, 200, 202, 0));
+		$found = PortalTeleporter::findNearestPortal($world, new Vector3(0, 202, 0));
+		self::assertNotNull($found);
+		self::assertSame(-7.5, $found->x);
+		self::assertSame(200, $found->y);
+		PortalTeleporter::clearRegisteredPortals();
+		$reloaded = PortalTeleporter::findNearestPortal($world, new Vector3(0, 200, 0));
+		self::assertEquals($found, $reloaded);
+	}
+
+	public function testOrdinaryWorldNamesDoNotChangeDimension() : void{
+		foreach(["weekend", "friends", "shell"] as $name){
+			self::assertSame(DimensionIds::OVERWORLD, PortalTeleporter::getDimensionId($this->createMockWorld($name)));
+		}
+		self::assertSame(DimensionIds::NETHER, PortalTeleporter::getDimensionId($this->createMockWorld("world_nether")));
+		self::assertSame(DimensionIds::THE_END, PortalTeleporter::getDimensionId($this->createMockWorld("world_the_end")));
+	}
+
+	public function testMissingOverworldDoesNotUseDefaultNether() : void{
+		$world = $this->createMockWorld("nether");
+		$manager = $this->getMockBuilder(WorldManager::class)->disableOriginalConstructor()->onlyMethods(["getDefaultWorld", "getWorlds"])->getMock();
+		$manager->method("getDefaultWorld")->willReturn($world);
+		$manager->method("getWorlds")->willReturn([$world]);
+		$server = $this->getMockBuilder(Server::class)->disableOriginalConstructor()->onlyMethods(["getTick", "getWorldManager"])->getMock();
+		$server->method("getWorldManager")->willReturn($manager);
+		$player = $this->createMockPlayer($world, true, $server);
+		self::assertNull(PortalTeleporter::resolveDestinationWorld($player, DimensionIds::OVERWORLD));
 	}
 }

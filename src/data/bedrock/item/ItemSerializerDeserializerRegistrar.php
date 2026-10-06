@@ -234,6 +234,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::COPPER_SWORD, Items::COPPER_SWORD());
 		$this->map1to1Item(Ids::CRIMSON_HANGING_SIGN, Items::CRIMSON_HANGING_SIGN());
 		$this->map1to1Item(Ids::CRIMSON_SIGN, Items::CRIMSON_SIGN());
+		$this->map1to1Item(Ids::CROSSBOW, Items::CROSSBOW());
 		$this->map1to1Item(Ids::DARK_OAK_BOAT, Items::DARK_OAK_BOAT());
 		$this->map1to1Item(Ids::DARK_OAK_HANGING_SIGN, Items::DARK_OAK_HANGING_SIGN());
 		$this->map1to1Item(Ids::DARK_OAK_SIGN, Items::DARK_OAK_SIGN());
@@ -253,6 +254,7 @@ final class ItemSerializerDeserializerRegistrar{
 		$this->map1to1Item(Ids::DUNE_ARMOR_TRIM_SMITHING_TEMPLATE, Items::DUNE_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$this->map1to1Item(Ids::ECHO_SHARD, Items::ECHO_SHARD());
 		$this->map1to1Item(Ids::EGG, Items::EGG());
+		$this->map1to1Item(Ids::ELYTRA, Items::ELYTRA());
 		$this->map1to1Item(Ids::EMERALD, Items::EMERALD());
 		$this->map1to1Item(Ids::ENCHANTED_BOOK, Items::ENCHANTED_BOOK());
 		$this->map1to1Item(Ids::ENCHANTED_GOLDEN_APPLE, Items::ENCHANTED_GOLDEN_APPLE());

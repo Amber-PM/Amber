@@ -41,6 +41,7 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\sound\ArrowHitSound;
 use function ceil;
+use function count;
 use function mt_rand;
 use function sqrt;
 
@@ -55,12 +56,16 @@ class Arrow extends Projectile{
 	private const TAG_PICKUP = "pickup"; //TAG_Byte
 	public const TAG_CRIT = "crit"; //TAG_Byte
 	private const TAG_LIFE = "life"; //TAG_Short
+	private const TAG_PIERCE = "pierce"; //TAG_Byte
 
 	protected float $damage = 2.0;
 	protected int $pickupMode = self::PICKUP_ANY;
 	protected float $punchKnockback = 0.0;
 	protected int $collideTicks = 0;
 	protected bool $critical = false;
+	protected int $pierceLevel = 0;
+	/** @var array<int, bool> */
+	protected array $piercedEntityIds = [];
 
 	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?CompoundTag $nbt = null){
 		parent::__construct($location, $shootingEntity, $nbt);
@@ -79,6 +84,7 @@ class Arrow extends Projectile{
 		$this->pickupMode = $nbt->getByte(self::TAG_PICKUP, self::PICKUP_ANY);
 		$this->critical = $nbt->getByte(self::TAG_CRIT, 0) === 1;
 		$this->collideTicks = $nbt->getShort(self::TAG_LIFE, $this->collideTicks);
+		$this->pierceLevel = $nbt->getByte(self::TAG_PIERCE, 0);
 	}
 
 	public function saveNBT() : CompoundTag{
@@ -86,6 +92,7 @@ class Arrow extends Projectile{
 		$nbt->setByte(self::TAG_PICKUP, $this->pickupMode);
 		$nbt->setByte(self::TAG_CRIT, $this->critical ? 1 : 0);
 		$nbt->setShort(self::TAG_LIFE, $this->collideTicks);
+		$nbt->setByte(self::TAG_PIERCE, $this->pierceLevel);
 		return $nbt;
 	}
 
@@ -145,7 +152,51 @@ class Arrow extends Projectile{
 		$this->broadcastAnimation(new ArrowShakeAnimation($this, 7));
 	}
 
+	public function getPierceLevel() : int{
+		return $this->pierceLevel;
+	}
+
+	public function setPierceLevel(int $pierceLevel) : void{
+		$this->pierceLevel = $pierceLevel;
+	}
+
+	public function hasPiercedEntity(Entity $entity) : bool{
+		return isset($this->piercedEntityIds[$entity->getId()]);
+	}
+
+	public function getPiercedEntityCount() : int{
+		return count($this->piercedEntityIds);
+	}
+
+	public function canCollideWith(Entity $entity) : bool{
+		if(isset($this->piercedEntityIds[$entity->getId()])){
+			return false;
+		}
+		return parent::canCollideWith($entity);
+	}
+
+	protected function despawnsOnEntityHit() : bool{
+		if($this->pierceLevel > 0 && count($this->piercedEntityIds) <= $this->pierceLevel){
+			return false;
+		}
+		return parent::despawnsOnEntityHit();
+	}
+
+	protected function move(float $dx, float $dy, float $dz) : void{
+		$piercedCountBefore = count($this->piercedEntityIds);
+		$motionBefore = clone $this->motion;
+		parent::move($dx, $dy, $dz);
+		if(count($this->piercedEntityIds) > $piercedCountBefore && count($this->piercedEntityIds) <= $this->pierceLevel && $this->blockHit === null){
+			$this->isCollided = false;
+			$this->onGround = false;
+			$this->motion = $motionBefore;
+		}
+	}
+
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
+		if($this->pierceLevel > 0){
+			$this->piercedEntityIds[$entityHit->getId()] = true;
+		}
 		parent::onHitEntity($entityHit, $hitResult);
 		if($this->punchKnockback > 0){
 			$horizontalSpeed = sqrt($this->motion->x ** 2 + $this->motion->z ** 2);
