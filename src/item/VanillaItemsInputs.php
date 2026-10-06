@@ -189,6 +189,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::registerDelayed("coral_fan", fn(string $name) : CoralFan => new CoralFan(self::makeIID($name))); //uses VanillaBlocks in constructor :(
 		self::registerDelayed("crimson_sign", fn(string $name) : ItemBlockWallOrFloor => new ItemBlockWallOrFloor(self::makeIID($name), Blocks::CRIMSON_SIGN(), Blocks::CRIMSON_WALL_SIGN()));
 		self::registerDelayed("crimson_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Crimson Hanging Sign", Blocks::CRIMSON_CEILING_CENTER_HANGING_SIGN(), Blocks::CRIMSON_CEILING_EDGES_HANGING_SIGN(), Blocks::CRIMSON_WALL_HANGING_SIGN()));
+		self::register("crossbow", fn(IID $id) => new Crossbow($id, "Crossbow", [EnchantmentTags::CROSSBOW]));
 		self::registerDelayed("dark_oak_sign", fn(string $name) : ItemBlockWallOrFloor => new ItemBlockWallOrFloor(self::makeIID($name), Blocks::DARK_OAK_SIGN(), Blocks::DARK_OAK_WALL_SIGN()));
 		self::registerDelayed("dark_oak_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Dark Oak Hanging Sign", Blocks::DARK_OAK_CEILING_CENTER_HANGING_SIGN(), Blocks::DARK_OAK_CEILING_EDGES_HANGING_SIGN(), Blocks::DARK_OAK_WALL_HANGING_SIGN()));
 		self::register("diamond", fn(IID $id) => new Item($id, "Diamond"));
@@ -199,10 +200,12 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("dye", fn(IID $id) => new Dye($id, "Dye"));
 		self::register("echo_shard", fn(IID $id) => new Item($id, "Echo Shard"));
 		self::register("egg", fn(IID $id) => new Egg($id, "Egg"));
+		self::registerDelayed("elytra", fn(string $name) : Elytra => new Elytra(self::makeIID($name), "Elytra"));
 		self::register("emerald", fn(IID $id) => new Item($id, "Emerald"));
 		self::register("enchanted_book", fn(IID $id) => new EnchantedBook($id, "Enchanted Book", [EnchantmentTags::ALL]));
 		self::register("enchanted_golden_apple", fn(IID $id) => new GoldenAppleEnchanted($id, "Enchanted Golden Apple"));
 		self::register("end_crystal", fn(IID $id) => new EndCrystal($id, "End Crystal"));
+		self::register("ender_eye", fn(IID $id) => new EnderEye($id, "Eye of Ender"));
 		self::register("ender_pearl", fn(IID $id) => new EnderPearl($id, "Ender Pearl"));
 		self::register("experience_bottle", fn(IID $id) => new ExperienceBottle($id, "Bottle o' Enchanting"));
 		self::register("feather", fn(IID $id) => new Item($id, "Feather"));

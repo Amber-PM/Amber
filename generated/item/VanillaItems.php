@@ -150,6 +150,7 @@ final class VanillaItems{
 	private static CoralFan $_mCORAL_FAN;
 	private static HangingSign $_mCRIMSON_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mCRIMSON_SIGN;
+	private static Crossbow $_mCROSSBOW;
 	private static Boat $_mDARK_OAK_BOAT;
 	private static ChestBoat $_mDARK_OAK_CHEST_BOAT;
 	private static HangingSign $_mDARK_OAK_HANGING_SIGN;
@@ -171,9 +172,11 @@ final class VanillaItems{
 	private static Dye $_mDYE;
 	private static Item $_mECHO_SHARD;
 	private static Egg $_mEGG;
+	private static Elytra $_mELYTRA;
 	private static Item $_mEMERALD;
 	private static EnchantedBook $_mENCHANTED_BOOK;
 	private static GoldenAppleEnchanted $_mENCHANTED_GOLDEN_APPLE;
+	private static EnderEye $_mENDER_EYE;
 	private static EnderPearl $_mENDER_PEARL;
 	private static EndCrystal $_mEND_CRYSTAL;
 	private static ExperienceBottle $_mEXPERIENCE_BOTTLE;
@@ -526,6 +529,7 @@ final class VanillaItems{
 			"coral_fan" => fn(CoralFan $v) => self::$_mCORAL_FAN = $v,
 			"crimson_hanging_sign" => fn(HangingSign $v) => self::$_mCRIMSON_HANGING_SIGN = $v,
 			"crimson_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mCRIMSON_SIGN = $v,
+			"crossbow" => fn(Crossbow $v) => self::$_mCROSSBOW = $v,
 			"dark_oak_boat" => fn(Boat $v) => self::$_mDARK_OAK_BOAT = $v,
 			"dark_oak_chest_boat" => fn(ChestBoat $v) => self::$_mDARK_OAK_CHEST_BOAT = $v,
 			"dark_oak_hanging_sign" => fn(HangingSign $v) => self::$_mDARK_OAK_HANGING_SIGN = $v,
@@ -547,9 +551,11 @@ final class VanillaItems{
 			"dye" => fn(Dye $v) => self::$_mDYE = $v,
 			"echo_shard" => fn(Item $v) => self::$_mECHO_SHARD = $v,
 			"egg" => fn(Egg $v) => self::$_mEGG = $v,
+			"elytra" => fn(Elytra $v) => self::$_mELYTRA = $v,
 			"emerald" => fn(Item $v) => self::$_mEMERALD = $v,
 			"enchanted_book" => fn(EnchantedBook $v) => self::$_mENCHANTED_BOOK = $v,
 			"enchanted_golden_apple" => fn(GoldenAppleEnchanted $v) => self::$_mENCHANTED_GOLDEN_APPLE = $v,
+			"ender_eye" => fn(EnderEye $v) => self::$_mENDER_EYE = $v,
 			"ender_pearl" => fn(EnderPearl $v) => self::$_mENDER_PEARL = $v,
 			"end_crystal" => fn(EndCrystal $v) => self::$_mEND_CRYSTAL = $v,
 			"experience_bottle" => fn(ExperienceBottle $v) => self::$_mEXPERIENCE_BOTTLE = $v,
@@ -1354,6 +1360,11 @@ final class VanillaItems{
 		return clone self::$_mCRIMSON_SIGN;
 	}
 
+	public static function CROSSBOW() : Crossbow{
+		if(!isset(self::$_mCROSSBOW)){ self::init(); }
+		return clone self::$_mCROSSBOW;
+	}
+
 	public static function DARK_OAK_BOAT() : Boat{
 		if(!isset(self::$_mDARK_OAK_BOAT)){ self::init(); }
 		return clone self::$_mDARK_OAK_BOAT;
@@ -1459,6 +1470,11 @@ final class VanillaItems{
 		return clone self::$_mEGG;
 	}
 
+	public static function ELYTRA() : Elytra{
+		if(!isset(self::$_mELYTRA)){ self::init(); }
+		return clone self::$_mELYTRA;
+	}
+
 	public static function EMERALD() : Item{
 		if(!isset(self::$_mEMERALD)){ self::init(); }
 		return clone self::$_mEMERALD;
@@ -1472,6 +1488,11 @@ final class VanillaItems{
 	public static function ENCHANTED_GOLDEN_APPLE() : GoldenAppleEnchanted{
 		if(!isset(self::$_mENCHANTED_GOLDEN_APPLE)){ self::init(); }
 		return clone self::$_mENCHANTED_GOLDEN_APPLE;
+	}
+
+	public static function ENDER_EYE() : EnderEye{
+		if(!isset(self::$_mENDER_EYE)){ self::init(); }
+		return clone self::$_mENDER_EYE;
 	}
 
 	public static function ENDER_PEARL() : EnderPearl{

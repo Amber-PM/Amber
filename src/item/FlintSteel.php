@@ -40,6 +40,8 @@ class FlintSteel extends Tool{
 
 			$this->applyDamage(1);
 
+			\pocketmine\world\portal\NetherPortalDetector::tryActivate($world, $blockReplace->getPosition());
+
 			return ItemUseResult::SUCCESS;
 		}
 
