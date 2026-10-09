@@ -145,6 +145,17 @@ chunk-generation:
 ticks-per:
   autosave: 6000
 
+backups:
+  #Automatic world backups, as zip files in backups/<world>/. /world backup [world] makes one any time.
+  #To restore one, stop the server and unzip it into worlds/<world>/ in place of the world's folder.
+  enabled: false
+  #Minutes between automatic backups.
+  interval-minutes: 360
+  #Backups to keep per world; older ones are deleted. 0 keeps them all.
+  keep: 7
+  #World folder names to back up automatically. Empty: every loaded world.
+  worlds: []
+
 auto-report:
   #Send crash reports for processing
   enabled: true

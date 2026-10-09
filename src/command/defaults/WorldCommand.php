@@ -31,8 +31,10 @@ use pocketmine\lang\Translatable;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\Server;
+use pocketmine\utils\TextFormat;
 use pocketmine\world\WorldException;
 use Symfony\Component\Filesystem\Path;
+use function basename;
 use function count;
 use function implode;
 use function is_dir;
@@ -55,14 +57,21 @@ class WorldCommand extends OverloadedCommand{
 		$this->setPermission(DefaultPermissionNames::COMMAND_WORLD);
 
 		$this->addOverload(
-			fn(CommandSender $sender, string $action) => $this->listWorlds($sender),
+			fn(CommandSender $sender, string $action) => match(strtolower($action)){
+				"list" => $this->listWorlds($sender),
+				"backup" => $this->backupWorld($sender, null),
+				default => false
+			},
 			DefaultPermissionNames::COMMAND_WORLD,
-			["action" => new StringArgumentParser(["list"])]
+			["action" => new StringArgumentParser(["list", "backup"])]
 		);
 		$this->addOverload(
-			fn(CommandSender $sender, string $action, string $world) => $this->runWorldAction($sender, $action, $world),
+			fn(CommandSender $sender, string $action, string $world) => match(strtolower($action)){
+				"backup" => $this->backupWorld($sender, $world),
+				default => $this->runWorldAction($sender, $action, $world)
+			},
 			DefaultPermissionNames::COMMAND_WORLD,
-			["action" => new StringArgumentParser(["load", "unload", "tp"])]
+			["action" => new StringArgumentParser(["load", "unload", "tp", "backup"])]
 		);
 	}
 
@@ -211,6 +220,29 @@ class WorldCommand extends OverloadedCommand{
 			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_world_tp_success($worldName));
 		}else{
 			$sender->sendMessage(KnownTranslationFactory::pocketmine_command_world_tp_cancelled($worldName));
+		}
+		return true;
+	}
+
+	private function backupWorld(CommandSender $sender, ?string $worldName) : bool{
+		$server = Server::getInstance();
+		$worlds = $worldName !== null ? [$server->getWorldManager()->getWorldByName($worldName)] : $server->getWorldManager()->getWorlds();
+		if($worldName !== null && $worlds[0] === null){
+			$sender->sendMessage(TextFormat::RED . "No loaded world is called $worldName");
+			return true;
+		}
+		foreach($worlds as $world){
+			if($world === null){
+				continue;
+			}
+			$name = $world->getFolderName();
+			$started = $server->getBackupManager()->backup($world, function(?string $file, ?string $error) use ($sender, $name) : void{
+				if($sender instanceof Player && !$sender->isConnected()){
+					return;
+				}
+				$sender->sendMessage($file !== null ? TextFormat::GREEN . "Backed up $name to " . basename($file) : TextFormat::RED . "Backup of $name failed: $error");
+			});
+			$sender->sendMessage($started ? TextFormat::GRAY . "Backing up $name..." : TextFormat::YELLOW . "A backup of $name is already running");
 		}
 		return true;
 	}
