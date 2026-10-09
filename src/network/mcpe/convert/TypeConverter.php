@@ -89,6 +89,7 @@ class TypeConverter{
 	private int $shieldRuntimeId;
 
 	private SkinAdapter $skinAdapter;
+	private bool $nativeSpectator = true;
 
 	public function __construct(int $protocolId){
 		$this->__protocolConstruct($protocolId);
@@ -128,17 +129,21 @@ class TypeConverter{
 
 	/**
 	 * Returns a client-friendly gamemode of the specified real gamemode
-	 * This function takes care of handling gamemodes known to MCPE (as of 1.1.0.3, that includes Survival, Creative and Adventure)
 	 *
 	 * @internal
 	 */
 	public function coreGameModeToProtocol(GameMode $gamemode) : int{
 		return match($gamemode){
 			GameMode::SURVIVAL => ProtocolGameMode::SURVIVAL,
-			//TODO: native spectator support
-			GameMode::CREATIVE, GameMode::SPECTATOR => ProtocolGameMode::CREATIVE,
+			GameMode::CREATIVE => ProtocolGameMode::CREATIVE,
+			GameMode::SPECTATOR => $this->nativeSpectator ? ProtocolGameMode::SPECTATOR : ProtocolGameMode::CREATIVE,
 			GameMode::ADVENTURE => ProtocolGameMode::ADVENTURE,
 		};
+	}
+
+	/** @internal */
+	public function setNativeSpectator(bool $enabled) : void{
+		$this->nativeSpectator = $enabled;
 	}
 
 	public function protocolGameModeToCore(int $gameMode) : ?GameMode{
@@ -146,8 +151,7 @@ class TypeConverter{
 			ProtocolGameMode::SURVIVAL => GameMode::SURVIVAL,
 			ProtocolGameMode::CREATIVE => GameMode::CREATIVE,
 			ProtocolGameMode::ADVENTURE => GameMode::ADVENTURE,
-			ProtocolGameMode::SURVIVAL_VIEWER, ProtocolGameMode::CREATIVE_VIEWER => GameMode::SPECTATOR,
-			//TODO: native spectator support
+			ProtocolGameMode::SURVIVAL_VIEWER, ProtocolGameMode::CREATIVE_VIEWER, ProtocolGameMode::SPECTATOR => GameMode::SPECTATOR,
 			default => null,
 		};
 	}

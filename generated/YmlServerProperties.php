@@ -97,6 +97,7 @@ final class YmlServerProperties{
 	public const NETWORK_MAX_MTU_SIZE = 'network.max-mtu-size';
 	public const NETWORK_UPNP_FORWARDING = 'network.upnp-forwarding';
 	public const PLAYER = 'player';
+	public const PLAYER_NATIVE_SPECTATOR = 'player.native-spectator';
 	public const PLAYER_SAVE_PLAYER_DATA = 'player.save-player-data';
 	public const PLAYER_VERIFY_XUID = 'player.verify-xuid';
 	public const PLUGINS = 'plugins';
