@@ -53,18 +53,23 @@ final class WorldBackupTask extends AsyncTask{
 	}
 
 	public function onRun() : void{
+		$error = null;
 		try{
 			if($this->isLevelDB){
 				self::checkLevelDB(Path::join($this->staging, "db"));
 			}
 			$this->zip();
-			$this->setResult(null);
 		}catch(\Throwable $e){
-			$this->setResult($e->getMessage());
+			$error = $e->getMessage();
 		}finally{
-			if(is_dir($this->staging)){
-				Filesystem::recursiveUnlink($this->staging);
+			try{
+				if(is_dir($this->staging)){
+					Filesystem::recursiveUnlink($this->staging);
+				}
+			}catch(\Throwable $cleanupError){
+				$error ??= "Cleanup failed: " . $cleanupError->getMessage();
 			}
+			$this->setResult($error);
 		}
 	}
 
@@ -77,11 +82,18 @@ final class WorldBackupTask extends AsyncTask{
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 64 * 1024,
 			"paranoid_checks" => true,
-		], ["verify_check_sum" => true]);
-		foreach($db->getIterator() as $_){
+		], ["verify_checksums" => true]);
+		$iterator = $db->getIterator(["verify_checksums" => true]);
+		for($iterator->rewind(); $iterator->valid(); $iterator->next()){
 			//reading every block verifies checksums and that every referenced table file exists
 		}
-		unset($db);
+		if(method_exists($iterator, "getError")){
+			$err = $iterator->getError();
+			if($err !== false && $err !== null && $err !== ""){
+				throw new \RuntimeException("LevelDB table corrupted: " . $err);
+			}
+		}
+		unset($iterator, $db);
 	}
 
 	private function zip() : void{

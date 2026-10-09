@@ -36,6 +36,7 @@ use function date;
 use function glob;
 use function in_array;
 use function is_dir;
+use function is_file;
 use function link;
 use function mkdir;
 use function rsort;
@@ -99,6 +100,13 @@ final class WorldBackupManager{
 		if(isset($this->running[$name])){
 			return false;
 		}
+		if(!($world->getProvider() instanceof LevelDB)){
+			$this->server->getLogger()->warning("Automatic backups are only supported for LevelDB worlds; skipping world \"$name\"");
+			if($onDone !== null){
+				$onDone(null, "Unsupported world provider: only LevelDB worlds are supported");
+			}
+			return false;
+		}
 		$this->running[$name] = true;
 		$this->attempt($world, 1, $onDone);
 		return true;
@@ -116,8 +124,12 @@ final class WorldBackupManager{
 			$world->save(true);
 			$this->snapshot($world->getProvider()->getPath(), $staging);
 		}catch(\Throwable $e){
-			if(is_dir($staging)){
-				Filesystem::recursiveUnlink($staging);
+			try{
+				if(is_dir($staging)){
+					Filesystem::recursiveUnlink($staging);
+				}
+			}catch(\Throwable){
+				// best effort cleanup
 			}
 			unset($this->running[$name]);
 			$logger->error("Backup of world \"$name\" failed: " . $e->getMessage());
@@ -128,8 +140,7 @@ final class WorldBackupManager{
 		}
 
 		$target = Path::join($this->backupPath, $name, $name . "-" . $stamp . ".zip");
-		$isLevelDB = $world->getProvider() instanceof LevelDB;
-		$this->server->getAsyncPool()->submitTask(new WorldBackupTask($staging, $target, $isLevelDB, function(?string $error) use ($world, $name, $target, $attempt, $onDone, $logger) : void{
+		$this->server->getAsyncPool()->submitTask(new WorldBackupTask($staging, $target, true, function(?string $error) use ($world, $name, $target, $attempt, $onDone, $logger) : void{
 			if($error !== null && $attempt < self::MAX_ATTEMPTS && $world->isLoaded()){
 				//most likely LevelDB compacted its files while the snapshot was taken; take another
 				$logger->debug("Backup of world \"$name\" was not consistent ($error), retrying");
@@ -150,8 +161,10 @@ final class WorldBackupManager{
 	}
 
 	/**
-	 * Mirrors the world folder into $target: LevelDB table files hard-linked (copied if linking is not possible),
-	 * everything else copied. Must run on the main thread, straight after the world is saved.
+	 * Captures a consistent snapshot of a LevelDB world into $target:
+	 * LevelDB table files (.ldb / .sst) are hard-linked first (O(1) per file without copying data),
+	 * metadata files (MANIFEST, LOG, etc.) are copied next, and CURRENT is copied strictly last.
+	 * Must run on the main thread straight after $world->save(true).
 	 */
 	private function snapshot(string $source, string $target) : void{
 		if(!is_dir($source)){
@@ -160,31 +173,92 @@ final class WorldBackupManager{
 		if(!@mkdir($target, 0777, true) && !is_dir($target)){
 			throw new \RuntimeException("Cannot create $target");
 		}
-		$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST);
-		foreach($iterator as $file){
-			if(!$file instanceof \SplFileInfo){
-				continue;
-			}
-			$destination = Path::join($target, Path::makeRelative($file->getPathname(), $source));
-			if($file->isDir()){
-				if(!@mkdir($destination, 0777, true) && !is_dir($destination)){
-					throw new \RuntimeException("Cannot create $destination");
+
+		$sourceDb = Path::join($source, "db");
+		$targetDb = Path::join($target, "db");
+		if(!is_dir($sourceDb)){
+			throw new \RuntimeException("LevelDB database folder not found at $sourceDb");
+		}
+		if(!@mkdir($targetDb, 0777, true) && !is_dir($targetDb)){
+			throw new \RuntimeException("Cannot create $targetDb");
+		}
+
+		// 1. Copy root world metadata files (level.dat, world_icon, etc.)
+		$rootFiles = glob(Path::join($source, "*"));
+		if($rootFiles !== false){
+			foreach($rootFiles as $rootFile){
+				if(is_file($rootFile)){
+					$base = basename($rootFile);
+					if($base !== "LOCK"){
+						if(!@copy($rootFile, Path::join($target, $base))){
+							throw new \RuntimeException("Cannot copy root file $base");
+						}
+					}
 				}
+			}
+		}
+
+		// 2. Capture LevelDB db/ directory with ordered consistency:
+		// Phase 1: Hard-link immutable table files (.ldb, .sst)
+		// Phase 2: Copy metadata (MANIFEST, LOG, etc.)
+		// Phase 3: Copy CURRENT last
+		$dbFiles = glob(Path::join($sourceDb, "*"));
+		if($dbFiles === false){
+			throw new \RuntimeException("Cannot read database directory $sourceDb");
+		}
+
+		$tables = [];
+		$manifestsAndMeta = [];
+		$currentFile = null;
+
+		foreach($dbFiles as $file){
+			if(!is_file($file)){
 				continue;
 			}
-			$fileName = $file->getFilename();
-			if($fileName === "LOCK"){
-				continue; //held by the open database; LevelDB creates its own
-			}
-			$lower = strtolower($fileName);
-			$immutable = str_ends_with($lower, ".ldb") || str_ends_with($lower, ".sst");
-			if(($immutable && @link($file->getPathname(), $destination)) || @copy($file->getPathname(), $destination)){
+			$name = basename($file);
+			if($name === "LOCK"){
 				continue;
 			}
-			if($immutable && !$file->isFile()){
-				continue; //deleted by a compaction meanwhile: the consistency check decides
+			$lower = strtolower($name);
+			if(str_ends_with($lower, ".ldb") || str_ends_with($lower, ".sst")){
+				$tables[] = $file;
+			}elseif($name === "CURRENT"){
+				$currentFile = $file;
+			}else{
+				$manifestsAndMeta[] = $file;
 			}
-			throw new \RuntimeException("Cannot copy " . $file->getPathname());
+		}
+
+		// Hardlink table files
+		foreach($tables as $table){
+			$dest = Path::join($targetDb, basename($table));
+			if(!@link($table, $dest) && !@copy($table, $dest)){
+				if(!is_file($table)){
+					continue; // Deleted by compaction meanwhile: checkLevelDB will verify
+				}
+				throw new \RuntimeException("Cannot capture table file " . basename($table));
+			}
+		}
+
+		// Copy manifest & logs
+		foreach($manifestsAndMeta as $meta){
+			$dest = Path::join($targetDb, basename($meta));
+			if(!@copy($meta, $dest)){
+				if(!is_file($meta)){
+					continue; // Rotated/deleted log
+				}
+				throw new \RuntimeException("Cannot copy metadata file " . basename($meta));
+			}
+		}
+
+		// Copy CURRENT strictly last
+		if($currentFile !== null){
+			$dest = Path::join($targetDb, "CURRENT");
+			if(!@copy($currentFile, $dest)){
+				throw new \RuntimeException("Cannot copy CURRENT pointer file");
+			}
+		}else{
+			throw new \RuntimeException("Missing CURRENT file in $sourceDb");
 		}
 	}
 
