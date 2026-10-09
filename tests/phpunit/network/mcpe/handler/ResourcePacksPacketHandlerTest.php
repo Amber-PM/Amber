@@ -93,4 +93,44 @@ final class ResourcePacksPacketHandlerTest extends TestCase{
 		self::assertSame(self::CONFIGURED_PACK_ID, $sent[1]->packId);
 		self::assertSame(1024, $sent[1]->compressedPackSize);
 	}
+
+	public function testReplayedStatusCompletedOnlyInvokesCallbackOnce() : void{
+		$session = $this->getMockBuilder(NetworkSession::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["sendDataPacket", "getLogger", "unhandledPacketDebug", "getProtocolId"])
+			->getMock();
+		$session->method("getLogger")->willReturn($this->createMock(\PrefixedLogger::class));
+		$session->method("getProtocolId")->willReturn(ProtocolInfo::CURRENT_PROTOCOL);
+		$session->method("sendDataPacket")->willReturn(true);
+		(new \ReflectionProperty(NetworkSession::class, "logger"))->setValue($session, $this->createMock(\PrefixedLogger::class));
+
+		$completionCount = 0;
+		$handler = new ResourcePacksPacketHandler(
+			session: $session,
+			resourcePackStack: [],
+			encryptionKeys: [],
+			mustAccept: false,
+			forceDisableVibrantVisuals: false,
+			educationContentEnabled: false,
+			completionCallback: function() use (&$completionCount) : void{
+				$completionCount++;
+			}
+		);
+
+		$session->setHandler($handler);
+
+		$stream = new \pmmp\encoding\ByteBufferWriter();
+		\pmmp\encoding\VarInt::writeUnsignedInt($stream, ResourcePackClientResponsePacket::NETWORK_ID);
+		\pmmp\encoding\VarInt::writeUnsignedInt($stream, ResourcePackClientResponsePacket::STATUS_COMPLETED);
+		\pocketmine\network\mcpe\protocol\serializer\CommonTypes::putString($stream, "resourcepackstackfinished");
+		$buffer = $stream->getData();
+
+		$packet = ResourcePackClientResponsePacket::create(ResourcePackClientResponsePacket::STATUS_COMPLETED, []);
+		$session->handleDataPacket($packet, $buffer);
+		self::assertSame(1, $completionCount);
+
+		$session->handleDataPacket($packet, $buffer);
+		self::assertSame(1, $completionCount);
+	}
 }
+

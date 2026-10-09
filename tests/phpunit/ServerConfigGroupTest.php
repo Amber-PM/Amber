@@ -36,4 +36,45 @@ final class ServerConfigGroupTest extends TestCase{
 			}
 		}
 	}
+
+	public function testAutoReportSettingDefaultsToDisabled() : void{
+		foreach([
+			"settings:\n  force-language: false\n" => false,
+			"auto-report:\n  enabled: false\n" => false,
+			"auto-report:\n  enabled: true\n" => true,
+		] as $yaml => $expected){
+			$yamlPath = tempnam(sys_get_temp_dir(), "amber-autoreport-yml-");
+			$propertiesPath = tempnam(sys_get_temp_dir(), "amber-autoreport-properties-");
+			if($yamlPath === false || $propertiesPath === false){
+				throw new \RuntimeException("Unable to create temporary config files");
+			}
+			try{
+				file_put_contents($yamlPath, $yaml);
+				$config = new ServerConfigGroup(
+					new Config($yamlPath, Config::YAML),
+					new Config($propertiesPath, Config::PROPERTIES)
+				);
+				self::assertSame($expected, $config->getPropertyBool(YmlServerProperties::AUTO_REPORT_ENABLED, false));
+			}finally{
+				unlink($yamlPath);
+				unlink($propertiesPath);
+			}
+		}
+	}
+
+	public function testAutoReportTemplateDefaultsToDisabled() : void{
+		$propertiesPath = tempnam(sys_get_temp_dir(), "amber-template-properties-");
+		if($propertiesPath === false){
+			throw new \RuntimeException("Unable to create temporary properties file");
+		}
+		try{
+			$config = new ServerConfigGroup(
+				new Config(dirname(__DIR__, 2) . "/resources/pocketmine.yml", Config::YAML),
+				new Config($propertiesPath, Config::PROPERTIES)
+			);
+			self::assertFalse($config->getPropertyBool(YmlServerProperties::AUTO_REPORT_ENABLED, false));
+		}finally{
+			unlink($propertiesPath);
+		}
+	}
 }
