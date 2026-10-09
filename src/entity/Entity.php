@@ -1158,6 +1158,33 @@ abstract class Entity{
 		return $block->isSolid() && !$block->isTransparent() && $block->collidesWithBB($this->getBoundingBox());
 	}
 
+	public function moveByPiston(Vector3 $offset) : void{
+		if(abs($offset->x) > 1.01 || abs($offset->y) > 1.01 || abs($offset->z) > 1.01){
+			throw new \InvalidArgumentException("Piston displacement exceeds one block");
+		}
+		$world = $this->getWorld();
+		$area = $this->boundingBox->addCoord($offset->x, $offset->y, $offset->z);
+		if(!$world->isInWorld((int) floor($area->minX), (int) floor($area->minY), (int) floor($area->minZ)) ||
+			!$world->isInWorld((int) floor($area->maxX - 0.00001), (int) floor($area->maxY - 0.00001), (int) floor($area->maxZ - 0.00001))){
+			return;
+		}
+		for($x = (int) floor($area->minX) >> 4, $maxX = (int) floor($area->maxX - 0.00001) >> 4; $x <= $maxX; ++$x){
+			for($z = (int) floor($area->minZ) >> 4, $maxZ = (int) floor($area->maxZ - 0.00001) >> 4; $z <= $maxZ; ++$z){
+				if(!$world->isChunkLoaded($x, $z)){
+					return;
+				}
+			}
+		}
+		$previous = $this->keepMovement;
+		$this->keepMovement = false;
+		try{
+			$this->move($offset->x, $offset->y, $offset->z);
+			$this->updateMovement();
+		}finally{
+			$this->keepMovement = $previous;
+		}
+	}
+
 	protected function move(float $dx, float $dy, float $dz) : void{
 		$this->blocksAround = null;
 

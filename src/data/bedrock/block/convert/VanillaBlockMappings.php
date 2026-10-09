@@ -71,6 +71,7 @@ use pocketmine\block\NetherPortal;
 use pocketmine\block\NetherVines;
 use pocketmine\block\NetherWartPlant;
 use pocketmine\block\PinkPetals;
+use pocketmine\block\PistonHead;
 use pocketmine\block\PitcherCrop;
 use pocketmine\block\PoweredRail;
 use pocketmine\block\Rail;
@@ -161,6 +162,7 @@ final class VanillaBlockMappings{
 
 	private static function registerSimpleIdOnlyMappings(BlockSerializerDeserializerRegistrar $reg) : void{
 		$reg->mapSimple(Blocks::AIR(), Ids::AIR);
+		$reg->mapSimple(Blocks::MOVING_BLOCK(), Ids::MOVING_BLOCK);
 		$reg->mapSimple(Blocks::AMETHYST(), Ids::AMETHYST_BLOCK);
 		$reg->mapSimple(Blocks::ANCIENT_DEBRIS(), Ids::ANCIENT_DEBRIS);
 		$reg->mapSimple(Blocks::ANDESITE(), Ids::ANDESITE);
@@ -363,6 +365,7 @@ final class VanillaBlockMappings{
 		$reg->mapSimple(Blocks::HARDENED_CLAY(), Ids::HARDENED_CLAY);
 		$reg->mapSimple(Blocks::HARDENED_GLASS(), Ids::HARD_GLASS);
 		$reg->mapSimple(Blocks::HARDENED_GLASS_PANE(), Ids::HARD_GLASS_PANE);
+		$reg->mapSimple(Blocks::HONEY_BLOCK(), Ids::HONEY_BLOCK);
 		$reg->mapSimple(Blocks::HONEYCOMB(), Ids::HONEYCOMB_BLOCK);
 		$reg->mapSimple(Blocks::ICE(), Ids::ICE);
 		$reg->mapSimple(Blocks::INFESTED_CHISELED_STONE_BRICK(), Ids::INFESTED_CHISELED_STONE_BRICKS);
@@ -1440,6 +1443,7 @@ final class VanillaBlockMappings{
 		$reg->mapModel(Model::create(Blocks::PITCHER_PLANT(), Ids::PITCHER_PLANT)->properties([
 			new BoolProperty(StateNames::UPPER_BLOCK_BIT, fn(DoublePlant $b) => $b->isTop(), fn(DoublePlant $b, bool $v) => $b->setTop($v)), //TODO: don't we have helpers for this?
 		]));
+		$reg->mapModel(Model::create(Blocks::PISTON(), Ids::PISTON)->properties([$commonProperties->anyFacingPiston]));
 		$reg->mapModel(Model::create(Blocks::POLISHED_BASALT(), Ids::POLISHED_BASALT)->properties([$commonProperties->pillarAxis]));
 		$reg->mapModel(Model::create(Blocks::POLISHED_BLACKSTONE_BUTTON(), Ids::POLISHED_BLACKSTONE_BUTTON)->properties($commonProperties->buttonProperties));
 		$reg->mapModel(Model::create(Blocks::POLISHED_BLACKSTONE_PRESSURE_PLATE(), Ids::POLISHED_BLACKSTONE_PRESSURE_PLATE)->properties($commonProperties->simplePressurePlateProperties));
@@ -1490,6 +1494,7 @@ final class VanillaBlockMappings{
 		$reg->mapModel(Model::create(Blocks::SOUL_LANTERN(), Ids::SOUL_LANTERN)->properties([
 			new BoolProperty(StateNames::HANGING, fn(Lantern $b) => $b->isHanging(), fn(Lantern $b, bool $v) => $b->setHanging($v)) //TODO: repeated
 		]));
+		$reg->mapModel(Model::create(Blocks::STICKY_PISTON(), Ids::STICKY_PISTON)->properties([$commonProperties->anyFacingPiston]));
 		$reg->mapModel(Model::create(Blocks::STONE_BUTTON(), Ids::STONE_BUTTON)->properties($commonProperties->buttonProperties));
 		$reg->mapModel(Model::create(Blocks::STONE_PRESSURE_PLATE(), Ids::STONE_PRESSURE_PLATE)->properties($commonProperties->simplePressurePlateProperties));
 		$reg->mapModel(Model::create(Blocks::STONECUTTER(), Ids::STONECUTTER_BLOCK)->properties([
@@ -1703,5 +1708,10 @@ final class VanillaBlockMappings{
 				self::deserializeAsymmetric($wallModel, $in));
 		}
 
+		$reg->serializer->map(Blocks::PISTON_HEAD(), fn(PistonHead $b) => Writer::create($b->isSticky() ? Ids::STICKY_PISTON_ARM_COLLISION : Ids::PISTON_ARM_COLLISION)
+			->writeInt(StateNames::FACING_DIRECTION, (int) ValueMappings::getInstance()->facingEndRod->valueToRaw($b->getFacing()))
+		);
+		$reg->deserializer->map(Ids::PISTON_ARM_COLLISION, fn(Reader $in) => Blocks::PISTON_HEAD()->setFacing((int) ValueMappings::getInstance()->facingEndRod->rawToValue($in->readFacingDirection()))->setSticky(false));
+		$reg->deserializer->map(Ids::STICKY_PISTON_ARM_COLLISION, fn(Reader $in) => Blocks::PISTON_HEAD()->setFacing((int) ValueMappings::getInstance()->facingEndRod->rawToValue($in->readFacingDirection()))->setSticky(true));
 	}
 }

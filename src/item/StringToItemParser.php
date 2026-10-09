@@ -731,6 +731,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("hay_block", fn() => Blocks::HAY_BALE());
 		$result->registerBlock("heavy_weighted_pressure_plate", fn() => Blocks::WEIGHTED_PRESSURE_PLATE_HEAVY());
 		$result->registerBlock("honeycomb_block", fn() => Blocks::HONEYCOMB());
+		$result->registerBlock("honey_block", fn() => Blocks::HONEY_BLOCK());
 		$result->registerBlock("hopper", fn() => Blocks::HOPPER());
 		$result->registerBlock("hopper_block", fn() => Blocks::HOPPER());
 		$result->registerBlock("ice", fn() => Blocks::ICE());
@@ -918,6 +919,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("peony", fn() => Blocks::PEONY());
 		$result->registerBlock("pink_petals", fn() => Blocks::PINK_PETALS());
 		$result->registerBlock("pink_tulip", fn() => Blocks::PINK_TULIP());
+		$result->registerBlock("piston", fn() => Blocks::PISTON());
 		$result->registerBlock("piglin_head", fn() => Blocks::MOB_HEAD()->setMobHeadType(MobHeadType::PIGLIN));
 		$result->registerBlock("pitcher_plant", fn() => Blocks::PITCHER_PLANT());
 		$result->registerBlock("plank", fn() => Blocks::OAK_PLANKS());
@@ -1103,6 +1105,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("still_lava", fn() => Blocks::LAVA()->setStill(true));
 		$result->registerBlock("still_water", fn() => Blocks::WATER()->setStill(true));
 		$result->registerBlock("stone", fn() => Blocks::STONE());
+		$result->registerBlock("sticky_piston", fn() => Blocks::STICKY_PISTON());
 		$result->registerBlock("stone_brick", fn() => Blocks::STONE_BRICKS());
 		$result->registerBlock("stone_brick_slab", fn() => Blocks::STONE_BRICK_SLAB());
 		$result->registerBlock("stone_brick_stairs", fn() => Blocks::STONE_BRICK_STAIRS());
