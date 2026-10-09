@@ -291,14 +291,24 @@ final class WorldBackupTest extends TestCase{
 
 		$fp = @fopen($lockedFile, "r");
 		try{
+			// onRun must catch any cleanup error and safely record result without throwing an uncaught exception
 			$task->onRun();
-			$result = $task->getResult();
-			self::assertNotNull($result);
+			self::assertTrue($task->hasResult());
 		}finally{
 			if(is_resource($fp)){
 				fclose($fp);
 			}
 		}
+	}
+
+	public function testTaskOnRunHandlesZipFailureGracefully() : void{
+		$staging = Path::join($this->tempDir, "non_existent_staging");
+		$target = Path::join($this->tempDir, "backups", "world.zip");
+		$task = new WorldBackupTask($staging, $target, false, function(?string $error) : void{});
+
+		$task->onRun();
+		self::assertTrue($task->hasResult());
+		self::assertIsString($task->getResult());
 	}
 }
 
