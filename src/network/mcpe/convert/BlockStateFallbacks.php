@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\convert;
 
 use function array_keys;
+use function preg_match;
 use function preg_replace;
 use function str_starts_with;
 use function substr;
@@ -124,12 +125,15 @@ final class BlockStateFallbacks{
 		}
 		$shortName = substr($name, 10);
 		$candidates = [];
-		foreach([self::RULES, self::SHAPES] as $rules){
-			foreach($rules as $pattern => $replacement){
-				$candidate = preg_replace($pattern, $replacement, $shortName, 1, $count);
-				if($count > 0 && $candidate !== null && $candidate !== $shortName){
-					$candidates["minecraft:" . $candidate] = true;
-				}
+		foreach(self::RULES as $pattern => $replacement){
+			$candidate = preg_replace($pattern, $replacement, $shortName, 1, $count);
+			if($count > 0 && $candidate !== null && $candidate !== $shortName){
+				$candidates["minecraft:" . $candidate] = true;
+			}
+		}
+		foreach(self::SHAPES as $pattern => $replacement){
+			if(preg_match($pattern, $shortName) === 1){
+				$candidates["minecraft:" . $replacement] = true;
 			}
 		}
 		return array_keys($candidates);

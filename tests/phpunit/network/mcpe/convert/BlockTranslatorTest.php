@@ -54,4 +54,14 @@ class BlockTranslatorTest extends TestCase{
 			}
 		}
 	}
+
+	public function testGenericShapeFallbackCandidates() : void{
+		$slabCandidates = BlockStateFallbacks::getCandidates("minecraft:unknown_custom_slab");
+		self::assertContains("minecraft:cobblestone_slab", $slabCandidates);
+		self::assertNotContains("minecraft:unknown_customcobblestone_slab", $slabCandidates);
+
+		$stairsCandidates = BlockStateFallbacks::getCandidates("minecraft:resin_brick_stairs");
+		self::assertContains("minecraft:stone_stairs", $stairsCandidates);
+		self::assertNotContains("minecraft:resin_brickstone_stairs", $stairsCandidates);
+	}
 }

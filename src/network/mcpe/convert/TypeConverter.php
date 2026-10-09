@@ -98,7 +98,6 @@ class TypeConverter{
 
 	/** @phpstan-var array<string, int> */
 	private static array $chunkProtocolIds = [];
-	private static bool $nativeSpectator = true;
 	private ?int $chunkProtocolId = null;
 
 	public function __construct(int $protocolId){
@@ -166,15 +165,10 @@ class TypeConverter{
 	public function coreGameModeToProtocol(GameMode $gamemode) : int{
 		return match($gamemode){
 			GameMode::SURVIVAL => ProtocolGameMode::SURVIVAL,
-			GameMode::CREATIVE => ProtocolGameMode::CREATIVE,
-			GameMode::SPECTATOR => self::$nativeSpectator ? ProtocolGameMode::SPECTATOR : ProtocolGameMode::CREATIVE,
+			//TODO: native spectator support
+			GameMode::CREATIVE, GameMode::SPECTATOR => ProtocolGameMode::CREATIVE,
 			GameMode::ADVENTURE => ProtocolGameMode::ADVENTURE,
 		};
-	}
-
-	/** @internal */
-	public static function setNativeSpectator(bool $enabled) : void{
-		self::$nativeSpectator = $enabled;
 	}
 
 	public function protocolGameModeToCore(int $gameMode) : ?GameMode{
@@ -182,7 +176,8 @@ class TypeConverter{
 			ProtocolGameMode::SURVIVAL => GameMode::SURVIVAL,
 			ProtocolGameMode::CREATIVE => GameMode::CREATIVE,
 			ProtocolGameMode::ADVENTURE => GameMode::ADVENTURE,
-			ProtocolGameMode::SURVIVAL_VIEWER, ProtocolGameMode::CREATIVE_VIEWER, ProtocolGameMode::SPECTATOR => GameMode::SPECTATOR,
+			ProtocolGameMode::SURVIVAL_VIEWER, ProtocolGameMode::CREATIVE_VIEWER => GameMode::SPECTATOR,
+			//TODO: native spectator support
 			default => null,
 		};
 	}

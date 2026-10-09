@@ -26,6 +26,12 @@ namespace pocketmine\network\mcpe\cache;
 use pmmp\encoding\ByteBufferWriter;
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\block\tile\FlowerPot;
+use pocketmine\block\tile\ItemFrame;
+use pocketmine\block\tile\MovingBlock;
+use pocketmine\block\VanillaBlocks;
+use pocketmine\item\VanillaItems;
+use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\LevelChunkPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
@@ -34,6 +40,7 @@ use pocketmine\network\mcpe\protocol\types\ChunkPosition;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\serializer\ChunkSerializer;
 use pocketmine\world\format\Chunk;
+use pocketmine\world\World;
 use function array_keys;
 use function count;
 
@@ -51,20 +58,45 @@ final class ChunkProtocolGroupTest extends TestCase{
 			}
 		}
 
+		$world = $this->createMock(World::class);
+
+		$itemFrame = new ItemFrame($world, new Vector3(2, 64, 3));
+		$itemFrame->setItem(VanillaItems::DIAMOND_SWORD());
+		$chunk->addTile($itemFrame);
+
+		$flowerPot = new FlowerPot($world, new Vector3(4, 64, 5));
+		$flowerPot->setPlant(VanillaBlocks::DANDELION());
+		$chunk->addTile($flowerPot);
+
+		$movingBlock = new MovingBlock($world, new Vector3(6, 64, 7));
+		$movingBlock->setMovingBlock(VanillaBlocks::STONE());
+		$chunk->addTile($movingBlock);
+
 		$groups = [];
 		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocolId){
 			$groups[TypeConverter::getInstance($protocolId)->getChunkProtocolId()][] = $protocolId;
 		}
 		self::assertLessThan(count(ProtocolInfo::ACCEPTED_PROTOCOL), count($groups), "some protocols should share chunk caches");
 
-		foreach($groups as $chunkProtocolId => $members){
-			$expected = null;
-			foreach($members as $protocolId){
-				$payload = ChunkSerializer::serializeFullChunk($chunk, DimensionIds::OVERWORLD, TypeConverter::getInstance($protocolId), "");
-				$stream = new ByteBufferWriter();
-				PacketBatch::encodePackets($stream, $protocolId, [LevelChunkPacket::create(new ChunkPosition(0, 0), DimensionIds::OVERWORLD, ChunkSerializer::getSubChunkCount($chunk, DimensionIds::OVERWORLD), null, false, [], $payload)]);
-				$expected ??= $stream->getData();
-				self::assertSame($expected, $stream->getData(), "protocol $protocolId encodes chunks differently from $chunkProtocolId");
+		$testCases = [
+			[DimensionIds::OVERWORLD, new ChunkPosition(-3, 5)],
+			[DimensionIds::NETHER, new ChunkPosition(2, -4)],
+			[DimensionIds::THE_END, new ChunkPosition(0, 0)],
+		];
+
+		foreach($testCases as [$dimensionId, $chunkPos]){
+			foreach($groups as $chunkProtocolId => $members){
+				$expected = null;
+				$repConverter = TypeConverter::getInstance($chunkProtocolId);
+				$tiles = ChunkSerializer::serializeTiles($chunk, $repConverter);
+
+				foreach($members as $protocolId){
+					$payload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, TypeConverter::getInstance($protocolId), $tiles);
+					$stream = new ByteBufferWriter();
+					PacketBatch::encodePackets($stream, $protocolId, [LevelChunkPacket::create($chunkPos, $dimensionId, ChunkSerializer::getSubChunkCount($chunk, $dimensionId), null, false, [], $payload)]);
+					$expected ??= $stream->getData();
+					self::assertSame($expected, $stream->getData(), "protocol $protocolId encodes chunks differently from $chunkProtocolId in dimension $dimensionId");
+				}
 			}
 		}
 	}
