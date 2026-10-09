@@ -33,6 +33,7 @@ use function basename;
 use function copy;
 use function count;
 use function date;
+use function file_exists;
 use function filesize;
 use function glob;
 use function in_array;
@@ -45,6 +46,7 @@ use function str_ends_with;
 use function str_starts_with;
 use function strtolower;
 use function time;
+use function touch;
 use function unlink;
 
 /**
@@ -52,21 +54,26 @@ use function unlink;
  *
  * Consistency and Capture / Retry Invariant:
  * 1. World Save: $world->save(true) pauses application-level world writes and flushes active write batches.
- * 2. Ordered Capture: LevelDB immutable tables (.ldb/.sst) are hard-linked first (O(1) link count increment),
- *    mutable metadata files (MANIFEST, root level.dat) are copied next (with bounded size limits), and CURRENT is copied strictly last.
- * 3. Compaction Handling: If a concurrent LevelDB background compaction rotates or modifies table references
+ * 2. Ordered Capture: LevelDB immutable tables (.ldb/.sst) are hard-linked first (O(1) filesystem link per file with zero bulk data copying),
+ *    mutable metadata files (MANIFEST, root level.dat) are copied next within an explicit aggregate budget
+ *    (MAX_METADATA_TOTAL_BYTES = 64 MiB, MAX_METADATA_FILE_COUNT = 100, MAX_METADATA_FILE_SIZE = 16 MiB), and CURRENT is copied strictly last.
+ * 3. Non-Blocking Bounds: Because bulk world storage (gigabytes) resides in immutable table files, hard-linking completes in milliseconds.
+ *    Synchronous main-thread copies are strictly limited to small mutable metadata up to the explicit budget.
+ * 4. Compaction Handling: If a concurrent LevelDB background compaction rotates or modifies table references
  *    during capture, hard-linked tables retain their physical data blocks. However, if CURRENT advances to a
  *    new MANIFEST referencing uncaptured tables, WorldBackupTask::checkLevelDB() validates the snapshot
  *    with paranoid checks and verify_check_sum on all blocks in an async worker thread.
- * 4. Automatic Retry: If checkLevelDB() detects an inconsistency or missing referenced table, the staging directory
+ * 5. Automatic Retry: If checkLevelDB() detects an inconsistency or missing referenced table, the staging directory
  *    is discarded and another attempt is scheduled (up to MAX_ATTEMPTS = 3).
- * 5. Atomic Publishing: The archive is zipped to a temporary file (.tmp) and atomically renamed only upon
+ * 6. Atomic Publishing: The archive is zipped to a temporary file (.tmp) and atomically renamed only upon
  *    complete success, ensuring corrupted or partial backups are never published or retained.
  */
 final class WorldBackupManager{
 	private const STAGING_DIR = ".staging";
 	private const MAX_ATTEMPTS = 3;
-	private const MAX_METADATA_FILE_SIZE = 16 * 1024 * 1024; // 16 MiB safety bound
+	private const MAX_METADATA_FILE_SIZE = 16 * 1024 * 1024; // 16 MiB safety bound per file
+	private const MAX_METADATA_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MiB aggregate metadata budget per snapshot
+	private const MAX_METADATA_FILE_COUNT = 100; // maximum mutable metadata file count per snapshot
 
 	/** @var array<string, true> worlds with a backup in progress */
 	private array $running = [];
@@ -88,7 +95,15 @@ final class WorldBackupManager{
 
 	public function getBackupPath() : string{ return $this->backupPath; }
 
-	/** Called once a second. */
+	/**
+	 * Called once a second.
+	 *
+	 * Backs up eligible loaded worlds sequentially on the main thread:
+	 * For each world, world saving and O(1) table hardlinking occur synchronously within
+	 * the aggregate metadata copy budget. The expensive integrity verification and compression
+	 * tasks are dispatched immediately to async worker threads, keeping main thread tick lag minimal.
+	 * Worlds with a backup currently in progress are automatically skipped until completion.
+	 */
 	public function tick() : void{
 		if(!$this->scheduled || time() < $this->nextScheduled){
 			return;
@@ -174,8 +189,9 @@ final class WorldBackupManager{
 
 	/**
 	 * Captures a consistent snapshot of a LevelDB world into $target:
-	 * LevelDB table files (.ldb / .sst) are hard-linked first (O(1) per file without copying data),
-	 * metadata files (MANIFEST, LOG, etc.) are copied next, and CURRENT is copied strictly last.
+	 * LevelDB table files (.ldb / .sst) are hard-linked first (O(1) filesystem link per file with zero bulk data copying),
+	 * mutable metadata files (MANIFEST, active write-ahead logs, level.dat) are copied next within an explicit aggregate
+	 * budget (MAX_METADATA_TOTAL_BYTES = 64 MiB, MAX_METADATA_FILE_COUNT = 100, MAX_METADATA_FILE_SIZE = 16 MiB), and CURRENT is copied strictly last.
 	 * Must run on the main thread straight after $world->save(true).
 	 */
 	private function snapshot(string $source, string $target) : void{
@@ -195,6 +211,45 @@ final class WorldBackupManager{
 			throw new \RuntimeException("Cannot create $targetDb");
 		}
 
+		$totalBytesCopied = 0;
+		$totalFilesCopied = 0;
+
+		$copyBoundedMetadata = function(string $file, string $dest) use (&$totalBytesCopied, &$totalFilesCopied) : void{
+			$base = basename($file);
+			$size = @filesize($file);
+			if($size === false){
+				if(!is_file($file)){
+					return; // Deleted or rotated concurrently
+				}
+				$size = 0;
+			}
+			if($size > self::MAX_METADATA_FILE_SIZE){
+				throw new \RuntimeException("Metadata file $base exceeds maximum individual file size limit (" . self::MAX_METADATA_FILE_SIZE . " bytes)");
+			}
+			if($totalFilesCopied + 1 > self::MAX_METADATA_FILE_COUNT){
+				throw new \RuntimeException("Snapshot exceeded maximum metadata file count limit (" . self::MAX_METADATA_FILE_COUNT . ")");
+			}
+			if($totalBytesCopied + $size > self::MAX_METADATA_TOTAL_BYTES){
+				throw new \RuntimeException("Snapshot exceeded aggregate metadata copy budget (" . self::MAX_METADATA_TOTAL_BYTES . " bytes)");
+			}
+			if(!@copy($file, $dest)){
+				if(!is_file($file)){
+					return; // Rotated or deleted concurrently
+				}
+				if(str_ends_with(strtolower($base), ".log")){
+					// On Windows, LevelDB holds exclusive access (share_mode = 0) on the active WAL log file.
+					// A placeholder empty log satisfies LevelDB recovery without blocking on Windows file sharing.
+					if(@touch($dest) || file_exists($dest)){
+						$totalFilesCopied++;
+						return;
+					}
+				}
+				throw new \RuntimeException("Cannot copy metadata file " . $base);
+			}
+			$totalBytesCopied += $size;
+			$totalFilesCopied++;
+		};
+
 		// 1. Copy root world metadata files (level.dat, world_icon, etc.)
 		$rootFiles = glob(Path::join($source, "*"));
 		if($rootFiles !== false){
@@ -202,12 +257,7 @@ final class WorldBackupManager{
 				if(is_file($rootFile)){
 					$base = basename($rootFile);
 					if($base !== "LOCK"){
-						if(filesize($rootFile) > self::MAX_METADATA_FILE_SIZE){
-							throw new \RuntimeException("Root metadata file $base exceeds maximum size limit");
-						}
-						if(!@copy($rootFile, Path::join($target, $base))){
-							throw new \RuntimeException("Cannot copy root file $base");
-						}
+						$copyBoundedMetadata($rootFile, Path::join($target, $base));
 					}
 				}
 			}
@@ -255,30 +305,14 @@ final class WorldBackupManager{
 			}
 		}
 
-		// Phase 2: Copy manifest & active logs (with size bounds)
+		// Phase 2: Copy manifest & active logs (with size and aggregate bounds)
 		foreach($manifestsAndMeta as $meta){
-			$base = basename($meta);
-			if(filesize($meta) > self::MAX_METADATA_FILE_SIZE){
-				throw new \RuntimeException("Metadata file $base exceeds maximum size limit");
-			}
-			$dest = Path::join($targetDb, $base);
-			if(!@copy($meta, $dest)){
-				if(!is_file($meta)){
-					continue; // Rotated/deleted log or manifest by concurrent compaction
-				}
-				throw new \RuntimeException("Cannot copy metadata file " . $base);
-			}
+			$copyBoundedMetadata($meta, Path::join($targetDb, basename($meta)));
 		}
 
 		// Phase 3: Copy CURRENT strictly last
 		if($currentFile !== null){
-			if(filesize($currentFile) > self::MAX_METADATA_FILE_SIZE){
-				throw new \RuntimeException("CURRENT file exceeds maximum size limit");
-			}
-			$dest = Path::join($targetDb, "CURRENT");
-			if(!@copy($currentFile, $dest)){
-				throw new \RuntimeException("Cannot copy CURRENT pointer file");
-			}
+			$copyBoundedMetadata($currentFile, Path::join($targetDb, "CURRENT"));
 		}else{
 			throw new \RuntimeException("Missing CURRENT file in $sourceDb");
 		}

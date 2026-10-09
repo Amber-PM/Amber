@@ -58,7 +58,11 @@ final class WorldBackupTest extends TestCase{
 
 	protected function tearDown() : void{
 		if(is_dir($this->tempDir)){
-			Filesystem::recursiveUnlink($this->tempDir);
+			try{
+				Filesystem::recursiveUnlink($this->tempDir);
+			}catch(\Throwable){
+				// best-effort cleanup on platforms with lingering file locks
+			}
 		}
 	}
 
@@ -338,6 +342,32 @@ final class WorldBackupTest extends TestCase{
 		$snapshotMethod->invoke($manager, $source, $target);
 	}
 
+	public function testSnapshotFailsWhenAggregateMetadataBudgetExceeded() : void{
+		$source = Path::join($this->tempDir, "source_budget_fail");
+		$sourceDb = Path::join($source, "db");
+		@mkdir($sourceDb, 0777, true);
+		file_put_contents(Path::join($source, "level.dat"), "world data");
+		file_put_contents(Path::join($sourceDb, "000001.ldb"), "table data");
+		file_put_contents(Path::join($sourceDb, "CURRENT"), "MANIFEST-000001");
+
+		// Exceed file count budget (> 100 metadata files)
+		for($i = 0; $i < 105; ++$i){
+			file_put_contents(Path::join($sourceDb, "meta_" . $i . ".dat"), "meta data");
+		}
+
+		$target = Path::join($this->tempDir, "target_budget_fail");
+		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		$logger = new DummyBackupLogger();
+		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage("Snapshot exceeded maximum metadata file count limit");
+
+		$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
+		$snapshotMethod->invoke($manager, $source, $target);
+	}
+
 	public function testCorruptedLevelDBTableFailsVerificationAndAbortsArchive() : void{
 		if(!class_exists(\LevelDB::class)){
 			self::markTestSkipped("ext-leveldb is required for this test");
@@ -409,41 +439,46 @@ final class WorldBackupTest extends TestCase{
 		@mkdir($sourceDbPath, 0777, true);
 		file_put_contents(Path::join($source, "level.dat"), "world nbt data");
 
-		// 1. Populate initial state of 1,000 keys
+		// 1. Populate initial state of 1,000 keys and flush to SSTable files
 		$db = new \LevelDB($sourceDbPath, [
 			"create_if_missing" => true,
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 4096,
 		]);
-		$batch = new \LevelDBWriteBatch();
 		$initialState = [];
-		for($i = 0; $i < 1000; ++$i){
-			$key = "player_pos_" . $i;
-			$val = "coord_data_chunk_" . $i;
-			$batch->put($key, $val);
-			$initialState[$key] = $val;
+		try{
+			$batch = new \LevelDBWriteBatch();
+			for($i = 0; $i < 1000; ++$i){
+				$key = "player_pos_" . $i;
+				$val = "coord_data_chunk_" . $i;
+				$batch->put($key, $val);
+				$initialState[$key] = $val;
+			}
+			$db->write($batch);
+			$db->compactRange("", "\xff\xff\xff\xff"); // flush initial records to SSTable files
+
+			// 2. Take consistent snapshot via WorldBackupManager::snapshot()
+			$staging = Path::join($this->tempDir, "staging_snapshot");
+			$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+			$logger = new DummyBackupLogger();
+			(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+			$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+			$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
+			$snapshotMethod->invoke($manager, $source, $staging);
+
+			// 3. Simulate active concurrent operations and compaction on the source database:
+			// Delete old keys, write new keys, and compact the source database while the snapshot exists
+			$mutateBatch = new \LevelDBWriteBatch();
+			for($i = 0; $i < 1000; ++$i){
+				$mutateBatch->delete("player_pos_" . $i);
+				$mutateBatch->put("new_state_" . $i, "new_value_" . $i);
+			}
+			$db->write($mutateBatch);
+			$db->compactRange("", "\xff\xff\xff\xff"); // force compaction of source database
+		}finally{
+			unset($db); // ensure source database is always closed
 		}
-		$db->write($batch);
-
-		// 2. Take consistent snapshot via WorldBackupManager::snapshot()
-		$staging = Path::join($this->tempDir, "staging_snapshot");
-		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
-		$logger = new DummyBackupLogger();
-		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
-		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
-
-		$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
-		$snapshotMethod->invoke($manager, $source, $staging);
-
-		// 3. Simulate active concurrent operations on the source database:
-		// Delete old keys, write new keys, and flush/rotate tables in the source database
-		$mutateBatch = new \LevelDBWriteBatch();
-		for($i = 0; $i < 1000; ++$i){
-			$mutateBatch->delete("player_pos_" . $i);
-			$mutateBatch->put("new_state_" . $i, "new_value_" . $i);
-		}
-		$db->write($mutateBatch);
-		unset($db); // close source database
 
 		// 4. Verify snapshot with WorldBackupTask on the staging snapshot
 		$targetZip = Path::join($this->tempDir, "backups", "compaction_verified.zip");
@@ -466,13 +501,126 @@ final class WorldBackupTest extends TestCase{
 			"paranoid_checks" => true,
 		], ["verify_check_sum" => true]);
 
-		// Verify every initial key was recovered intact
-		foreach($initialState as $k => $expectedV){
-			self::assertSame($expectedV, $restoredDb->get($k), "Missing or mismatched key $k in restored database");
+		try{
+			// Verify every initial key was recovered intact
+			foreach($initialState as $k => $expectedV){
+				self::assertSame($expectedV, $restoredDb->get($k), "Missing or mismatched key $k in restored database");
+			}
+			// Verify none of the post-snapshot mutated keys leaked into the restored snapshot
+			self::assertFalse($restoredDb->get("new_state_0"));
+		}finally{
+			unset($restoredDb);
 		}
-		// Verify none of the post-snapshot mutated keys leaked into the restored snapshot
-		self::assertFalse($restoredDb->get("new_state_0"));
-		unset($restoredDb);
+	}
+
+	public function testCompactionInconsistencyDuringCaptureDetectedByVerificationAndAbortsArchive() : void{
+		if(!class_exists(\LevelDB::class)){
+			self::markTestSkipped("ext-leveldb is required for this test");
+		}
+
+		$source = Path::join($this->tempDir, "compaction_race_world");
+		$sourceDbPath = Path::join($source, "db");
+		@mkdir($sourceDbPath, 0777, true);
+		file_put_contents(Path::join($source, "level.dat"), "world nbt data");
+
+		$db = new \LevelDB($sourceDbPath, [
+			"create_if_missing" => true,
+			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
+			"block_size" => 4096,
+		]);
+		try{
+			$batch = new \LevelDBWriteBatch();
+			for($i = 0; $i < 500; ++$i){
+				$batch->put("key_" . $i, "value_" . $i);
+			}
+			$db->write($batch);
+			$db->compactRange("", "\xff\xff\xff\xff");
+		}finally{
+			unset($db);
+		}
+
+		$staging = Path::join($this->tempDir, "staging_compaction_race");
+		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		$logger = new DummyBackupLogger();
+		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+		$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
+		$snapshotMethod->invoke($manager, $source, $staging);
+
+		// Simulate a concurrent compaction race where a table referenced by MANIFEST was removed/compacted away
+		$tableFiles = array_merge(
+			glob(Path::join($staging, "db", "*.ldb")) ?: [],
+			glob(Path::join($staging, "db", "*.sst")) ?: []
+		);
+		self::assertNotEmpty($tableFiles, "Expected table files in staging snapshot");
+		@unlink($tableFiles[0]); // simulate compaction deletion of table referenced in manifest
+
+		$targetZip = Path::join($this->tempDir, "backups", "race_aborted.zip");
+		$task = new WorldBackupTask($staging, $targetZip, true, function(?string $error) : void{});
+		$task->onRun();
+
+		$result = $task->getResult();
+		self::assertNotNull($result, "Expected verification task to detect missing table file");
+		self::assertTrue(
+			stripos($result, "missing") !== false ||
+			stripos($result, "corrupt") !== false ||
+			stripos($result, "fail") !== false,
+			"Expected missing table file / corruption error, got: " . $result
+		);
+		self::assertFileDoesNotExist($targetZip);
+	}
+
+	public function testWorldBackupManagerRetriesOnInconsistentAttemptUntilSuccess() : void{
+		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		$logger = new DummyBackupLogger();
+		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+
+		$attemptsRan = 0;
+		$mockAsyncPool = new class($attemptsRan) {
+			public function __construct(public int &$attemptsRan){}
+			public function submitTask(WorldBackupTask $task) : void{
+				$this->attemptsRan++;
+				if($this->attemptsRan === 1){
+					// First attempt: simulate compaction inconsistency reported by checkLevelDB
+					$task->setResult("LevelDB table corrupted: 1 missing files; e.g. 000004.ldb");
+				}else{
+					// Second attempt: successful verification
+					$task->setResult(null);
+				}
+				$task->onCompletion();
+			}
+		};
+
+		(new \ReflectionProperty(\pocketmine\Server::class, "asyncPool"))->setValue($server, $mockAsyncPool);
+
+		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+		$mockProvider = (new \ReflectionClass(\pocketmine\world\format\io\leveldb\LevelDB::class))->newInstanceWithoutConstructor();
+		$worldDir = Path::join($this->tempDir, "retry_world");
+		@mkdir(Path::join($worldDir, "db"), 0777, true);
+		file_put_contents(Path::join($worldDir, "level.dat"), "world data");
+		file_put_contents(Path::join($worldDir, "db", "000001.ldb"), "table data");
+		file_put_contents(Path::join($worldDir, "db", "CURRENT"), "MANIFEST-000001");
+
+		$pathProp = new \ReflectionProperty(\pocketmine\world\format\io\BaseWorldProvider::class, "path");
+		$pathProp->setValue($mockProvider, $worldDir);
+
+		$mockWorld = (new \ReflectionClass(\pocketmine\world\World::class))->newInstanceWithoutConstructor();
+		(new \ReflectionProperty(\pocketmine\world\World::class, "folderName"))->setValue($mockWorld, "retry_world");
+		(new \ReflectionProperty(\pocketmine\world\World::class, "provider"))->setValue($mockWorld, $mockProvider);
+		(new \ReflectionProperty(\pocketmine\world\World::class, "isLoaded"))->setValue($mockWorld, true);
+
+		$finalFile = null;
+		$finalError = "initial";
+		$manager->backup($mockWorld, function(?string $file, ?string $error) use (&$finalFile, &$finalError) : void{
+			$finalFile = $file;
+			$finalError = $error;
+		});
+
+		self::assertSame(2, $attemptsRan, "Expected WorldBackupManager to retry attempt 2 after attempt 1 inconsistency");
+		self::assertNull($finalError, "Expected final attempt to succeed without error");
+		self::assertNotNull($finalFile, "Expected final backup file to be provided");
 	}
 }
 
