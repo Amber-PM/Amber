@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<title>AmberPM Panel</title>
+<link rel="stylesheet" href="/panel.css">
+<script src="/panel.js" defer></script>
+</head>
+<body>
+<header>
+	<h1>AmberPM</h1>
+	<span id="server-version"></span>
+	<span id="scope" class="badge"></span>
+	<nav id="tabs" hidden>
+		<button data-tab="overview" class="active">Overview</button>
+		<button data-tab="players">Players</button>
+		<button data-tab="console">Console</button>
+		<button data-tab="addons">Add-ons</button>
+		<button id="logout">Log out</button>
+	</nav>
+</header>
+<main>
+	<section id="login">
+		<form id="login-form">
+			<label for="token">Panel token</label>
+			<input id="token" type="password" autocomplete="current-password" required>
+			<button type="submit">Log in</button>
+			<p id="login-error" class="error"></p>
+			<p class="hint">The admin token is web.token in pocketmine.yml, or the one written to web-token.txt. Tokens in web.read-only-tokens can view but not run commands.</p>
+		</form>
+	</section>
+
+	<section id="overview" class="tab" hidden>
+		<div class="tiles">
+			<div class="tile"><span class="label">TPS</span><span id="tps" class="value"></span><span id="tps-avg" class="sub"></span></div>
+			<div class="tile"><span class="label">Load</span><span id="load" class="value"></span></div>
+			<div class="tile"><span class="label">Players</span><span id="players-count" class="value"></span></div>
+			<div class="tile"><span class="label">Memory</span><span id="memory" class="value"></span><span id="memory-process" class="sub"></span></div>
+			<div class="tile"><span class="label">Uptime</span><span id="uptime" class="value"></span></div>
+			<div class="tile"><span class="label">Chunk cache</span><span id="cache" class="value"></span><span id="cache-hits" class="sub"></span></div>
+		</div>
+		<h2>History <span id="history-span" class="sub"></span></h2>
+		<div class="charts">
+			<figure class="chart"><figcaption>TPS <span id="chart-tps-value" class="value"></span><span id="chart-tps-range" class="sub"></span></figcaption><svg id="chart-tps" viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="TPS over time"></svg></figure>
+			<figure class="chart"><figcaption>Players <span id="chart-players-value" class="value"></span><span id="chart-players-range" class="sub"></span></figcaption><svg id="chart-players" viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="Players over time"></svg></figure>
+			<figure class="chart"><figcaption>Load <span id="chart-load-value" class="value"></span><span id="chart-load-range" class="sub"></span></figcaption><svg id="chart-load" viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="Tick load over time"></svg></figure>
+			<figure class="chart"><figcaption>Memory <span id="chart-memory-value" class="value"></span><span id="chart-memory-range" class="sub"></span></figcaption><svg id="chart-memory" viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="Main thread memory over time"></svg></figure>
+		</div>
+		<h2>Players by version</h2>
+		<div class="table-wrap"><table><thead><tr><th>Version</th><th>Protocol</th><th>Players</th></tr></thead><tbody id="versions"></tbody></table></div>
+		<h2>Worlds</h2>
+		<div class="table-wrap"><table><thead><tr><th>World</th><th>Chunks</th><th>Entities</th><th>Players</th><th>Tick (ms)</th></tr></thead><tbody id="worlds"></tbody></table></div>
+	</section>
+
+	<section id="players" class="tab" hidden>
+		<div class="table-wrap"><table><thead><tr><th>Name</th><th>Version</th><th>Ping</th><th>World</th><th>Position</th><th>Game mode</th><th></th></tr></thead><tbody id="player-list"></tbody></table></div>
+	</section>
+
+	<section id="console" class="tab" hidden>
+		<div class="toolbar">
+			<label><input type="checkbox" id="level-error" checked> Errors</label>
+			<label><input type="checkbox" id="level-warning" checked> Warnings</label>
+			<label><input type="checkbox" id="level-info" checked> Info</label>
+			<label><input type="checkbox" id="level-debug" checked> Debug</label>
+			<input id="log-search" type="search" placeholder="Search the console" aria-label="Search the console">
+			<button id="log-pause" type="button">Pause</button>
+			<button id="log-download" type="button">Download</button>
+		</div>
+		<pre id="log"></pre>
+		<form id="command-form">
+			<input id="command" autocomplete="off" placeholder="Command, e.g. list" maxlength="1000">
+			<button type="submit">Run</button>
+		</form>
+	</section>
+
+	<section id="addons" class="tab" hidden>
+		<div class="table-wrap"><table><thead><tr><th>Pack</th><th>Version</th><th>Type</th><th>Source</th></tr></thead><tbody id="addon-list"></tbody></table></div>
+	</section>
+</main>
+</body>
+</html>
