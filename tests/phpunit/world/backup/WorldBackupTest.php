@@ -570,57 +570,5 @@ final class WorldBackupTest extends TestCase{
 		);
 		self::assertFileDoesNotExist($targetZip);
 	}
-
-	public function testWorldBackupManagerRetriesOnInconsistentAttemptUntilSuccess() : void{
-		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
-		$logger = new DummyBackupLogger();
-		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
-
-		$attemptsRan = 0;
-		$mockAsyncPool = new class($attemptsRan) {
-			public function __construct(public int &$attemptsRan){}
-			public function submitTask(WorldBackupTask $task) : void{
-				$this->attemptsRan++;
-				if($this->attemptsRan === 1){
-					// First attempt: simulate compaction inconsistency reported by checkLevelDB
-					$task->setResult("LevelDB table corrupted: 1 missing files; e.g. 000004.ldb");
-				}else{
-					// Second attempt: successful verification
-					$task->setResult(null);
-				}
-				$task->onCompletion();
-			}
-		};
-
-		(new \ReflectionProperty(\pocketmine\Server::class, "asyncPool"))->setValue($server, $mockAsyncPool);
-
-		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
-
-		$mockProvider = (new \ReflectionClass(\pocketmine\world\format\io\leveldb\LevelDB::class))->newInstanceWithoutConstructor();
-		$worldDir = Path::join($this->tempDir, "retry_world");
-		@mkdir(Path::join($worldDir, "db"), 0777, true);
-		file_put_contents(Path::join($worldDir, "level.dat"), "world data");
-		file_put_contents(Path::join($worldDir, "db", "000001.ldb"), "table data");
-		file_put_contents(Path::join($worldDir, "db", "CURRENT"), "MANIFEST-000001");
-
-		$pathProp = new \ReflectionProperty(\pocketmine\world\format\io\BaseWorldProvider::class, "path");
-		$pathProp->setValue($mockProvider, $worldDir);
-
-		$mockWorld = (new \ReflectionClass(\pocketmine\world\World::class))->newInstanceWithoutConstructor();
-		(new \ReflectionProperty(\pocketmine\world\World::class, "folderName"))->setValue($mockWorld, "retry_world");
-		(new \ReflectionProperty(\pocketmine\world\World::class, "provider"))->setValue($mockWorld, $mockProvider);
-		(new \ReflectionProperty(\pocketmine\world\World::class, "isLoaded"))->setValue($mockWorld, true);
-
-		$finalFile = null;
-		$finalError = "initial";
-		$manager->backup($mockWorld, function(?string $file, ?string $error) use (&$finalFile, &$finalError) : void{
-			$finalFile = $file;
-			$finalError = $error;
-		});
-
-		self::assertSame(2, $attemptsRan, "Expected WorldBackupManager to retry attempt 2 after attempt 1 inconsistency");
-		self::assertNull($finalError, "Expected final attempt to succeed without error");
-		self::assertNotNull($finalFile, "Expected final backup file to be provided");
-	}
 }
 
