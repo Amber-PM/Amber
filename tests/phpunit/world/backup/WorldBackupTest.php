@@ -189,7 +189,7 @@ final class WorldBackupTest extends TestCase{
 		self::assertTrue(is_file(Path::join($targetDb, "000001.ldb")));
 		self::assertTrue(is_file(Path::join($targetDb, "000002.sst")));
 		self::assertTrue(is_file(Path::join($targetDb, "MANIFEST-000001")));
-		self::assertTrue(is_file(Path::join($targetDb, "LOG")));
+		self::assertFalse(is_file(Path::join($targetDb, "LOG")));
 		self::assertFalse(is_file(Path::join($targetDb, "LOCK")));
 		self::assertTrue(is_file(Path::join($targetDb, "CURRENT")));
 		self::assertSame("MANIFEST-000001\n", file_get_contents(Path::join($targetDb, "CURRENT")));
@@ -310,6 +310,165 @@ final class WorldBackupTest extends TestCase{
 		$task->onRun();
 		self::assertTrue($task->hasResult());
 		self::assertIsString($task->getResult());
+	}
+
+	public function testSnapshotFailsWhenHardlinkFails() : void{
+		$source = Path::join($this->tempDir, "source_hardlink_fail");
+		$sourceDb = Path::join($source, "db");
+		@mkdir($sourceDb, 0777, true);
+		file_put_contents(Path::join($source, "level.dat"), "world data");
+		file_put_contents(Path::join($sourceDb, "000001.ldb"), "table data");
+		file_put_contents(Path::join($sourceDb, "CURRENT"), "MANIFEST-000001");
+
+		$target = Path::join($this->tempDir, "target_hardlink_fail");
+		$targetDb = Path::join($target, "db");
+		@mkdir($targetDb, 0777, true);
+		// Pre-create the destination table so link() fails (EEXIST)
+		file_put_contents(Path::join($targetDb, "000001.ldb"), "pre-existing");
+
+		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		$logger = new DummyBackupLogger();
+		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage("Cannot hardlink table file 000001.ldb");
+
+		$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
+		$snapshotMethod->invoke($manager, $source, $target);
+	}
+
+	public function testCorruptedLevelDBTableFailsVerificationAndAbortsArchive() : void{
+		if(!class_exists(\LevelDB::class)){
+			self::markTestSkipped("ext-leveldb is required for this test");
+		}
+
+		$source = Path::join($this->tempDir, "corrupt_source");
+		$sourceDb = Path::join($source, "db");
+		@mkdir($sourceDb, 0777, true);
+		file_put_contents(Path::join($source, "level.dat"), "world data");
+
+		// Populate 2,000 records so table files are flushed to disk
+		$db = new \LevelDB($sourceDb, [
+			"create_if_missing" => true,
+			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
+			"block_size" => 4096,
+		]);
+		$batch = new \LevelDBWriteBatch();
+		for($i = 0; $i < 2000; ++$i){
+			$batch->put("key_" . $i, str_repeat("value_" . $i, 10));
+		}
+		$db->write($batch);
+		unset($db); // close to flush tables and write CURRENT
+
+		// Find a .ldb or .sst file and corrupt one byte in the data blocks
+		$tableFiles = glob(Path::join($sourceDb, "*.ldb"));
+		if($tableFiles === false || count($tableFiles) === 0){
+			$tableFiles = glob(Path::join($sourceDb, "*.sst"));
+		}
+		self::assertNotEmpty($tableFiles, "Expected at least one LevelDB table file");
+		$tableFile = $tableFiles[0];
+
+		$contents = file_get_contents($tableFile);
+		self::assertIsString($contents);
+		self::assertGreaterThan(50, strlen($contents));
+		// Flip bits in the middle of a data block
+		$corruptPos = (int) (strlen($contents) / 2);
+		$contents[$corruptPos] = chr(ord($contents[$corruptPos]) ^ 0xff);
+		file_put_contents($tableFile, $contents);
+
+		$target = Path::join($this->tempDir, "backups", "corrupted.zip");
+		$task = new WorldBackupTask($source, $target, true, function(?string $error) : void{});
+
+		$task->onRun();
+
+		// Check that onRun recorded a corruption error and did NOT publish the archive
+		$result = $task->getResult();
+		self::assertNotNull($result);
+		self::assertTrue(
+			str_contains($result, "Corruption") ||
+			str_contains($result, "checksum") ||
+			str_contains($result, "corrupt"),
+			"Expected corruption/checksum error message, got: " . $result
+		);
+		self::assertFileDoesNotExist($target);
+		self::assertFileDoesNotExist($target . ".tmp");
+	}
+
+	public function testLevelDBSnapshotRecoversConsistentStateAcrossConcurrentCompaction() : void{
+		if(!class_exists(\LevelDB::class)){
+			self::markTestSkipped("ext-leveldb is required for this test");
+		}
+
+		$source = Path::join($this->tempDir, "compaction_world");
+		$sourceDbPath = Path::join($source, "db");
+		@mkdir($sourceDbPath, 0777, true);
+		file_put_contents(Path::join($source, "level.dat"), "world nbt data");
+
+		// 1. Populate initial state of 1,000 keys
+		$db = new \LevelDB($sourceDbPath, [
+			"create_if_missing" => true,
+			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
+			"block_size" => 4096,
+		]);
+		$batch = new \LevelDBWriteBatch();
+		$initialState = [];
+		for($i = 0; $i < 1000; ++$i){
+			$key = "player_pos_" . $i;
+			$val = "coord_data_chunk_" . $i;
+			$batch->put($key, $val);
+			$initialState[$key] = $val;
+		}
+		$db->write($batch);
+
+		// 2. Take consistent snapshot via WorldBackupManager::snapshot()
+		$staging = Path::join($this->tempDir, "staging_snapshot");
+		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
+		$logger = new DummyBackupLogger();
+		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
+		$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
+
+		$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
+		$snapshotMethod->invoke($manager, $source, $staging);
+
+		// 3. Simulate active concurrent operations on the source database:
+		// Delete old keys, write new keys, and flush/rotate tables in the source database
+		$mutateBatch = new \LevelDBWriteBatch();
+		for($i = 0; $i < 1000; ++$i){
+			$mutateBatch->delete("player_pos_" . $i);
+			$mutateBatch->put("new_state_" . $i, "new_value_" . $i);
+		}
+		$db->write($mutateBatch);
+		unset($db); // close source database
+
+		// 4. Verify snapshot with WorldBackupTask on the staging snapshot
+		$targetZip = Path::join($this->tempDir, "backups", "compaction_verified.zip");
+		$task = new WorldBackupTask($staging, $targetZip, true, function(?string $error) : void{});
+		$task->onRun();
+		self::assertNull($task->getResult(), "Snapshot verification failed: " . $task->getResult());
+		self::assertFileExists($targetZip);
+
+		// 5. Restore/extract the archive and verify that the recovered LevelDB database matches
+		// the complete initial saved state and is completely unaffected by the source mutations/compaction
+		$restoreDir = Path::join($this->tempDir, "restored_world");
+		@mkdir($restoreDir, 0777, true);
+		$zip = new \ZipArchive();
+		self::assertTrue($zip->open($targetZip));
+		$zip->extractTo($restoreDir);
+		$zip->close();
+
+		$restoredDb = new \LevelDB(Path::join($restoreDir, "db"), [
+			"create_if_missing" => false,
+			"paranoid_checks" => true,
+		], ["verify_check_sum" => true]);
+
+		// Verify every initial key was recovered intact
+		foreach($initialState as $k => $expectedV){
+			self::assertSame($expectedV, $restoredDb->get($k), "Missing or mismatched key $k in restored database");
+		}
+		// Verify none of the post-snapshot mutated keys leaked into the restored snapshot
+		self::assertFalse($restoredDb->get("new_state_0"));
+		unset($restoredDb);
 	}
 }
 

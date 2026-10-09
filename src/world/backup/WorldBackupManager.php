@@ -33,6 +33,7 @@ use function basename;
 use function copy;
 use function count;
 use function date;
+use function filesize;
 use function glob;
 use function in_array;
 use function is_dir;
@@ -41,20 +42,31 @@ use function link;
 use function mkdir;
 use function rsort;
 use function str_ends_with;
+use function str_starts_with;
 use function strtolower;
 use function time;
 use function unlink;
 
 /**
- * Automatic world backups: zip files of each world in backups/<world>/, the oldest deleted beyond a set count.
+ * Automatic world backups for LevelDB worlds: snapshots are captured via hard-links and zipped asynchronously.
  *
- * A backup saves the world, then takes a snapshot of its folder on the main thread: LevelDB's table files never
- * change once written, so they are hard-linked (instant); every other file is copied. The snapshot is then checked
- * (LevelDB worlds are opened to make sure the copy is consistent) and zipped by an async worker.
+ * Consistency and Capture / Retry Invariant:
+ * 1. World Save: $world->save(true) pauses application-level world writes and flushes active write batches.
+ * 2. Ordered Capture: LevelDB immutable tables (.ldb/.sst) are hard-linked first (O(1) link count increment),
+ *    mutable metadata files (MANIFEST, root level.dat) are copied next (with bounded size limits), and CURRENT is copied strictly last.
+ * 3. Compaction Handling: If a concurrent LevelDB background compaction rotates or modifies table references
+ *    during capture, hard-linked tables retain their physical data blocks. However, if CURRENT advances to a
+ *    new MANIFEST referencing uncaptured tables, WorldBackupTask::checkLevelDB() validates the snapshot
+ *    with paranoid checks and verify_check_sum on all blocks in an async worker thread.
+ * 4. Automatic Retry: If checkLevelDB() detects an inconsistency or missing referenced table, the staging directory
+ *    is discarded and another attempt is scheduled (up to MAX_ATTEMPTS = 3).
+ * 5. Atomic Publishing: The archive is zipped to a temporary file (.tmp) and atomically renamed only upon
+ *    complete success, ensuring corrupted or partial backups are never published or retained.
  */
 final class WorldBackupManager{
 	private const STAGING_DIR = ".staging";
 	private const MAX_ATTEMPTS = 3;
+	private const MAX_METADATA_FILE_SIZE = 16 * 1024 * 1024; // 16 MiB safety bound
 
 	/** @var array<string, true> worlds with a backup in progress */
 	private array $running = [];
@@ -190,6 +202,9 @@ final class WorldBackupManager{
 				if(is_file($rootFile)){
 					$base = basename($rootFile);
 					if($base !== "LOCK"){
+						if(filesize($rootFile) > self::MAX_METADATA_FILE_SIZE){
+							throw new \RuntimeException("Root metadata file $base exceeds maximum size limit");
+						}
 						if(!@copy($rootFile, Path::join($target, $base))){
 							throw new \RuntimeException("Cannot copy root file $base");
 						}
@@ -200,8 +215,8 @@ final class WorldBackupManager{
 
 		// 2. Capture LevelDB db/ directory with ordered consistency:
 		// Phase 1: Hard-link immutable table files (.ldb, .sst)
-		// Phase 2: Copy metadata (MANIFEST, LOG, etc.)
-		// Phase 3: Copy CURRENT last
+		// Phase 2: Copy metadata (MANIFEST, active write-ahead logs, etc.)
+		// Phase 3: Copy CURRENT strictly last
 		$dbFiles = glob(Path::join($sourceDb, "*"));
 		if($dbFiles === false){
 			throw new \RuntimeException("Cannot read database directory $sourceDb");
@@ -216,8 +231,8 @@ final class WorldBackupManager{
 				continue;
 			}
 			$name = basename($file);
-			if($name === "LOCK"){
-				continue;
+			if($name === "LOCK" || $name === "LOG" || str_starts_with($name, "LOG.")){
+				continue; // Skip lock file and human-readable diagnostic text logs
 			}
 			$lower = strtolower($name);
 			if(str_ends_with($lower, ".ldb") || str_ends_with($lower, ".sst")){
@@ -229,30 +244,37 @@ final class WorldBackupManager{
 			}
 		}
 
-		// Hardlink table files
+		// Phase 1: Hard-link immutable table files (O(1) without copying bulk data on main thread)
 		foreach($tables as $table){
 			$dest = Path::join($targetDb, basename($table));
-			if(!@link($table, $dest) && !@copy($table, $dest)){
+			if(!@link($table, $dest)){
 				if(!is_file($table)){
 					continue; // Deleted by compaction meanwhile: checkLevelDB will verify
 				}
-				throw new \RuntimeException("Cannot capture table file " . basename($table));
+				throw new \RuntimeException("Cannot hardlink table file " . basename($table) . ": world and backup directories must reside on the same filesystem to ensure non-blocking snapshots");
 			}
 		}
 
-		// Copy manifest & logs
+		// Phase 2: Copy manifest & active logs (with size bounds)
 		foreach($manifestsAndMeta as $meta){
-			$dest = Path::join($targetDb, basename($meta));
+			$base = basename($meta);
+			if(filesize($meta) > self::MAX_METADATA_FILE_SIZE){
+				throw new \RuntimeException("Metadata file $base exceeds maximum size limit");
+			}
+			$dest = Path::join($targetDb, $base);
 			if(!@copy($meta, $dest)){
 				if(!is_file($meta)){
-					continue; // Rotated/deleted log
+					continue; // Rotated/deleted log or manifest by concurrent compaction
 				}
-				throw new \RuntimeException("Cannot copy metadata file " . basename($meta));
+				throw new \RuntimeException("Cannot copy metadata file " . $base);
 			}
 		}
 
-		// Copy CURRENT strictly last
+		// Phase 3: Copy CURRENT strictly last
 		if($currentFile !== null){
+			if(filesize($currentFile) > self::MAX_METADATA_FILE_SIZE){
+				throw new \RuntimeException("CURRENT file exceeds maximum size limit");
+			}
 			$dest = Path::join($targetDb, "CURRENT");
 			if(!@copy($currentFile, $dest)){
 				throw new \RuntimeException("Cannot copy CURRENT pointer file");

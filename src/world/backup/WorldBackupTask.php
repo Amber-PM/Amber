@@ -82,8 +82,8 @@ final class WorldBackupTask extends AsyncTask{
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 64 * 1024,
 			"paranoid_checks" => true,
-		], ["verify_checksums" => true]);
-		$iterator = $db->getIterator(["verify_checksums" => true]);
+		], ["verify_check_sum" => true]);
+		$iterator = $db->getIterator(["verify_check_sum" => true]);
 		for($iterator->rewind(); $iterator->valid(); $iterator->next()){
 			//reading every block verifies checksums and that every referenced table file exists
 		}
