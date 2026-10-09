@@ -265,6 +265,15 @@ class NetworkSession{
 		$this->logger->info($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_network_session_open()));
 	}
 
+	/**
+	 * Replaces the connection's address with the player's real one, as reported by a trusted proxy.
+	 * @internal
+	 */
+	public function setProxiedAddress(string $ip) : void{
+		$this->ip = $ip;
+		$this->logger->setPrefix($this->getLogPrefix());
+	}
+
 	private function getLogPrefix() : string{
 		return "NetworkSession: " . $this->getDisplayName();
 	}

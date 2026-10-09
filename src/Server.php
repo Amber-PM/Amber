@@ -1087,6 +1087,11 @@ class Server{
 			}
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
+
+			if($this->configGroup->getPropertyBool(Yml::NETWORK_WATERDOG_SUPPORT, false) && count((array) $this->configGroup->getProperty(Yml::NETWORK_PROXY_ADDRESSES, [])) === 0){
+				$this->logger->critical("network.waterdog-support is on but network.proxy-addresses is empty: every login is refused until your proxy's address is listed.");
+			}
+
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
