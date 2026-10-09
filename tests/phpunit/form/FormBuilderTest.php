@@ -66,6 +66,55 @@ final class FormBuilderTest extends TestCase{
 		self::assertSame(1, $submitted);
 	}
 
+	public function testMenuFormClientDerivedFixturesAcrossVersions() : void{
+		$raw = file_get_contents(__DIR__ . "/fixtures/bedrock-menu-form-responses.json");
+		self::assertNotFalse($raw);
+		$fixtures = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
+
+		foreach(["1.21.60", "1.21.70", "1.26.44"] as $version){
+			$fixture = $fixtures[$version];
+			$protocol = (int) $fixture["protocol"];
+
+			// 1. Verify serialization matches client-accepted wire request structure
+			$clicked = $submitted = null;
+			$form = $this->menu($clicked, $submitted);
+			$serialized = $form->serializeFor($protocol);
+			self::assertSame($fixture["wireRequest"], $serialized, "Wire serialization mismatch for $version");
+
+			// 2. Verify client responses
+			foreach($fixture["responses"] as $resp){
+				$clicked = $submitted = null;
+				$closedReason = null;
+				$testForm = $this->menu($clicked, $submitted)
+					->onClose(function(Player $p, FormCloseReason $r) use (&$closedReason) : void{
+						$closedReason = $r;
+					});
+
+				if($resp["wireData"] !== null){
+					$wireData = json_decode($resp["wireData"], true, flags: JSON_THROW_ON_ERROR);
+					$testForm->handleResponse($this->player(), $wireData);
+					self::assertSame($resp["expectedClicked"], $clicked, "$version button click mismatch");
+					self::assertSame($resp["expectedSubmitted"], $submitted, "$version submit mismatch");
+				}elseif($resp["cancelReason"] !== null){
+					$reason = $resp["cancelReason"] === ModalFormResponsePacket::CANCEL_REASON_USER_BUSY ? FormCloseReason::BUSY : FormCloseReason::CLOSED;
+					$testForm->handleClose($this->player(), $reason);
+					$expected = $resp["expectedCloseReason"] === "busy" ? FormCloseReason::BUSY : FormCloseReason::CLOSED;
+					self::assertSame($expected, $closedReason, "$version close reason mismatch");
+				}
+			}
+
+			// 3. For versions using elements (1.21.70+), verify that raw element index (4) is rejected
+			if($protocol >= BaseForm::ELEMENTS_PROTOCOL){
+				try{
+					$form->handleResponse($this->player(), 4);
+					self::fail("MenuForm should reject raw element index 4 on $version");
+				}catch(FormValidationException){
+					// Expected: button count is 2 (valid indices 0 and 1)
+				}
+			}
+		}
+	}
+
 	public function testMenuFormRejectsInvalidAnswers() : void{
 		$clicked = $submitted = null;
 		$form = $this->menu($clicked, $submitted);
@@ -232,9 +281,42 @@ final class FormBuilderTest extends TestCase{
 		self::assertSame([FormCloseReason::CLOSED, FormCloseReason::BUSY], $reasons);
 		self::assertFalse($player->hasPendingForm(2));
 
-		// Test 3: Legacy handleResponse(null) directly on form
-		$form->handleResponse($player, null);
-		self::assertSame([FormCloseReason::CLOSED, FormCloseReason::BUSY, FormCloseReason::CLOSED], $reasons);
+		// Test 3: Legacy Form (without ClosableForm) fallback via packet handler and Player::onFormSubmit
+		$legacyResponses = [];
+		$legacyForm = new class(function(Player $p, mixed $data) use (&$legacyResponses) : void{
+			$legacyResponses[] = $data;
+		}) implements Form{
+			public function __construct(private \Closure $handler){}
+
+			public function handleResponse(Player $player, mixed $data) : void{
+				($this->handler)($player, $data);
+			}
+
+			public function jsonSerialize() : array{
+				return ["type" => "form", "title" => "Legacy", "content" => "", "buttons" => []];
+			}
+		};
+
+		// 3a. Legacy form receives cancel (CLOSED) -> Player fallback routes to handleResponse($player, null)
+		$formsProp->setValue($player, [10 => $legacyForm]);
+		$pkLegacyClosed = ModalFormResponsePacket::cancel(10, ModalFormResponsePacket::CANCEL_REASON_CLOSED);
+		self::assertTrue($handler->handleModalFormResponse($pkLegacyClosed));
+		self::assertSame([null], $legacyResponses);
+		self::assertFalse($player->hasPendingForm(10));
+
+		// 3b. Legacy form receives cancel (USER_BUSY) -> Player fallback routes to handleResponse($player, null)
+		$formsProp->setValue($player, [11 => $legacyForm]);
+		$pkLegacyBusy = ModalFormResponsePacket::cancel(11, ModalFormResponsePacket::CANCEL_REASON_USER_BUSY);
+		self::assertTrue($handler->handleModalFormResponse($pkLegacyBusy));
+		self::assertSame([null, null], $legacyResponses);
+		self::assertFalse($player->hasPendingForm(11));
+
+		// 3c. Legacy form receives valid response data -> Player routes to handleResponse($player, 0)
+		$formsProp->setValue($player, [12 => $legacyForm]);
+		$pkLegacyValid = ModalFormResponsePacket::response(12, json_encode(0));
+		self::assertTrue($handler->handleModalFormResponse($pkLegacyValid));
+		self::assertSame([null, null, 0], $legacyResponses);
+		self::assertFalse($player->hasPendingForm(12));
 
 		// Test 4: CustomForm slider response via packet handler
 		$sliderVal = null;
@@ -255,6 +337,7 @@ final class FormBuilderTest extends TestCase{
 		$pkOffStep = ModalFormResponsePacket::response(4, json_encode([3.7]));
 		self::assertTrue($handler->handleModalFormResponse($pkOffStep));
 		// Slider callback was not invoked and form was removed due to validation failure
+		self::assertSame(50.0, $sliderVal);
 		self::assertFalse($player->hasPendingForm(4));
 	}
 }
