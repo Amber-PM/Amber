@@ -1407,7 +1407,7 @@ class NetworkSession{
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
 			$shapes = $world->getChunkShapes($chunkX, $chunkZ);
-			if(count($shapes) > 0){
+			if(count($shapes) > 0 && $this->supportsShapes()){
 				$this->sendDataPacket(\pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create($shapes));
 			}
 		}finally{
@@ -1555,11 +1555,21 @@ class NetworkSession{
 		));
 	}
 
+	/** Whether the client can display primitive shapes (1.21.90+). */
+	public function supportsShapes() : bool{
+		return $this->protocolId >= ProtocolInfo::PROTOCOL_1_21_90;
+	}
+
 	public function sendShapes(array $shapes) : void{
-		$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		if($this->supportsShapes()){
+			$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		}
 	}
 
 	public function removeShapes(array $networkIds) : void{
+		if(!$this->supportsShapes()){
+			return;
+		}
 		$removes = [];
 		foreach($networkIds as $id){
 			$removes[] = PacketShapeData::remove($id);
