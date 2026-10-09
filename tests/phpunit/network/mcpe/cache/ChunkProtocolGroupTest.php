@@ -87,15 +87,17 @@ final class ChunkProtocolGroupTest extends TestCase{
 
 		foreach($testCases as [$dimensionId, $chunkPos]){
 			foreach($groups as $chunkProtocolId => $members){
-				$expected = null;
 				$repConverter = TypeConverter::getInstance($chunkProtocolId);
-				$tiles = ChunkSerializer::serializeTiles($chunk, $repConverter);
+				$repPayload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, $repConverter);
+				$repStream = new ByteBufferWriter();
+				PacketBatch::encodePackets($repStream, $chunkProtocolId, [LevelChunkPacket::create($chunkPos, $dimensionId, ChunkSerializer::getSubChunkCount($chunk, $dimensionId), null, false, [], $repPayload)]);
+				$expected = $repStream->getData();
 
 				foreach($members as $protocolId){
-					$payload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, TypeConverter::getInstance($protocolId), $tiles);
+					$memberConverter = TypeConverter::getInstance($protocolId);
+					$payload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, $memberConverter);
 					$stream = new ByteBufferWriter();
 					PacketBatch::encodePackets($stream, $protocolId, [LevelChunkPacket::create($chunkPos, $dimensionId, ChunkSerializer::getSubChunkCount($chunk, $dimensionId), null, false, [], $payload)]);
-					$expected ??= $stream->getData();
 					self::assertSame($expected, $stream->getData(), "protocol $protocolId encodes chunks differently from $chunkProtocolId in dimension $dimensionId");
 				}
 			}
