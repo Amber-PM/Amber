@@ -89,7 +89,7 @@ class TypeConverter{
 	private int $shieldRuntimeId;
 
 	private SkinAdapter $skinAdapter;
-	private static bool $nativeSpectator = true;
+	private bool $nativeSpectator = true;
 
 	public function __construct(int $protocolId){
 		$this->__protocolConstruct($protocolId);
@@ -129,7 +129,6 @@ class TypeConverter{
 
 	/**
 	 * Returns a client-friendly gamemode of the specified real gamemode
-	 * This function takes care of handling gamemodes known to MCPE (as of 1.1.0.3, that includes Survival, Creative and Adventure)
 	 *
 	 * @internal
 	 */
@@ -137,14 +136,14 @@ class TypeConverter{
 		return match($gamemode){
 			GameMode::SURVIVAL => ProtocolGameMode::SURVIVAL,
 			GameMode::CREATIVE => ProtocolGameMode::CREATIVE,
-			GameMode::SPECTATOR => self::$nativeSpectator ? ProtocolGameMode::SPECTATOR : ProtocolGameMode::CREATIVE,
+			GameMode::SPECTATOR => $this->nativeSpectator ? ProtocolGameMode::SPECTATOR : ProtocolGameMode::CREATIVE,
 			GameMode::ADVENTURE => ProtocolGameMode::ADVENTURE,
 		};
 	}
 
 	/** @internal */
-	public static function setNativeSpectator(bool $enabled) : void{
-		self::$nativeSpectator = $enabled;
+	public function setNativeSpectator(bool $enabled) : void{
+		$this->nativeSpectator = $enabled;
 	}
 
 	public function protocolGameModeToCore(int $gameMode) : ?GameMode{

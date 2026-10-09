@@ -9,23 +9,15 @@ use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\GameMode as ProtocolGameMode;
 use pocketmine\player\GameMode;
 
-require_once __DIR__ . '/../../../../../src/utils/ProtocolSingletonTrait.php';
-require_once __DIR__ . '/../../../../../src/network/mcpe/convert/TypeConverter.php';
-
 final class GameModeConversionTest extends TestCase{
 	private TypeConverter $converter;
 
 	protected function setUp() : void{
-		$this->converter = (new \ReflectionClass(TypeConverter::class))->newInstanceWithoutConstructor();
-		TypeConverter::setNativeSpectator(true);
-	}
-
-	protected function tearDown() : void{
-		TypeConverter::setNativeSpectator(true);
+		$this->converter = new TypeConverter(ProtocolInfo::CURRENT_PROTOCOL);
 	}
 
 	public function testCoreToProtocolWithNativeSpectatorEnabled() : void{
-		TypeConverter::setNativeSpectator(true);
+		$this->converter->setNativeSpectator(true);
 
 		self::assertSame(ProtocolGameMode::SURVIVAL, $this->converter->coreGameModeToProtocol(GameMode::SURVIVAL));
 		self::assertSame(ProtocolGameMode::CREATIVE, $this->converter->coreGameModeToProtocol(GameMode::CREATIVE));
@@ -34,7 +26,7 @@ final class GameModeConversionTest extends TestCase{
 	}
 
 	public function testCoreToProtocolWithNativeSpectatorDisabled() : void{
-		TypeConverter::setNativeSpectator(false);
+		$this->converter->setNativeSpectator(false);
 
 		self::assertSame(ProtocolGameMode::SURVIVAL, $this->converter->coreGameModeToProtocol(GameMode::SURVIVAL));
 		self::assertSame(ProtocolGameMode::CREATIVE, $this->converter->coreGameModeToProtocol(GameMode::CREATIVE));
@@ -50,5 +42,14 @@ final class GameModeConversionTest extends TestCase{
 		self::assertSame(GameMode::SPECTATOR, $this->converter->protocolGameModeToCore(ProtocolGameMode::SURVIVAL_VIEWER));
 		self::assertSame(GameMode::SPECTATOR, $this->converter->protocolGameModeToCore(ProtocolGameMode::CREATIVE_VIEWER));
 		self::assertNull($this->converter->protocolGameModeToCore(9999));
+	}
+
+	public function testSpectatorPolicyIsIsolatedBetweenConverters() : void{
+		$legacyConverter = new TypeConverter(ProtocolInfo::PROTOCOL_1_20_0);
+		$legacyConverter->setNativeSpectator(false);
+
+		self::assertSame(ProtocolGameMode::SPECTATOR, $this->converter->coreGameModeToProtocol(GameMode::SPECTATOR));
+		self::assertSame(ProtocolGameMode::CREATIVE, $legacyConverter->coreGameModeToProtocol(GameMode::SPECTATOR));
+		self::assertSame(GameMode::SPECTATOR, $legacyConverter->protocolGameModeToCore(ProtocolGameMode::SPECTATOR));
 	}
 }

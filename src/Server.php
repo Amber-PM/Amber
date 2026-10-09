@@ -915,7 +915,13 @@ class Server{
 				])
 			);
 			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
-			TypeConverter::setNativeSpectator($this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true));
+			$nativeSpectator = $this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true);
+			foreach(TypeConverter::getAll() as $typeConverter){
+				$typeConverter->setNativeSpectator($nativeSpectator);
+			}
+			TypeConverter::addCreationListener(static function(TypeConverter $typeConverter) use ($nativeSpectator) : void{
+				$typeConverter->setNativeSpectator($nativeSpectator);
+			});
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
