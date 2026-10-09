@@ -38,6 +38,19 @@ if(!function_exists('igbinary_unserialize')){
 require_once __DIR__ . '/../../../../src/world/backup/WorldBackupManager.php';
 require_once __DIR__ . '/../../../../src/world/backup/WorldBackupTask.php';
 
+final class DummyBackupLogger extends \pocketmine\thread\log\AttachableThreadSafeLogger{
+	public function emergency($message) : void{}
+	public function alert($message) : void{}
+	public function critical($message) : void{}
+	public function error($message) : void{}
+	public function warning($message) : void{}
+	public function notice($message) : void{}
+	public function info($message) : void{}
+	public function debug($message) : void{}
+	public function log($level, $message) : void{}
+	public function logException(\Throwable $e, $trace = null) : void{}
+}
+
 final class WorldBackupTest extends TestCase{
 	private string $tempDir;
 
@@ -115,7 +128,7 @@ final class WorldBackupTest extends TestCase{
 
 		// Mock server for logging inside rotate
 		$server = (new \ReflectionClass(\pocketmine\Server::class))->newInstanceWithoutConstructor();
-		$logger = $this->createMock(\pocketmine\thread\log\AttachableThreadSafeLogger::class);
+		$logger = new DummyBackupLogger();
 		(new \ReflectionProperty(\pocketmine\Server::class, "logger"))->setValue($server, $logger);
 
 		$manager = new WorldBackupManager(
