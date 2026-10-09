@@ -24,7 +24,9 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\convert;
 
 use PHPUnit\Framework\TestCase;
+use pocketmine\block\BlockTypeIds;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 
 class BlockTranslatorTest extends TestCase{
 
@@ -36,5 +38,30 @@ class BlockTranslatorTest extends TestCase{
 		foreach(RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $state){
 			$blockTranslator->internalIdToNetworkId($state->getStateId());
 		}
+	}
+
+	/**
+	 * Blocks an older client lacks are sent as a similar block it has, never as the "update!" block.
+	 */
+	public function testEveryStateHasAStandInOnEveryProtocol() : void{
+		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocolId){
+			$blockTranslator = TypeConverter::getInstance($protocolId)->getBlockTranslator();
+			$fallback = $blockTranslator->getBlockStateDictionary()->lookupStateIdFromData($blockTranslator->getFallbackStateData());
+			foreach(RuntimeBlockStateRegistry::getInstance()->getAllKnownStates() as $stateId => $state){
+				if($state->getTypeId() !== BlockTypeIds::INFO_UPDATE){
+					self::assertNotSame($fallback, $blockTranslator->internalIdToNetworkId($stateId), $state->getName() . " is sent as an update block to protocol $protocolId");
+				}
+			}
+		}
+	}
+
+	public function testGenericShapeFallbackCandidates() : void{
+		$slabCandidates = BlockStateFallbacks::getCandidates("minecraft:unknown_custom_slab");
+		self::assertContains("minecraft:cobblestone_slab", $slabCandidates);
+		self::assertNotContains("minecraft:unknown_customcobblestone_slab", $slabCandidates);
+
+		$stairsCandidates = BlockStateFallbacks::getCandidates("minecraft:resin_brick_stairs");
+		self::assertContains("minecraft:stone_stairs", $stairsCandidates);
+		self::assertNotContains("minecraft:resin_brickstone_stairs", $stairsCandidates);
 	}
 }

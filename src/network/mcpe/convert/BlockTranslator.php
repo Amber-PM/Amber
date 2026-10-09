@@ -32,6 +32,7 @@ use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Filesystem;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
+use function count;
 use function str_replace;
 
 /**
@@ -182,14 +183,31 @@ final class BlockTranslator{
 	private BlockStateData $fallbackStateData;
 	private int $fallbackStateId;
 
+	/**
+	 * Shared by protocols using the same palette.
+	 * @phpstan-var array<string, BlockTranslator>
+	 */
+	private static array $loaded = [];
+
+	/** Number of distinct block palettes loaded in this thread. */
+	public static function getLoadedCount() : int{
+		return count(self::$loaded);
+	}
+
 	public static function loadFromProtocolId(int $protocolId) : BlockTranslator{
+		$hashedNetworkIds = $protocolId >= ProtocolInfo::PROTOCOL_1_26_50;
+		$key = self::PATHS[$protocolId][self::CANONICAL_BLOCK_STATES_PATH] . "\0" . self::PATHS[$protocolId][self::BLOCK_STATE_META_MAP_PATH] . "\0" . ($hashedNetworkIds ? "hashed" : "indexed");
+		if(isset(self::$loaded[$key])){
+			return self::$loaded[$key];
+		}
+
 		$canonicalBlockStatesRaw = Filesystem::fileGetContents(str_replace(".nbt", self::PATHS[$protocolId][self::CANONICAL_BLOCK_STATES_PATH] . ".nbt", BedrockDataFiles::CANONICAL_BLOCK_STATES_NBT));
 		$metaMappingRaw = Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId][self::BLOCK_STATE_META_MAP_PATH] . ".json", BedrockDataFiles::BLOCK_STATE_META_MAP_JSON));
 		$networkIds = null;
-		if($protocolId >= ProtocolInfo::PROTOCOL_1_26_50){
+		if($hashedNetworkIds){
 			$networkIds = json_decode(Filesystem::fileGetContents(str_replace(".json", "-1.26.50.json", str_replace("block_state_meta_map", "block_network_ids", BedrockDataFiles::BLOCK_STATE_META_MAP_JSON))), true, flags: JSON_THROW_ON_ERROR);
 		}
-		return new self(
+		return self::$loaded[$key] = new self(
 			BlockStateDictionary::loadFromString($canonicalBlockStatesRaw, $metaMappingRaw, $networkIds),
 			GlobalBlockStateHandlers::getSerializer(),
 		);
@@ -212,7 +230,7 @@ final class BlockTranslator{
 		try{
 			$blockStateData = $this->blockStateSerializer->serialize($internalStateId);
 
-			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData);
+			$networkId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData) ?? $this->lookupStandInStateId($blockStateData);
 			if($networkId === null){
 				throw new BlockStateSerializeException("Unmapped blockstate returned by blockstate serializer: " . $blockStateData->toNbt());
 			}
@@ -223,6 +241,21 @@ final class BlockTranslator{
 		}
 
 		return $this->networkIdCache[$internalStateId] = $networkId;
+	}
+
+	/**
+	 * For a state this palette lacks: the closest state of the same block, or of a similar block the client has.
+	 */
+	private function lookupStandInStateId(BlockStateData $data) : ?int{
+		$properties = $data->getStates();
+		$networkId = $this->blockStateDictionary->lookupClosestStateId($data->getName(), $properties);
+		foreach(BlockStateFallbacks::getCandidates($data->getName()) as $name){
+			if($networkId !== null){
+				break;
+			}
+			$networkId = $this->blockStateDictionary->lookupClosestStateId($name, $properties);
+		}
+		return $networkId;
 	}
 
 	/**
