@@ -348,24 +348,26 @@ final class WorldBackupTest extends TestCase{
 		@mkdir($sourceDb, 0777, true);
 		file_put_contents(Path::join($source, "level.dat"), "world data");
 
-		// Populate 2,000 records so table files are flushed to disk
+		// Populate enough data (5 MB) with a small write buffer to force LevelDB to flush to .ldb/.sst table files
 		$db = new \LevelDB($sourceDb, [
 			"create_if_missing" => true,
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 4096,
+			"write_buffer_size" => 4096,
 		]);
 		$batch = new \LevelDBWriteBatch();
-		for($i = 0; $i < 2000; ++$i){
-			$batch->put("key_" . $i, str_repeat("value_" . $i, 10));
+		$payload = str_repeat("abcdefghijklmnop", 64); // 1024 bytes per record
+		for($i = 0; $i < 5000; ++$i){
+			$batch->put("key_" . $i, $payload);
 		}
 		$db->write($batch);
 		unset($db); // close to flush tables and write CURRENT
 
 		// Find a .ldb or .sst file and corrupt one byte in the data blocks
-		$tableFiles = glob(Path::join($sourceDb, "*.ldb"));
-		if($tableFiles === false || count($tableFiles) === 0){
-			$tableFiles = glob(Path::join($sourceDb, "*.sst"));
-		}
+		$tableFiles = array_merge(
+			glob(Path::join($sourceDb, "*.ldb")) ?: [],
+			glob(Path::join($sourceDb, "*.sst")) ?: []
+		);
 		self::assertNotEmpty($tableFiles, "Expected at least one LevelDB table file");
 		$tableFile = $tableFiles[0];
 
