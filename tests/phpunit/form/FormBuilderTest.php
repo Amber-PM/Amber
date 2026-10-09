@@ -6,16 +6,11 @@ namespace pocketmine\form;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\entity\Entity;
+use pocketmine\network\mcpe\handler\InGamePacketHandler;
+use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\ModalFormResponsePacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\player\Player;
-require_once __DIR__ . '/../../../src/form/ClosableForm.php';
-require_once __DIR__ . '/../../../src/form/ProtocolAwareForm.php';
-require_once __DIR__ . '/../../../src/form/FormCloseReason.php';
-require_once __DIR__ . '/../../../src/form/BaseForm.php';
-require_once __DIR__ . '/../../../src/form/MenuForm.php';
-require_once __DIR__ . '/../../../src/form/ConfirmForm.php';
-require_once __DIR__ . '/../../../src/form/CustomFormResponse.php';
-require_once __DIR__ . '/../../../src/form/CustomForm.php';
 
 final class FormBuilderTest extends TestCase{
 	private function player() : Player{
@@ -174,5 +169,92 @@ final class FormBuilderTest extends TestCase{
 	public function testDuplicateIdsRejected() : void{
 		$this->expectException(\InvalidArgumentException::class);
 		(new CustomForm("x"))->toggle("a", "A")->input("a", "A");
+	}
+
+	public function testSliderRejectsNonFiniteParameters() : void{
+		$caught = 0;
+		$cases = [
+			[NAN, 100.0, 1.0, null],
+			[0.0, INF, 1.0, null],
+			[0.0, 100.0, NAN, null],
+			[0.0, 100.0, INF, null],
+			[0.0, 100.0, -1.0, null],
+			[0.0, 100.0, 0.0, null],
+			[0.0, 100.0, 1.0, NAN],
+			[0.0, 100.0, 1.0, 150.0],
+			[10.0, 5.0, 1.0, null],
+		];
+		foreach($cases as [$min, $max, $step, $default]){
+			try{
+				(new CustomForm("t"))->slider("s", "S", (float) $min, (float) $max, (float) $step, $default !== null ? (float) $default : null);
+				self::fail("accepted invalid slider parameters: min=$min, max=$max, step=$step, default=" . var_export($default, true));
+			}catch(\InvalidArgumentException){
+				$caught++;
+			}
+		}
+		self::assertSame(count($cases), $caught);
+	}
+
+	public function testSliderRejectsOffStepResponses() : void{
+		$form = (new CustomForm("t"))->slider("s", "S", 0, 100, 5);
+		$this->expectException(FormValidationException::class);
+		$form->handleResponse($this->player(), [3.7]);
+	}
+
+	public function testPacketHandlerAndPlayerIntegration() : void{
+		$player = $this->player();
+		$session = $this->createMock(NetworkSession::class);
+		$session->method("getLogger")->willReturn(new \PrefixedLogger(\GlobalLogger::get(), "test"));
+
+		$handler = (new \ReflectionClass(InGamePacketHandler::class))->newInstanceWithoutConstructor();
+		(new \ReflectionProperty(InGamePacketHandler::class, "player"))->setValue($handler, $player);
+		(new \ReflectionProperty(InGamePacketHandler::class, "session"))->setValue($handler, $session);
+		(new \ReflectionProperty(InGamePacketHandler::class, "forceMoveSync"))->setValue($handler, false);
+
+		$reasons = [];
+		$form = (new ConfirmForm("t", "b"))->onClose(function(Player $p, FormCloseReason $r) use (&$reasons) : void{
+			$reasons[] = $r;
+		});
+
+		$formsProp = new \ReflectionProperty(Player::class, "forms");
+
+		// Test 1: ModalFormResponsePacket CANCEL_REASON_CLOSED
+		$formsProp->setValue($player, [1 => $form]);
+		$pkClosed = ModalFormResponsePacket::cancel(1, ModalFormResponsePacket::CANCEL_REASON_CLOSED);
+		self::assertTrue($handler->handleModalFormResponse($pkClosed));
+		self::assertSame([FormCloseReason::CLOSED], $reasons);
+		self::assertFalse($player->hasPendingForm(1));
+
+		// Test 2: ModalFormResponsePacket CANCEL_REASON_USER_BUSY
+		$formsProp->setValue($player, [2 => $form]);
+		$pkBusy = ModalFormResponsePacket::cancel(2, ModalFormResponsePacket::CANCEL_REASON_USER_BUSY);
+		self::assertTrue($handler->handleModalFormResponse($pkBusy));
+		self::assertSame([FormCloseReason::CLOSED, FormCloseReason::BUSY], $reasons);
+		self::assertFalse($player->hasPendingForm(2));
+
+		// Test 3: Legacy handleResponse(null) directly on form
+		$form->handleResponse($player, null);
+		self::assertSame([FormCloseReason::CLOSED, FormCloseReason::BUSY, FormCloseReason::CLOSED], $reasons);
+
+		// Test 4: CustomForm slider response via packet handler
+		$sliderVal = null;
+		$customForm = (new CustomForm("Settings"))
+			->slider("vol", "Volume", 0, 100, 5)
+			->onSubmit(function(Player $p, CustomFormResponse $r) use (&$sliderVal) : void{
+				$sliderVal = $r->getFloat("vol");
+			});
+
+		$formsProp->setValue($player, [3 => $customForm]);
+		$pkValid = ModalFormResponsePacket::response(3, json_encode([50.0]));
+		self::assertTrue($handler->handleModalFormResponse($pkValid));
+		self::assertSame(50.0, $sliderVal);
+		self::assertFalse($player->hasPendingForm(3));
+
+		// Test 5: Off-step response [3.7] via packet handler is rejected by Player::onFormSubmit
+		$formsProp->setValue($player, [4 => $customForm]);
+		$pkOffStep = ModalFormResponsePacket::response(4, json_encode([3.7]));
+		self::assertTrue($handler->handleModalFormResponse($pkOffStep));
+		// Slider callback was not invoked and form was removed due to validation failure
+		self::assertFalse($player->hasPendingForm(4));
 	}
 }

@@ -25,6 +25,7 @@ namespace pocketmine\form;
 
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
+use function abs;
 use function array_is_list;
 use function array_values;
 use function count;
@@ -34,6 +35,7 @@ use function is_finite;
 use function is_float;
 use function is_int;
 use function is_string;
+use function round;
 
 /**
  * A form of input fields (the game's modal form): text inputs, toggles, sliders and dropdowns, which can be split
@@ -55,7 +57,7 @@ use function is_string;
  * ```
  */
 final class CustomForm extends BaseForm{
-	/** @phpstan-var list<array{?string, array<string, mixed>, ?\Closure(mixed) : mixed}> id, element JSON, answer validator */
+	/** @var CustomFormElement[] */
 	private array $elements = [];
 	/** @var array<string, true> */
 	private array $ids = [];
@@ -99,18 +101,26 @@ final class CustomForm extends BaseForm{
 
 	/** @return $this */
 	public function slider(string $id, string $text, float $min, float $max, float $step = 1.0, ?float $default = null) : self{
+		if(!is_finite($min) || !is_finite($max) || !is_finite($step)){
+			throw new \InvalidArgumentException("Slider min, max, and step must be finite numbers");
+		}
 		if($min > $max || $step <= 0){
 			throw new \InvalidArgumentException("Slider needs min <= max and a positive step");
 		}
 		$default ??= $min;
-		if($default < $min || $default > $max){
-			throw new \InvalidArgumentException("Slider default must be between min and max");
+		if(!is_finite($default) || $default < $min || $default > $max){
+			throw new \InvalidArgumentException("Slider default must be a finite number between min and max");
 		}
-		return $this->add($id, ["type" => "slider", "text" => $text, "min" => $min, "max" => $max, "step" => $step, "default" => $default], static function(mixed $value) use ($min, $max) : float{
+		return $this->add($id, ["type" => "slider", "text" => $text, "min" => $min, "max" => $max, "step" => $step, "default" => $default], static function(mixed $value) use ($min, $max, $step) : float{
 			if((!is_int($value) && !is_float($value)) || !is_finite((float) $value) || $value < $min || $value > $max){
 				throw new FormValidationException("Expected a number between $min and $max");
 			}
-			return (float) $value;
+			$floatVal = (float) $value;
+			$stepsFromMin = ($floatVal - $min) / $step;
+			if(abs($stepsFromMin - round($stepsFromMin)) > 1e-5){
+				throw new FormValidationException("Value $floatVal does not align with slider step $step");
+			}
+			return $floatVal;
 		});
 	}
 
@@ -179,7 +189,7 @@ final class CustomForm extends BaseForm{
 			}
 			$this->ids[$id] = true;
 		}
-		$this->elements[] = [$id, $json, $validator];
+		$this->elements[] = new CustomFormElement($id, $json, $validator);
 		return $this;
 	}
 
@@ -188,12 +198,12 @@ final class CustomForm extends BaseForm{
 			throw new FormValidationException("Expected a list of " . count($this->elements) . " answers");
 		}
 		$values = [];
-		foreach($this->elements as $i => [$id, , $validator]){
-			if($id !== null && $validator !== null){
+		foreach($this->elements as $i => $element){
+			if($element->id !== null && $element->validator !== null){
 				try{
-					$values[$id] = $validator($data[$i]);
+					$values[$element->id] = $element->validate($data[$i]);
 				}catch(FormValidationException $e){
-					throw new FormValidationException("Answer for \"$id\": " . $e->getMessage(), 0, $e);
+					throw new FormValidationException("Answer for \"{$element->id}\": " . $e->getMessage(), 0, $e);
 				}
 			}
 		}
@@ -204,15 +214,8 @@ final class CustomForm extends BaseForm{
 
 	public function serializeFor(int $protocolId) : array{
 		$content = [];
-		foreach($this->elements as [, $json, ]){
-			if($protocolId < self::ELEMENTS_PROTOCOL){
-				if($json["type"] === "header"){
-					$json = ["type" => "label", "text" => TextFormat::BOLD . $json["text"] . TextFormat::RESET];
-				}elseif($json["type"] === "divider"){
-					$json = ["type" => "label", "text" => ""];
-				}
-			}
-			$content[] = $json;
+		foreach($this->elements as $element){
+			$content[] = $element->serializeFor($protocolId);
 		}
 		return ["type" => "custom_form", "title" => $this->title, "content" => $content];
 	}
