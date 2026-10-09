@@ -39,6 +39,7 @@ use pocketmine\item\VanillaItems;
 use pocketmine\item\WritableBook;
 use pocketmine\item\WritableBookPage;
 use pocketmine\item\WrittenBook;
+use pocketmine\form\FormCloseReason;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -1004,8 +1005,8 @@ class InGamePacketHandler extends PacketHandler{
 
 	public function handleModalFormResponse(ModalFormResponsePacket $packet) : bool{
 		if($packet->cancelReason !== null){
-			//TODO: make APIs for this to allow plugins to use this information
-			return $this->player->onFormSubmit($packet->formId, null);
+			$reason = $packet->cancelReason === ModalFormResponsePacket::CANCEL_REASON_USER_BUSY ? FormCloseReason::BUSY : FormCloseReason::CLOSED;
+			return $this->player->onFormSubmit($packet->formId, null, $reason);
 		}elseif($packet->formData !== null){
 			if(strlen($packet->formData) > self::MAX_FORM_RESPONSE_SIZE){
 				throw new PacketHandlingException("Form response data too large, refusing to decode (received" . strlen($packet->formData) . " bytes, max " . self::MAX_FORM_RESPONSE_SIZE . " bytes)");
