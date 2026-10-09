@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -198,47 +198,6 @@ final class BlockStateDictionary{
 	}
 
 	/**
-	 * Adds every add-on block state to a palette. With hashed network IDs the states are appended under their
-	 * hash; otherwise they are merged in the client's order (stable, by FNV-1 64 of the block name), which
-	 * moves the indexes of vanilla states after them exactly as the client moves them.
-	 *
-	 * @param BlockStateData[] $palette
-	 * @param mixed[]          $metaMap
-	 * @param int[]|null       $networkIds
-	 * @return array{0: list<BlockStateData>, 1: mixed[], 2: int[]|null}
-	 */
-	private static function withAddonStates(array $palette, array $metaMap, ?array $networkIds) : array{
-		$addon = \pocketmine\addon\AddonManager::getInstance()?->getNetworkBlockStates() ?? [];
-		if($addon === []){
-			return [$palette, $metaMap, $networkIds];
-		}
-		$addonMeta = [];
-		$perName = [];
-		foreach($addon as $state){
-			$perName[$state->getName()] = ($perName[$state->getName()] ?? -1) + 1;
-			$addonMeta[] = $perName[$state->getName()];
-		}
-		if($networkIds !== null){
-			foreach($addon as $j => $state){
-				$palette[] = $state;
-				$metaMap[] = $addonMeta[$j];
-				$networkIds[] = \pocketmine\addon\BlockNetworkHash::compute($state);
-			}
-			return [$palette, $metaMap, $networkIds];
-		}
-		$rows = [];
-		foreach(array_values($palette) as $i => $state){
-			$rows[] = [\pocketmine\addon\BlockNetworkHash::nameOrderKey($state->getName()), $i, $state, $metaMap[$i] ?? null];
-		}
-		$offset = count($rows);
-		foreach($addon as $j => $state){
-			$rows[] = [\pocketmine\addon\BlockNetworkHash::nameOrderKey($state->getName()), $offset + $j, $state, $addonMeta[$j]];
-		}
-		usort($rows, static fn(array $a, array $b) : int => strcmp($a[0], $b[0]) ?: $a[1] <=> $b[1]);
-		return [array_column($rows, 2), array_column($rows, 3), null];
-	}
-
-	/**
 	 * @param int[]|null $networkIds when set, states are keyed by these (hashed) network ids instead of their index
 	 */
 	public static function loadFromString(string $blockPaletteContents, string $metaMapContents, ?array $networkIds = null) : self{
@@ -260,7 +219,7 @@ final class BlockStateDictionary{
 			}
 		}
 
-		[$palette, $metaMap, $networkIds] = self::withAddonStates(self::loadPaletteFromString($blockPaletteContents), $metaMap, $networkIds);
+		$palette = self::loadPaletteFromString($blockPaletteContents);
 		foreach($palette as $i => $state){
 			$meta = $metaMap[$i] ?? null;
 			if($meta === null){

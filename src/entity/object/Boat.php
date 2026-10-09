@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -72,7 +72,7 @@ class Boat extends Entity{
 	protected const TAG_HEALTH = "Health";
 
 	/** @var \WeakMap<Entity, Boat>|null */
-	private static ?\WeakMap $vehicles = null;
+	private static ?WeakMap $vehicles = null;
 
 	public static function getVehicleOf(Entity $rider) : ?Boat{
 		return self::$vehicles !== null ? (self::$vehicles[$rider] ?? null) : null;
@@ -297,7 +297,7 @@ class Boat extends Entity{
 	}
 
 	public function canAddRider(Entity $rider) : bool{
-		if($this->isClosed() || $rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull() || self::getVehicleOf($rider) !== null || \pocketmine\addon\entity\AddonEntity::getVehicleOf($rider) !== null){
+		if($this->isClosed() || $rider->isClosed() || !$rider->isAlive() || $this->isRider($rider) || $this->isFull() || self::getVehicleOf($rider) !== null){
 			return false;
 		}
 		return true;
@@ -320,8 +320,11 @@ class Boat extends Entity{
 			return false;
 		}
 
+		if($rider instanceof Player){
+			$rider->setGliding(false);
+		}
 		$this->riders[$seat] = $rider;
-		self::$vehicles ??= new \WeakMap();
+		self::$vehicles ??= new WeakMap();
 		self::$vehicles[$rider] = $this;
 
 		$properties = $rider->getNetworkProperties();

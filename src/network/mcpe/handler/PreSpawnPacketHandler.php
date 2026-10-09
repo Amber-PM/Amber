@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -52,7 +52,10 @@ use pocketmine\Server;
 use pocketmine\timings\Timings;
 use pocketmine\VersionInfo;
 use Ramsey\Uuid\Uuid;
+use function base64_decode;
+use function json_decode;
 use function sprintf;
+use const JSON_THROW_ON_ERROR;
 
 /**
  * Handler used for the pre-spawn phase of the session.
@@ -74,7 +77,7 @@ class PreSpawnPacketHandler extends PacketHandler{
 		if(self::$jigsawStructureData === null){
 			$json = json_decode(\pocketmine\utils\Filesystem::fileGetContents(\pocketmine\BEDROCK_DATA_PATH . 'jigsaw_structures-1.26.50.json'), true, flags: JSON_THROW_ON_ERROR);
 			$nbt = (new \pocketmine\network\mcpe\protocol\serializer\NetworkNbtSerializer())->read(base64_decode($json['nbtB64'], true))->mustGetCompoundTag();
-			self::$jigsawStructureData = \pocketmine\network\mcpe\protocol\JigsawStructureDataPacket::create(new \pocketmine\network\mcpe\protocol\types\CacheableNbt($nbt));
+			self::$jigsawStructureData = \pocketmine\network\mcpe\protocol\JigsawStructureDataPacket::create(new CacheableNbt($nbt));
 		}
 		return self::$jigsawStructureData;
 	}
@@ -107,7 +110,7 @@ class PreSpawnPacketHandler extends PacketHandler{
 			];
 			$levelSettings->experiments = new Experiments([], false);
 
-			if($protocolId >= \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_50){
+			if($protocolId >= ProtocolInfo::PROTOCOL_1_26_50){
 				$this->session->sendDataPacket(self::jigsawStructureData());
 			}
 			$this->session->sendDataPacket(StartGamePacket::create(
@@ -131,13 +134,13 @@ class PreSpawnPacketHandler extends PacketHandler{
 				sprintf("%s %s", VersionInfo::NAME, VersionInfo::VERSION()->getFullVersion(true)),
 				Uuid::fromString(Uuid::NIL),
 				false,
-				$protocolId >= \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_50, //1.26.50+: block ids are BDS hashes
+				$protocolId >= ProtocolInfo::PROTOCOL_1_26_50, //1.26.50+: block ids are BDS hashes
 				false,
 				new NetworkPermissions(disableClientSounds: true),
 				true,
 				null,
 				new ServerTelemetryData("", "", "", ""),
-				\pocketmine\addon\AddonManager::getInstance()?->getBlockPaletteEntries($this->session->getProtocolId()) ?? [],
+				[],
 				0,
 				$typeConverter->getItemTypeDictionary()->getEntries(),
 			));
@@ -145,16 +148,10 @@ class PreSpawnPacketHandler extends PacketHandler{
 			if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_60){
 				$this->session->getLogger()->debug("Sending items");
 				$this->session->sendDataPacket(ItemRegistryPacket::create($typeConverter->getItemTypeDictionary()->getEntries()));
-			}elseif(($addonItems = \pocketmine\addon\AddonManager::getInstance()?->getComponentItemTypeEntries() ?? []) !== []){
-				//before 1.21.60 this packet is ItemComponentPacket: component data for custom items only
-				$this->session->sendDataPacket(ItemRegistryPacket::create($addonItems));
 			}
 
 			$this->session->getLogger()->debug("Sending actor identifiers");
 			$this->session->sendDataPacket(StaticPacketCache::getInstance()->getAvailableActorIdentifiers());
-			foreach(\pocketmine\addon\AddonManager::getInstance()?->getActorPropertyPackets() ?? [] as $packet){
-				$this->session->sendDataPacket($packet);
-			}
 
 			$this->session->getLogger()->debug("Sending biome definitions");
 			$this->session->sendDataPacket(StaticPacketCache::getInstance()->getBiomeDefs($this->session->getProtocolId()));

@@ -6,8 +6,6 @@ namespace pocketmine\tests\entity;
 
 use Logger;
 use PHPUnit\Framework\TestCase;
-use pocketmine\addon\entity\AddonEntity;
-use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
@@ -15,19 +13,21 @@ use pocketmine\entity\object\Boat;
 use pocketmine\item\BoatType;
 use pocketmine\math\Vector2;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\handler\InGamePacketHandler;
 use pocketmine\network\mcpe\InventoryManager;
 use pocketmine\network\mcpe\NetworkSession;
-use pocketmine\network\mcpe\handler\InGamePacketHandler;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\serializer\BitSet;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputVehicleInfo;
-use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\player\Player;
+use pocketmine\Server;
 use pocketmine\world\Position;
 use pocketmine\world\World;
-use pocketmine\Server;
 use ReflectionProperty;
+use function array_diff;
+use function array_values;
 
 class BoatPlayerInputTest extends TestCase{
 	private function createWorld() : World{
@@ -82,29 +82,6 @@ class BoatPlayerInputTest extends TestCase{
 		$flags->set(PlayerAuthInputFlags::IN_CLIENT_PREDICTED_VEHICLE, $predictedVehicle);
 		$flags->set(PlayerAuthInputFlags::PADDLING_LEFT, true);
 		return PlayerAuthInputPacket::create(new Vector3($tick / 10, 11.62, 0), 0, 0, 0, 0, 1, $flags, 1, 0, 1, null, new Vector2(0, 0), $tick, Vector3::zero(), null, null, null, $vehicleInfo, 0, 1, Vector3::zero(), new Vector2(0, 1));
-	}
-
-	public function testAddonRiderStillReceivesNormalPlayerMovement() : void{
-		$world = $this->createWorld();
-		$playerMovement = null;
-		$player = $this->createPlayer($world, static function(Vector3 $position) use (&$playerMovement) : void{
-			$playerMovement = $position;
-		});
-		$definition = AddonEntityDefinition::fromJson(["minecraft:entity" => [
-			"description" => ["identifier" => "test:input_mount"],
-			"components" => ["minecraft:health" => ["value" => 10, "max" => 10], "minecraft:rideable" => ["seat_count" => 1]]
-		]], "input-mount.json", "test");
-		$addon = new AddonEntity(new Location(0, 10, 0, $world, 0, 0), $definition);
-		self::assertTrue($addon->addRider($player));
-
-		try{
-			self::assertTrue($this->createHandler($player)->handlePlayerAuthInput($this->createInputPacket(100)));
-			self::assertNotNull($playerMovement);
-			self::assertEquals(new Vector3(10, 10, 0), $playerMovement);
-		}finally{
-			$addon->removeRider($player);
-			$addon->close();
-		}
 	}
 
 	public function testBoatInputWithoutVehicleRotationIsStillForwarded() : void{

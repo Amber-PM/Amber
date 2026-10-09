@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -63,12 +63,6 @@ final class BlockItemIdMap{
 	 */
 	public function __construct(private array $blockToItemId){
 		$this->itemToBlockId = array_flip($this->blockToItemId);
-	}
-
-	/** Maps an extra block to its item (add-on blocks use the same ID for both). */
-	public function register(string $blockId, string $itemId) : void{
-		$this->blockToItemId[$blockId] = $itemId;
-		$this->itemToBlockId[$itemId] = $blockId;
 	}
 
 	public function lookupItemId(string $blockId) : ?string{
