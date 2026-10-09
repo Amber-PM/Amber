@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -62,6 +62,7 @@ use pocketmine\event\world\WorldDifficultyChangeEvent;
 use pocketmine\event\world\WorldDisplayNameChangeEvent;
 use pocketmine\event\world\WorldParticleEvent;
 use pocketmine\event\world\WorldSaveEvent;
+use pocketmine\event\world\WorldShapeEvent;
 use pocketmine\event\world\WorldSoundEvent;
 use pocketmine\item\Item;
 use pocketmine\item\ItemUseResult;
@@ -75,7 +76,6 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
-use pocketmine\event\world\WorldShapeEvent;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
@@ -106,27 +106,25 @@ use pocketmine\world\generator\executor\GeneratorExecutorSetupParameters;
 use pocketmine\world\generator\executor\SyncGeneratorExecutor;
 use pocketmine\world\generator\GeneratorManager;
 use pocketmine\world\generator\PopulationTask;
+use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\light\BlockLightUpdate;
 use pocketmine\world\light\LightPopulationTask;
 use pocketmine\world\light\SkyLightUpdate;
-use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\particle\BlockParticle;
 use pocketmine\world\particle\ItemParticle;
 use pocketmine\world\particle\Particle;
 use pocketmine\world\particle\ProtocolParticle;
 use pocketmine\world\redstone\RedstoneEngine;
-use pocketmine\world\sound\BlockPlaceSound;
-use pocketmine\world\sound\BlockSound;
-use pocketmine\world\sound\ProtocolSound;
-use pocketmine\world\sound\Sound;
-use pocketmine\scheduler\ClosureTask;
-use pocketmine\world\shape\EntityAttachedShape;
 use pocketmine\world\shape\Shape;
 use pocketmine\world\shape\ShapeGroup;
 use pocketmine\world\shape\ShapeHandle;
 use pocketmine\world\shape\ShapeRegistry;
 use pocketmine\world\shape\TemporaryShape;
+use pocketmine\world\sound\BlockPlaceSound;
+use pocketmine\world\sound\BlockSound;
+use pocketmine\world\sound\ProtocolSound;
+use pocketmine\world\sound\Sound;
 use pocketmine\world\utils\SubChunkExplorer;
 use pocketmine\YmlServerProperties;
 use function abs;
@@ -341,6 +339,7 @@ class World implements ChunkManager{
 	private \SplQueue $neighbourBlockUpdateQueue;
 	private ?RedstoneEngine $redstone = null;
 	private ?HopperTicker $hopperTicker = null;
+	private array $movingBlocksByChunk = [];
 	/**
 	 * @var true[] blockhash => dummy
 	 * @phpstan-var array<BlockPosHash, true>
@@ -694,6 +693,8 @@ class World implements ChunkManager{
 
 		$this->redstone?->clear();
 		$this->redstone = null;
+		$this->hopperTicker?->clear();
+		$this->hopperTicker = null;
 
 		$this->unloaded = true;
 	}
@@ -835,7 +836,7 @@ class World implements ChunkManager{
 	/** @var array<int, ShapeHandle[]> [targetTick => ShapeHandle[]] */
 	private array $temporaryShapeTimers = [];
 
-	public function addShape(\pocketmine\math\Vector3 $pos, Shape $shape, ?array $players = null) : ShapeHandle{
+	public function addShape(Vector3 $pos, Shape $shape, ?array $players = null) : ShapeHandle{
 		$players ??= $this->getViewersForPosition($pos);
 
 		if(WorldShapeEvent::hasHandlers()){
@@ -869,7 +870,7 @@ class World implements ChunkManager{
 			NetworkBroadcastUtils::broadcastPackets($this->getViewersForPosition($pos), [$removePk]);
 		};
 
-		$updater = function(Shape $newShape, ?\pocketmine\math\Vector3 $newPos = null) use (&$pos, $networkId, &$chunkHash) : void{
+		$updater = function(Shape $newShape, ?Vector3 $newPos = null) use (&$pos, $networkId, &$chunkHash) : void{
 			$targetPos = $newPos ?? $pos;
 			$newChunkHash = self::chunkHash($targetPos->getFloorX() >> Chunk::COORD_BIT_SIZE, $targetPos->getFloorZ() >> Chunk::COORD_BIT_SIZE);
 			if($newChunkHash !== $chunkHash){
@@ -897,7 +898,7 @@ class World implements ChunkManager{
 		return array_values($this->activeShapes[$hash] ?? []);
 	}
 
-	public function addTemporaryShape(\pocketmine\math\Vector3 $pos, Shape $shape, int $durationTicks, ?array $players = null) : ShapeHandle{
+	public function addTemporaryShape(Vector3 $pos, Shape $shape, int $durationTicks, ?array $players = null) : ShapeHandle{
 		$handle = $this->addShape($pos, new TemporaryShape($shape, $durationTicks / 20.0), $players);
 		$targetTick = $this->server->getTick() + $durationTicks;
 		$this->temporaryShapeTimers[$targetTick][] = $handle;
@@ -1740,6 +1741,20 @@ class World implements ChunkManager{
 		$maxY = (int) floor($bb->maxY + 1);
 		$maxZ = (int) floor($bb->maxZ + 1);
 
+		$paddingY = 1;
+		if($this->movingBlocksByChunk !== []){
+			for($cx = $minX >> Chunk::COORD_BIT_SIZE, $maxCX = $maxX >> Chunk::COORD_BIT_SIZE; $cx <= $maxCX; ++$cx){
+				for($cz = $minZ >> Chunk::COORD_BIT_SIZE, $maxCZ = $maxZ >> Chunk::COORD_BIT_SIZE; $cz <= $maxCZ; ++$cz){
+					if(isset($this->movingBlocksByChunk[self::chunkHash($cx, $cz)])){
+						$paddingY = 2;
+						--$minY;
+						++$maxY;
+						break 2;
+					}
+				}
+			}
+		}
+
 		$collides = [];
 
 		$collisionInfo = $this->blockStateRegistry->collisionInfo;
@@ -1749,7 +1764,7 @@ class World implements ChunkManager{
 				for($x = $minX; $x <= $maxX; ++$x){
 					$zxOverflow = $zOverflow || $x === $minX || $x === $maxX;
 					for($y = $minY; $y <= $maxY; ++$y){
-						$overflow = $zxOverflow || $y === $minY || $y === $maxY;
+						$overflow = $zxOverflow || $y < $minY + $paddingY || $y > $maxY - $paddingY;
 
 						$stateCollisionInfo = $this->getBlockCollisionInfo($x, $y, $z, $collisionInfo);
 						if($overflow ?
@@ -1772,7 +1787,7 @@ class World implements ChunkManager{
 				for($x = $minX; $x <= $maxX; ++$x){
 					$zxOverflow = $zOverflow || $x === $minX || $x === $maxX;
 					for($y = $minY; $y <= $maxY; ++$y){
-						$overflow = $zxOverflow || $y === $minY || $y === $maxY;
+						$overflow = $zxOverflow || $y < $minY + $paddingY || $y > $maxY - $paddingY;
 
 						$stateCollisionInfo = $this->getBlockCollisionInfo($x, $y, $z, $collisionInfo);
 						if($overflow ?
@@ -1849,6 +1864,38 @@ class World implements ChunkManager{
 					foreach($extraBoxes as $extraBox){
 						if($extraBox->intersectsWith($cellBB)){
 							$boxes[] = $extraBox;
+						}
+					}
+				}
+			}
+		}
+
+		if($this->movingBlocksByChunk !== []){
+			for($cx = ($x - 1) >> Chunk::COORD_BIT_SIZE, $maxCX = ($x + 1) >> Chunk::COORD_BIT_SIZE; $cx <= $maxCX; ++$cx){
+				for($cz = ($z - 1) >> Chunk::COORD_BIT_SIZE, $maxCZ = ($z + 1) >> Chunk::COORD_BIT_SIZE; $cz <= $maxCZ; ++$cz){
+					$moving = $this->movingBlocksByChunk[self::chunkHash($cx, $cz)] ?? null;
+					if($moving === null){
+						continue;
+					}
+					for($dx = -1; $dx <= 1; ++$dx){
+						if(($x + $dx) >> Chunk::COORD_BIT_SIZE !== $cx){
+							continue;
+						}
+						for($dz = -1; $dz <= 1; ++$dz){
+							if(($z + $dz) >> Chunk::COORD_BIT_SIZE !== $cz){
+								continue;
+							}
+							for($dy = -2; $dy <= 2; ++$dy){
+								if(abs($dx) + abs($dy) + abs($dz) <= 1 || !isset($moving[self::chunkBlockHash($x + $dx, $y + $dy, $z + $dz)])){
+									continue;
+								}
+								$cellBB ??= AxisAlignedBB::one()->offset($x, $y, $z);
+								foreach($this->getBlockAt($x + $dx, $y + $dy, $z + $dz)->getCollisionBoxes() as $extraBox){
+									if($extraBox->intersectsWith($cellBB)){
+										$boxes[] = $extraBox;
+									}
+								}
+							}
 						}
 					}
 				}
@@ -2296,7 +2343,7 @@ class World implements ChunkManager{
 		}
 		$this->changedBlocks[$chunkHash][$relativeBlockHash] = $pos;
 
-		$this->redstone?->getTorchBurnout()->onBlockChanged($block);
+		$this->redstone?->onBlockChanged($block);
 
 		foreach($this->getChunkListeners($chunkX, $chunkZ) as $listener){
 			$listener->onBlockChanged($pos);
@@ -2308,6 +2355,27 @@ class World implements ChunkManager{
 		}
 
 		$this->timings->setBlock->stopTiming();
+	}
+
+	public function invalidateBlockCache(Vector3 $pos) : void{
+		$x = $pos->getFloorX();
+		$y = $pos->getFloorY();
+		$z = $pos->getFloorZ();
+		$chunkHash = self::chunkHash($x >> Chunk::COORD_BIT_SIZE, $z >> Chunk::COORD_BIT_SIZE);
+		$blockHash = self::chunkBlockHash($x, $y, $z);
+		if(isset($this->blockCache[$chunkHash][$blockHash])){
+			unset($this->blockCache[$chunkHash][$blockHash]);
+			--$this->blockCacheSize;
+		}
+		unset($this->blockCollisionBoxCache[$chunkHash][$blockHash]);
+		for($dx = -1; $dx <= 1; ++$dx){
+			for($dz = -1; $dz <= 1; ++$dz){
+				$chunkHash = self::chunkHash(($x + $dx) >> Chunk::COORD_BIT_SIZE, ($z + $dz) >> Chunk::COORD_BIT_SIZE);
+				for($dy = -2; $dy <= 2; ++$dy){
+					unset($this->blockCollisionBoxCache[$chunkHash][self::chunkBlockHash($x + $dx, $y + $dy, $z + $dz)]);
+				}
+			}
+		}
 	}
 
 	public function dropItem(Vector3 $source, Item $item, ?Vector3 $motion = null, int $delay = 10) : ?ItemEntity{
@@ -2662,6 +2730,16 @@ class World implements ChunkManager{
 		}
 
 		return $nearby;
+	}
+
+	public function iterateEntityCandidates(AxisAlignedBB $area) : \Generator{
+		for($x = ((int) floor($area->minX - 2)) >> Chunk::COORD_BIT_SIZE, $maxX = ((int) floor($area->maxX + 2)) >> Chunk::COORD_BIT_SIZE; $x <= $maxX; ++$x){
+			for($z = ((int) floor($area->minZ - 2)) >> Chunk::COORD_BIT_SIZE, $maxZ = ((int) floor($area->maxZ + 2)) >> Chunk::COORD_BIT_SIZE; $z <= $maxZ; ++$z){
+				foreach($this->getChunkEntities($x, $z) as $entity){
+					yield $entity;
+				}
+			}
+		}
 	}
 
 	/**
@@ -3122,6 +3200,13 @@ class World implements ChunkManager{
 		if(isset($this->chunks[$hash = World::chunkHash($chunkX, $chunkZ)])){
 			$this->chunks[$hash]->addTile($tile);
 			$this->hopperTicker?->onTileAdded($tile);
+			if($tile instanceof \pocketmine\block\tile\Comparator){
+				$this->redstone?->request($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+			}
+			if($tile instanceof \pocketmine\block\tile\MovingBlock){
+				$this->movingBlocksByChunk[$hash][self::chunkBlockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ())] = $tile;
+				$this->invalidateBlockCache($pos);
+			}
 		}else{
 			throw new \InvalidArgumentException("Attempted to create tile " . get_class($tile) . " in unloaded chunk $chunkX $chunkZ");
 		}
@@ -3143,9 +3228,23 @@ class World implements ChunkManager{
 		$chunkX = $pos->getFloorX() >> Chunk::COORD_BIT_SIZE;
 		$chunkZ = $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE;
 
-		if(isset($this->chunks[$hash = World::chunkHash($chunkX, $chunkZ)])){
+		if(isset($this->chunks[$hash = World::chunkHash($chunkX, $chunkZ)]) && $this->getTile($pos) === $tile){
+			if($tile instanceof \pocketmine\block\tile\Comparator){
+				$this->redstone?->getContainerWatch()->watch($pos, null);
+			}
 			$this->chunks[$hash]->removeTile($tile);
+			$this->hopperTicker?->onTileRemoved($tile);
 		}
+		$relative = self::chunkBlockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		$chunkHash = self::chunkHash($chunkX, $chunkZ);
+		if(($this->movingBlocksByChunk[$chunkHash][$relative] ?? null) === $tile){
+			unset($this->movingBlocksByChunk[$chunkHash][$relative]);
+			if($this->movingBlocksByChunk[$chunkHash] === []){
+				unset($this->movingBlocksByChunk[$chunkHash]);
+			}
+			$this->invalidateBlockCache($pos);
+		}
+
 		foreach($this->getChunkListeners($chunkX, $chunkZ) as $listener){
 			$listener->onBlockChanged($pos->asVector3());
 		}
@@ -3381,6 +3480,8 @@ class World implements ChunkManager{
 			$chunk->onUnload();
 		}
 
+		$this->hopperTicker?->onChunkUnloaded($x, $z);
+		$this->redstone?->onChunkUnloaded($x, $z);
 		unset($this->chunks[$chunkHash]);
 		$this->blockCacheSize -= count($this->blockCache[$chunkHash] ?? []);
 		unset($this->blockCache[$chunkHash]);

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -28,6 +28,8 @@ use pocketmine\block\inventory\BlockInventory;
 use pocketmine\block\inventory\BrewingStandInventory;
 use pocketmine\block\inventory\CartographyTableInventory;
 use pocketmine\block\inventory\CraftingTableInventory;
+use pocketmine\block\inventory\DispenserInventory;
+use pocketmine\block\inventory\DropperInventory;
 use pocketmine\block\inventory\EnchantInventory;
 use pocketmine\block\inventory\FurnaceInventory;
 use pocketmine\block\inventory\HopperInventory;
@@ -36,6 +38,7 @@ use pocketmine\block\inventory\SmithingTableInventory;
 use pocketmine\block\inventory\StonecutterInventory;
 use pocketmine\crafting\FurnaceType;
 use pocketmine\data\bedrock\EnchantmentIdMap;
+use pocketmine\entity\object\ChestBoatInventory;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
@@ -73,6 +76,7 @@ use function array_map;
 use function array_search;
 use function count;
 use function get_class;
+use function hrtime;
 use function implode;
 use function is_int;
 use function max;
@@ -108,6 +112,7 @@ class InventoryManager{
 	private ObjectSet $containerOpenCallbacks;
 
 	private ?int $pendingCloseWindowId = null;
+	private ?int $pendingCloseDeadline = null;
 	/** @phpstan-var \Closure() : void */
 	private ?\Closure $pendingOpenWindowCallback = null;
 
@@ -326,7 +331,6 @@ class InventoryManager{
 			$inventory instanceof CraftingTableInventory => UIInventorySlotOffset::CRAFTING3X3_INPUT,
 			$inventory instanceof CartographyTableInventory => UIInventorySlotOffset::CARTOGRAPHY_TABLE,
 			$inventory instanceof SmithingTableInventory => UIInventorySlotOffset::SMITHING_TABLE,
-			$inventory instanceof \pocketmine\addon\entity\trade\TradeInventory => $inventory->getTrader()->usesNewTradeScreen() ? UIInventorySlotOffset::TRADE2_INGREDIENT : UIInventorySlotOffset::TRADE_INGREDIENT,
 			default => null,
 		};
 	}
@@ -385,6 +389,8 @@ class InventoryManager{
 				$inv instanceof BrewingStandInventory => WindowTypes::BREWING_STAND,
 				$inv instanceof AnvilInventory => WindowTypes::ANVIL,
 				$inv instanceof HopperInventory => WindowTypes::HOPPER,
+				$inv instanceof DispenserInventory => WindowTypes::DISPENSER,
+				$inv instanceof DropperInventory => WindowTypes::DROPPER,
 				$inv instanceof CraftingTableInventory => WindowTypes::WORKBENCH,
 				$inv instanceof StonecutterInventory => WindowTypes::STONECUTTER,
 				$inv instanceof CartographyTableInventory => WindowTypes::CARTOGRAPHY,
@@ -392,6 +398,9 @@ class InventoryManager{
 				default => WindowTypes::CONTAINER
 			};
 			return [ContainerOpenPacket::blockInv($id, $windowType, $blockPosition)];
+		}
+		if($inv instanceof ChestBoatInventory){
+			return [ContainerOpenPacket::entityInv($id, WindowTypes::CONTAINER, $inv->getHolder()->getId())];
 		}
 		return null;
 	}
@@ -413,6 +422,7 @@ class InventoryManager{
 	}
 
 	public function onCurrentWindowRemove() : void{
+		$this->pendingOpenWindowCallback = null;
 		if(isset($this->networkIdToInventoryMap[$this->lastInventoryNetworkId])){
 			$this->remove($this->lastInventoryNetworkId);
 			$this->session->sendDataPacket(ContainerClosePacket::create($this->lastInventoryNetworkId, $this->currentWindowType, true));
@@ -420,8 +430,13 @@ class InventoryManager{
 				throw new AssumptionFailedError("We should not have opened a new window while a window was waiting to be closed");
 			}
 			$this->pendingCloseWindowId = $this->lastInventoryNetworkId;
+			$this->pendingCloseDeadline = hrtime(true) + 10_000_000_000;
 			$this->enchantingTableOptions = [];
 		}
+	}
+
+	public function isWindowClosePending(int $id) : bool{
+		return $this->pendingCloseWindowId === $id;
 	}
 
 	public function onClientRemoveWindow(int $id) : void{
@@ -449,6 +464,7 @@ class InventoryManager{
 
 		if($this->pendingCloseWindowId === $id){
 			$this->pendingCloseWindowId = null;
+			$this->pendingCloseDeadline = null;
 			if($this->pendingOpenWindowCallback !== null){
 				$this->session->getLogger()->debug("Opening deferred window after close ack of window $id");
 				($this->pendingOpenWindowCallback)();
@@ -662,6 +678,11 @@ class InventoryManager{
 	}
 
 	public function flushPendingUpdates() : void{
+		if($this->pendingCloseDeadline !== null && hrtime(true) >= $this->pendingCloseDeadline){
+			$this->session->disconnect("Inventory close acknowledgement timed out");
+			return;
+		}
+
 		if($this->fullSyncRequested){
 			$this->fullSyncRequested = false;
 			$this->session->getLogger()->debug("Full inventory sync requested, sending contents of " . count($this->inventories) . " inventories");

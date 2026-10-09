@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -375,7 +375,8 @@ abstract class Living extends Entity{
 	 */
 	public function jump() : void{
 		if($this->onGround){
-			$this->motion = $this->motion->withComponents(null, $this->getJumpVelocity(), null); //Y motion should already be 0 if we're jumping from the ground.
+			$ground = $this->getWorld()->getBlock($this->location->subtract(0, 0.01, 0));
+			$this->motion = $this->motion->withComponents(null, $this->getJumpVelocity() * $ground->getJumpVelocityMultiplier(), null);
 		}
 	}
 
@@ -392,7 +393,7 @@ abstract class Living extends Entity{
 		}
 		$newVerticalVelocity = $fallBlock->onEntityLand($this);
 
-		$damage = $this->calculateFallDamage($this->fallDistance);
+		$damage = $this->calculateFallDamage($this->fallDistance) * $fallBlock->getFallDamageMultiplier();
 		if($damage > 0){
 			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FALL, $damage);
 			$this->attack($ev);

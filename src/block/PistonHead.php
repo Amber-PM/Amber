@@ -23,14 +23,18 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\tile\PistonArm;
 use pocketmine\block\utils\AnyFacing;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
+use pocketmine\math\Vector3;
 
 class PistonHead extends Transparent implements AnyFacing{
 	protected int $facing = Facing::DOWN;
 	protected bool $sticky = false;
+	private ?Vector3 $movementOffset = null;
 
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
 		$w->facing($this->facing);
@@ -70,11 +74,48 @@ class PistonHead extends Transparent implements AnyFacing{
 		return false;
 	}
 
+	protected function recalculateCollisionBoxes() : array{
+		return match($this->facing){
+			Facing::DOWN => [new AxisAlignedBB(0, 0, 0, 1, 0.25, 1), new AxisAlignedBB(0.375, 0.25, 0.375, 0.625, 1, 0.625)],
+			Facing::UP => [new AxisAlignedBB(0, 0.75, 0, 1, 1, 1), new AxisAlignedBB(0.375, 0, 0.375, 0.625, 0.75, 0.625)],
+			Facing::NORTH => [new AxisAlignedBB(0, 0, 0, 1, 1, 0.25), new AxisAlignedBB(0.375, 0.375, 0.25, 0.625, 0.625, 1)],
+			Facing::SOUTH => [new AxisAlignedBB(0, 0, 0.75, 1, 1, 1), new AxisAlignedBB(0.375, 0.375, 0, 0.625, 0.625, 0.75)],
+			Facing::WEST => [new AxisAlignedBB(0, 0, 0, 0.25, 1, 1), new AxisAlignedBB(0.25, 0.375, 0.375, 1, 0.625, 0.625)],
+			Facing::EAST => [new AxisAlignedBB(0.75, 0, 0, 1, 1, 1), new AxisAlignedBB(0, 0.375, 0.375, 0.75, 0.625, 0.625)]
+		};
+	}
+
+	public function readStateFromWorld() : Block{
+		$this->movementOffset = null;
+		$world = $this->position->getWorld();
+		$base = $this->position->getSide(Facing::opposite($this->facing));
+		if($world->isChunkLoaded($base->getFloorX() >> 4, $base->getFloorZ() >> 4)){
+			$tile = $world->getTile($base);
+			if($tile instanceof PistonArm && $tile->isMoving()){
+				[$x, $y, $z] = Facing::OFFSET[$this->facing];
+				$this->movementOffset = new Vector3($x * ($tile->getProgress() - 1.0), $y * ($tile->getProgress() - 1.0), $z * ($tile->getProgress() - 1.0));
+			}
+		}
+		return $this;
+	}
+
+	public function getModelPositionOffset() : ?Vector3{
+		return $this->movementOffset;
+	}
+
+	public function getSupportType(int $facing) : utils\SupportType{
+		return $facing === $this->facing ? utils\SupportType::FULL : utils\SupportType::NONE;
+	}
+
 	public function getAffectedBlocks() : array{
 		if($this->position->isValid()){
 			$basePos = $this->position->getSide(Facing::opposite($this->facing));
-			$base = $this->position->getWorld()->getBlock($basePos);
-			if($base instanceof Piston && $base->getFacing() === $this->facing){
+			$world = $this->position->getWorld();
+			if(!$world->isInWorld($basePos->getFloorX(), $basePos->getFloorY(), $basePos->getFloorZ()) || !$world->isChunkLoaded($basePos->getFloorX() >> 4, $basePos->getFloorZ() >> 4)){
+				return parent::getAffectedBlocks();
+			}
+			$base = $world->getBlock($basePos);
+			if($base instanceof Piston && $base->getFacing() === $this->facing && $base->isSticky() === $this->sticky){
 				return [$this, $base];
 			}
 		}
@@ -85,8 +126,12 @@ class PistonHead extends Transparent implements AnyFacing{
 	public function onNearbyBlockChange() : void{
 		if($this->position->isValid()){
 			$basePos = $this->position->getSide(Facing::opposite($this->facing));
-			$base = $this->position->getWorld()->getBlock($basePos);
-			if(!$base instanceof Piston || $base->getFacing() !== $this->facing){
+			$world = $this->position->getWorld();
+			if(!$world->isInWorld($basePos->getFloorX(), $basePos->getFloorY(), $basePos->getFloorZ()) || !$world->isChunkLoaded($basePos->getFloorX() >> 4, $basePos->getFloorZ() >> 4)){
+				return;
+			}
+			$base = $world->getBlock($basePos);
+			if(!$base instanceof Piston || $base->getFacing() !== $this->facing || $base->isSticky() !== $this->sticky){
 				$this->position->getWorld()->useBreakOn($this->position);
 			}
 		}

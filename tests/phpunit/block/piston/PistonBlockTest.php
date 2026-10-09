@@ -39,7 +39,6 @@ use pocketmine\network\mcpe\protocol\LevelSoundEventPacket;
 use pocketmine\network\mcpe\protocol\types\LevelSoundEvent;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
-use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\PistonExtendSound;
 use pocketmine\world\sound\PistonRetractSound;
 use pocketmine\world\World;

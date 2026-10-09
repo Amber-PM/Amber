@@ -26,14 +26,12 @@ namespace pocketmine\block\piston;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\Flowable;
+use pocketmine\block\Piston;
 use pocketmine\block\PistonHead;
 use pocketmine\block\ShulkerBox;
-use pocketmine\block\tile\EnchantTable;
-use pocketmine\block\tile\EnderChest;
-use pocketmine\block\tile\MonsterSpawner;
 use pocketmine\block\tile\Tile;
-use pocketmine\block\tile\TileFactory;
 use function get_class;
+use function in_array;
 
 final class PistonMoveRules{
 
@@ -41,20 +39,23 @@ final class PistonMoveRules{
 	 * @phpstan-param class-string<Tile> $tileClass
 	 */
 	public static function isTileClassSupported(string $tileClass) : bool{
-		if(
-			$tileClass === MonsterSpawner::class ||
-			$tileClass === EnchantTable::class ||
-			$tileClass === EnderChest::class
-		){
-			return false;
-		}
-
-		return TileFactory::getInstance()->isRegistered($tileClass);
+		return in_array($tileClass, [
+			\pocketmine\block\tile\Barrel::class,
+			\pocketmine\block\tile\BrewingStand::class,
+			\pocketmine\block\tile\Chest::class,
+			\pocketmine\block\tile\Dispenser::class,
+			\pocketmine\block\tile\Dropper::class,
+			\pocketmine\block\tile\Hopper::class,
+			\pocketmine\block\tile\NormalFurnace::class,
+			\pocketmine\block\tile\BlastFurnace::class,
+			\pocketmine\block\tile\Smoker::class,
+			\pocketmine\block\tile\Note::class,
+			\pocketmine\block\tile\PistonArm::class,
+			\pocketmine\block\tile\ShulkerBox::class
+		], true);
 	}
 
-	/**
-	 * Returns true if the tile entity is supported for movement by pistons.
-	 */
+	 //returns true if the tile entity is supported for movement by pistons
 	public static function isTileSupported(Tile $tile) : bool{
 		if($tile->isClosed()){
 			return false;
@@ -63,13 +64,29 @@ final class PistonMoveRules{
 		return self::isTileClassSupported(get_class($tile));
 	}
 
-	/**
-	 * Returns true if the block cannot be moved by pistons (neither pushed nor pulled).
-	 */
 	public static function isImmovable(Block $block) : bool{
+		if($block instanceof Piston){
+			$position = $block->getPosition();
+			if($position->isValid()){
+				$head = $position->getSide($block->getFacing());
+				$world = $position->getWorld();
+				if($world->isInWorld($head->getFloorX(), $head->getFloorY(), $head->getFloorZ()) && !$world->isChunkLoaded($head->getFloorX() >> 4, $head->getFloorZ() >> 4)){
+					return true;
+				}
+			}
+			if($block->isExtended() || ($position->isValid() && ($tile = $position->getWorld()->getTile($position)) instanceof \pocketmine\block\tile\PistonArm && $tile->isMoving())){
+				return true;
+			}
+		}
 		$typeId = $block->getTypeId();
 		if(
 			$typeId === BlockTypeIds::BEDROCK ||
+			$typeId === BlockTypeIds::BEACON ||
+			$typeId === BlockTypeIds::JUKEBOX ||
+			$typeId === BlockTypeIds::REINFORCED_DEEPSLATE ||
+			$typeId === BlockTypeIds::LIGHT ||
+			$typeId === BlockTypeIds::STRUCTURE_VOID ||
+			$typeId === BlockTypeIds::END_PORTAL ||
 			$typeId === BlockTypeIds::OBSIDIAN ||
 			$typeId === BlockTypeIds::CRYING_OBSIDIAN ||
 			$typeId === BlockTypeIds::GLOWING_OBSIDIAN ||
@@ -80,7 +97,6 @@ final class PistonMoveRules{
 			$typeId === BlockTypeIds::NETHER_PORTAL ||
 			$typeId === BlockTypeIds::END_PORTAL_FRAME ||
 			$typeId === BlockTypeIds::BARRIER ||
-			$typeId === BlockTypeIds::MOVING_BLOCK ||
 			$typeId === BlockTypeIds::PISTON_HEAD ||
 			$block instanceof PistonHead
 		){
@@ -91,6 +107,9 @@ final class PistonMoveRules{
 			return true;
 		}
 
+		if(self::isBreakableOnPush($block)){
+			return false;
+		}
 		$tileClass = $block->getIdInfo()->getTileClass();
 		if($tileClass !== null){
 			if(!self::isTileClassSupported($tileClass)){
@@ -108,26 +127,47 @@ final class PistonMoveRules{
 		return false;
 	}
 
-	/**
-	 * Returns true if the block breaks and drops items when pushed, instead of being displaced.
-	 */
+	 //returns true if the block breaks and drops items when pushed, instead of being displaced
 	public static function isBreakableOnPush(Block $block) : bool{
-		if($block->canBeReplaced()){
+		if($block->getTypeId() === BlockTypeIds::AIR || $block instanceof \pocketmine\block\Fire || $block instanceof \pocketmine\block\Liquid){
 			return false;
 		}
-
-		if($block instanceof ShulkerBox){
-			return true;
-		}
-
-		return $block instanceof Flowable;
+		return $block instanceof Flowable ||
+			$block instanceof ShulkerBox ||
+			$block instanceof \pocketmine\block\Door ||
+			$block instanceof \pocketmine\block\Bed ||
+			$block instanceof \pocketmine\block\BaseCake ||
+			$block instanceof \pocketmine\block\BaseSign ||
+			$block instanceof \pocketmine\block\BaseBanner ||
+			$block instanceof \pocketmine\block\BaseOminousBanner ||
+			$block instanceof \pocketmine\block\PressurePlate ||
+			$block instanceof \pocketmine\block\Ladder ||
+			$block instanceof \pocketmine\block\Bamboo ||
+			$block instanceof \pocketmine\block\Cactus ||
+			$block instanceof \pocketmine\block\Candle ||
+			$block instanceof \pocketmine\block\Lantern ||
+			$block instanceof \pocketmine\block\AmethystCluster ||
+			$block instanceof \pocketmine\block\BaseBigDripleaf ||
+			$block instanceof \pocketmine\block\SmallDripleaf ||
+			$block instanceof \pocketmine\block\SeaPickle ||
+			$block instanceof \pocketmine\block\BaseCoral ||
+			$block instanceof \pocketmine\block\GlowLichen ||
+			$block instanceof \pocketmine\block\ResinClump ||
+			$block instanceof \pocketmine\block\DragonEgg ||
+			$block instanceof \pocketmine\block\BuddingAmethyst ||
+			$block instanceof \pocketmine\block\Campfire;
 	}
 
-	/**
-	 * Returns true if two adjacent blocks stick together when moved by a piston.
-	 */
+	public static function isPushOnly(Block $block) : bool{
+		return $block instanceof \pocketmine\block\GlazedTerracotta;
+	}
+
+	public static function isAdhesive(Block $block) : bool{
+		return $block->getTypeId() === BlockTypeIds::SLIME || $block->getTypeId() === BlockTypeIds::HONEY_BLOCK;
+	}
+
 	public static function canStickTogether(Block $a, Block $b) : bool{
-		if(self::isImmovable($a) || self::isImmovable($b)){
+		if(self::isImmovable($a) || self::isImmovable($b) || self::isPushOnly($a) || self::isPushOnly($b) || self::isBreakableOnPush($a) || self::isBreakableOnPush($b)){
 			return false;
 		}
 
@@ -140,7 +180,6 @@ final class PistonMoveRules{
 		$aHoney = $a->getTypeId() === BlockTypeIds::HONEY_BLOCK;
 		$bHoney = $b->getTypeId() === BlockTypeIds::HONEY_BLOCK;
 
-		// Honey and Slime DO NOT stick to each other
 		if(($aSlime && $bHoney) || ($aHoney && $bSlime)){
 			return false;
 		}

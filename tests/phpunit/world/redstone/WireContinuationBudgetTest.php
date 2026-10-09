@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,12 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
 
+require_once __DIR__ . '/../../../support/redstone/RedstoneTestEnvironment.php';
+
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
 use pocketmine\block\RedstoneWire;
 use pocketmine\block\VanillaBlocks;
-use pocketmine\math\Vector3;
 use pocketmine\world\World;
+use function count;
 
 final class WireContinuationBudgetTest extends TestCase{
 	private bool $allChunksLoaded = true;
@@ -44,12 +46,12 @@ final class WireContinuationBudgetTest extends TestCase{
 		$network->processDeferred(1999);
 		$states = new \ReflectionProperty(WireNetwork::class, "continuations");
 		$before = $states->getValue($network)[1];
-		$beforeCount = count($before["sourceQueue"]);
+		$beforeCount = count($before->sourceQueue);
 		unset($before);
 		self::assertSame(1, $network->processDeferred(1));
 		$after = $states->getValue($network)[1];
-		self::assertLessThanOrEqual(1, count($after["sourceQueue"]) - $beforeCount, "One phase-boundary step cannot allocate the whole source queue");
-		self::assertCount(2000, $after["applyQueue"], "Apply work is also accumulated during metered discovery");
+		self::assertLessThanOrEqual(1, count($after->sourceQueue) - $beforeCount, "One phase-boundary step cannot allocate the whole source queue");
+		self::assertCount(2000, $after->applyQueue, "Apply work is also accumulated during metered discovery");
 	}
 
 	public function testWireSettlementSurvivesChunkUnloadInEveryReadPhase() : void{
@@ -64,10 +66,10 @@ final class WireContinuationBudgetTest extends TestCase{
 			$budget = 0;
 			$network->update($world->getBlockAt(8, 64, 8), $budget);
 			$states = new \ReflectionProperty(WireNetwork::class, "continuations");
-			for($i = 0; $i < 100 && $states->getValue($network)[1]["phase"] !== $phase; ++$i){
+			for($i = 0; $i < 100 && $states->getValue($network)[1]->phase->value !== $phase; ++$i){
 				$network->processDeferred(1);
 			}
-			self::assertSame($phase, $states->getValue($network)[1]["phase"]);
+			self::assertSame($phase, $states->getValue($network)[1]->phase->value);
 			$this->allChunksLoaded = false;
 			$network->processDeferred(100);
 			self::assertTrue($network->hasDeferred(), "Unavailable topology must stay pending in phase $phase");
@@ -122,7 +124,7 @@ final class WireContinuationBudgetTest extends TestCase{
 		for($i = 0; $i < 100; ++$i){
 			$network->processDeferred(1);
 			foreach($states->getValue($network) as $state){
-				if($state["phase"] === WireNetwork::PHASE_CLEANUP){
+				if($state->phase->value === WireNetwork::PHASE_CLEANUP){
 					return;
 				}
 			}
@@ -156,8 +158,8 @@ final class WireContinuationBudgetTest extends TestCase{
 			}
 			self::assertLessThanOrEqual(1, $redirected, "A single step may redirect at most one existing alias");
 			foreach($statesProperty->getValue($network) as $state){
-				foreach($state["mergingSources"] as $source){
-					$nested = $nested || ($source["mergingSources"] ?? []) !== [];
+				foreach($state->mergingSources as $source){
+					$nested = $nested || ($source->mergingSources ?? []) !== [];
 				}
 			}
 		}
@@ -185,8 +187,8 @@ final class WireContinuationBudgetTest extends TestCase{
 		for($i = 0; $i < 3000 && !$found; ++$i){
 			$network->processDeferred(1);
 			foreach($statesProperty->getValue($network) as $state){
-				foreach($state["mergingSources"] as $source){
-					if(($source["mergingSources"] ?? []) !== []){
+				foreach($state->mergingSources as $source){
+					if(($source->mergingSources ?? []) !== []){
 						$found = true;
 					}
 				}
@@ -245,56 +247,7 @@ final class WireContinuationBudgetTest extends TestCase{
 	 * @return array{RedstoneEngine, World, array<string, Block>}
 	 */
 	private function createEnvironment(int $maxUpdatesPerTick = 1000) : array{
-		$blocks = [];
-		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods([
-			"getBlockAt",
-			"setBlockAt",
-			"isInWorld",
-			"isChunkLoaded",
-			"notifyNeighbourBlockUpdate"
-		])->getMock();
-
-		$world->method("isInWorld")->willReturn(true);
-		$world->method("isChunkLoaded")->willReturnCallback(fn() : bool => $this->allChunksLoaded);
-
-		$engine = new RedstoneEngine($world, $maxUpdatesPerTick);
-
-		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
-			$key = "$x:$y:$z";
-			if($this->allChunksLoaded && isset($blocks[$key])){
-				return $blocks[$key];
-			}
-			$air = clone VanillaBlocks::AIR();
-			$air->position($world, $x, $y, $z);
-			return $air;
-		});
-
-		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block, bool $notify = true) use (&$blocks, $world) : bool{
-			$key = "$x:$y:$z";
-			$clone = clone $block;
-			$clone->position($world, $x, $y, $z);
-			$blocks[$key] = $clone;
-			if($notify){
-				$world->notifyNeighbourBlockUpdate(new Vector3($x, $y, $z));
-			}
-			return true;
-		});
-
-		$world->method("notifyNeighbourBlockUpdate")->willReturnCallback(function(Vector3 $pos) use ($world, $engine) : void{
-			$x = $pos->getFloorX();
-			$y = $pos->getFloorY();
-			$z = $pos->getFloorZ();
-			$engine->onNeighbourUpdate($world->getBlockAt($x, $y, $z));
-			foreach([
-				[$x + 1, $y, $z], [$x - 1, $y, $z],
-				[$x, $y + 1, $z], [$x, $y - 1, $z],
-				[$x, $y, $z + 1], [$x, $y, $z - 1]
-			] as [$nx, $ny, $nz]){
-				$engine->onNeighbourUpdate($world->getBlockAt($nx, $ny, $nz));
-			}
-		});
-
-		return [$engine, $world, $blocks];
+		return RedstoneTestEnvironment::create($maxUpdatesPerTick, fn() : bool => $this->allChunksLoaded);
 	}
 
 	public function testSharedBudgetEnforcedAcrossAllWireOperations() : void{

@@ -23,6 +23,8 @@ declare(strict_types=1);
 
 namespace pocketmine\block\piston;
 
+use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
@@ -46,9 +48,7 @@ final class PistonStructureCalculator{
 		private bool $extending
 	){}
 
-	/**
-	 * Calculates the list of blocks to move and destroy. Returns false if the piston push/pull is blocked.
-	 */
+	 //calcs the list of blocks to move and destroy. Returns false if the piston push/pull is blocked
 	public function calculate() : bool{
 		$this->toMove = [];
 		$this->toDestroy = [];
@@ -61,10 +61,13 @@ final class PistonStructureCalculator{
 
 	private function calculateExtension() : bool{
 		$headPos = $this->pistonPos->getSide($this->pistonFacing);
-		$startBlock = $this->world->getBlockAt($headPos->getFloorX(), $headPos->getFloorY(), $headPos->getFloorZ());
+		$startBlock = $this->getAvailableBlock($headPos);
+		if($startBlock === null){
+			return false;
+		}
 
-		if($startBlock->canBeReplaced()){
-			return true;
+		if(PistonMoveRules::isImmovable($startBlock)){
+			return false;
 		}
 
 		if(PistonMoveRules::isBreakableOnPush($startBlock)){
@@ -72,8 +75,8 @@ final class PistonStructureCalculator{
 			return true;
 		}
 
-		if(PistonMoveRules::isImmovable($startBlock)){
-			return false;
+		if($startBlock->canBeReplaced()){
+			return true;
 		}
 
 		/** @var array<string, Vector3> $toMoveMap */
@@ -91,18 +94,27 @@ final class PistonStructureCalculator{
 
 		while(count($queue) > 0){
 			$current = array_shift($queue);
-			$currentBlock = $this->world->getBlockAt($current->getFloorX(), $current->getFloorY(), $current->getFloorZ());
+			$currentBlock = $this->getAvailableBlock($current);
+			if($currentBlock === null){
+				return false;
+			}
 
-			// Check block directly in front in push direction
+			// check block directly in front in push direction
 			$next = $current->getSide($dir);
 			if($next->equals($this->pistonPos)){
-				return false; // Can't push into piston base
+				return false; // cant push into piston base
 			}
 
 			$nextKey = self::posKey($next);
 			if(!isset($toMoveMap[$nextKey]) && !isset($toDestroyMap[$nextKey])){
-				$nextBlock = $this->world->getBlockAt($next->getFloorX(), $next->getFloorY(), $next->getFloorZ());
-				if(!$nextBlock->canBeReplaced()){
+				$nextBlock = $this->getAvailableBlock($next);
+				if($nextBlock === null){
+					return false;
+				}
+				if(PistonMoveRules::isImmovable($nextBlock)){
+					return false;
+				}
+				if(!$nextBlock->canBeReplaced() || PistonMoveRules::isBreakableOnPush($nextBlock)){
 					if(PistonMoveRules::isBreakableOnPush($nextBlock)){
 						$toDestroyMap[$nextKey] = $next;
 					}elseif(PistonMoveRules::isImmovable($nextBlock)){
@@ -117,8 +129,8 @@ final class PistonStructureCalculator{
 				}
 			}
 
-			// Check adhesion for Slime and Honey
-			foreach(Facing::ALL as $side){
+			//check adhesion for Slime and Honey
+			foreach(PistonMoveRules::isAdhesive($currentBlock) ? Facing::ALL : [] as $side){
 				$neighbor = $current->getSide($side);
 				if($neighbor->equals($this->pistonPos)){
 					continue;
@@ -128,7 +140,13 @@ final class PistonStructureCalculator{
 					continue;
 				}
 
-				$neighborBlock = $this->world->getBlockAt($neighbor->getFloorX(), $neighbor->getFloorY(), $neighbor->getFloorZ());
+				$neighborBlock = $this->getAvailableBlock($neighbor);
+				if($neighborBlock === null){
+					if($this->world->isInWorld($neighbor->getFloorX(), $neighbor->getFloorY(), $neighbor->getFloorZ()) && ($currentBlock->getTypeId() === BlockTypeIds::SLIME || $currentBlock->getTypeId() === BlockTypeIds::HONEY_BLOCK)){
+						return false;
+					}
+					continue;
+				}
 				if(PistonMoveRules::canStickTogether($currentBlock, $neighborBlock)){
 					$toMoveMap[$neighborKey] = $neighbor;
 					$queue[] = $neighbor;
@@ -139,13 +157,19 @@ final class PistonStructureCalculator{
 			}
 		}
 
-		// Ensure every block in toMoveMap has valid space at its destination
+		// ensure every block in toMoveMap has valid space at its destination
 		foreach($toMoveMap as $pos){
 			$dest = $pos->getSide($dir);
 			$destKey = self::posKey($dest);
 			if(!isset($toMoveMap[$destKey]) && !isset($toDestroyMap[$destKey])){
-				$destBlock = $this->world->getBlockAt($dest->getFloorX(), $dest->getFloorY(), $dest->getFloorZ());
-				if(!$destBlock->canBeReplaced()){
+				$destBlock = $this->getAvailableBlock($dest);
+				if($destBlock === null){
+					return false;
+				}
+				if(PistonMoveRules::isImmovable($destBlock)){
+					return false;
+				}
+				if(!$destBlock->canBeReplaced() || PistonMoveRules::isBreakableOnPush($destBlock)){
 					if(PistonMoveRules::isBreakableOnPush($destBlock)){
 						$toDestroyMap[$destKey] = $dest;
 					}else{
@@ -157,12 +181,12 @@ final class PistonStructureCalculator{
 
 		$this->toDestroy = array_values($toDestroyMap);
 
-		// Sort toMove in reverse topological order (highest dot product with push direction vector moves first)
+		// sorts toMove in reverse topological order (highest dot product with push direction vector moves first)
 		$toMoveList = array_values($toMoveMap);
 		usort($toMoveList, static function(Vector3 $a, Vector3 $b) use ($dir) : int{
 			$dotA = self::dotFacing($a, $dir);
 			$dotB = self::dotFacing($b, $dir);
-			return $dotB <=> $dotA; // Descending
+			return $dotB <=> $dotA; // descending
 		});
 
 		$this->toMove = $toMoveList;
@@ -174,9 +198,12 @@ final class PistonStructureCalculator{
 		$attachedPos = $this->pistonPos->getSide($this->pistonFacing, 2);
 		$headPos = $this->pistonPos->getSide($this->pistonFacing);
 
-		$attachedBlock = $this->world->getBlockAt($attachedPos->getFloorX(), $attachedPos->getFloorY(), $attachedPos->getFloorZ());
-		if($attachedBlock->canBeReplaced() || PistonMoveRules::isImmovable($attachedBlock) || PistonMoveRules::isBreakableOnPush($attachedBlock)){
-			return true; // Nothing pulled, arm retracts freely
+		$attachedBlock = $this->getAvailableBlock($attachedPos);
+		if($attachedBlock === null){
+			return true;
+		}
+		if($attachedBlock->canBeReplaced() || PistonMoveRules::isImmovable($attachedBlock) || PistonMoveRules::isBreakableOnPush($attachedBlock) || PistonMoveRules::isPushOnly($attachedBlock)){
+			return true; // nothing pulled, arm retracts freely
 		}
 
 		/** @var array<string, Vector3> $toMoveMap */
@@ -190,9 +217,12 @@ final class PistonStructureCalculator{
 
 		while(count($queue) > 0){
 			$current = array_shift($queue);
-			$currentBlock = $this->world->getBlockAt($current->getFloorX(), $current->getFloorY(), $current->getFloorZ());
+			$currentBlock = $this->getAvailableBlock($current);
+			if($currentBlock === null){
+				return true;
+			}
 
-			foreach(Facing::ALL as $side){
+			foreach(PistonMoveRules::isAdhesive($currentBlock) ? Facing::ALL : [] as $side){
 				$neighbor = $current->getSide($side);
 				if($neighbor->equals($headPos) || $neighbor->equals($this->pistonPos)){
 					continue;
@@ -202,12 +232,18 @@ final class PistonStructureCalculator{
 					continue;
 				}
 
-				$neighborBlock = $this->world->getBlockAt($neighbor->getFloorX(), $neighbor->getFloorY(), $neighbor->getFloorZ());
+				$neighborBlock = $this->getAvailableBlock($neighbor);
+				if($neighborBlock === null){
+					if($this->world->isInWorld($neighbor->getFloorX(), $neighbor->getFloorY(), $neighbor->getFloorZ()) && ($currentBlock->getTypeId() === BlockTypeIds::SLIME || $currentBlock->getTypeId() === BlockTypeIds::HONEY_BLOCK)){
+						return true;
+					}
+					continue;
+				}
 				if(PistonMoveRules::canStickTogether($currentBlock, $neighborBlock)){
 					$toMoveMap[$neighborKey] = $neighbor;
 					$queue[] = $neighbor;
 					if(count($toMoveMap) > self::MAX_BLOCK_PUSH_LIMIT){
-						// Overloaded sticky piston leaves blocks behind
+						// overloaded sticky piston leaves blocks behind
 						$this->toMove = [];
 						return true;
 					}
@@ -215,34 +251,45 @@ final class PistonStructureCalculator{
 			}
 		}
 
-		// Ensure destinations for all pulled blocks are clear
 		foreach($toMoveMap as $pos){
 			$dest = $pos->getSide($pullDir);
 			if($dest->equals($headPos)){
-				// Moving into the space vacated by the piston head
 				continue;
 			}
 			$destKey = self::posKey($dest);
 			if(!isset($toMoveMap[$destKey])){
-				$destBlock = $this->world->getBlockAt($dest->getFloorX(), $dest->getFloorY(), $dest->getFloorZ());
-				if(!$destBlock->canBeReplaced()){
-					// Blocked: cannot pull
+				$destBlock = $this->getAvailableBlock($dest);
+				if($destBlock === null){
+					return true;
+				}
+				if(!$destBlock->canBeReplaced() || PistonMoveRules::isImmovable($destBlock)){
+					// blocked = cannot pull
 					$this->toMove = [];
 					return true;
 				}
 			}
 		}
 
-		// Sort in reverse order of pull (highest dot product with pull direction moves first)
+		//sorts in reverse order of pull (highest dot product with pull direction moves first)
 		$toMoveList = array_values($toMoveMap);
 		usort($toMoveList, static function(Vector3 $a, Vector3 $b) use ($pullDir) : int{
 			$dotA = self::dotFacing($a, $pullDir);
 			$dotB = self::dotFacing($b, $pullDir);
-			return $dotB <=> $dotA; // Descending
+			return $dotB <=> $dotA; // descending
 		});
 
 		$this->toMove = $toMoveList;
 		return true;
+	}
+
+	private function getAvailableBlock(Vector3 $pos) : ?Block{
+		$x = $pos->getFloorX();
+		$y = $pos->getFloorY();
+		$z = $pos->getFloorZ();
+		if(!$this->world->isInWorld($x, $y, $z) || !$this->world->isChunkLoaded($x >> 4, $z >> 4)){
+			return null;
+		}
+		return $this->world->getBlockAt($x, $y, $z);
 	}
 
 	private static function dotFacing(Vector3 $pos, int $facing) : int{

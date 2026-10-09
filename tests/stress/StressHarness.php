@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,9 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
 
-require_once __DIR__ . '/../../vendor/autoload.php';
-require_once __DIR__ . '/../phpunit/world/redstone/WireContinuationBudgetTest.php';
+use function count;
+use function max;
 
+require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/../support/redstone/RedstoneTestEnvironment.php';
 
 class StressHarness {
 	private \ReflectionProperty $propContinuations;
@@ -81,7 +83,7 @@ class StressHarness {
 		$curContCount = $this->network->getContinuationCount();
 		$rawContCount = count($continuations);
 		foreach ($continuations as $c) {
-			$rawContCount += count($c['mergingSources'] ?? []);
+			$rawContCount += count($c->mergingSources ?? []);
 		}
 		$this->peakContinuations = max($this->peakContinuations, $curContCount, $rawContCount);
 		$this->peakOwners = max($this->peakOwners, count($owners));
@@ -94,17 +96,17 @@ class StressHarness {
 		// Check duplicate live ownership
 		$claimedLiveWires = [];
 		foreach ($continuations as $cId => $c) {
-			if ($c['phase'] === WireNetwork::PHASE_CLEANUP && ($c['cleanupMode'] ?? -1) === WireNetwork::CLEANUP_INVALIDATED) {
+			if ($c->phase->value === WireNetwork::PHASE_CLEANUP && ($c->cleanupMode ?? -1) === WireNetwork::CLEANUP_INVALIDATED) {
 				continue;
 			}
-			foreach ($c['wires'] as $hash => $coords) {
+			foreach ($c->wires as $hash => $coords) {
 				if (isset($claimedLiveWires[$hash])) {
 					$this->violations[] = "Wire hash $hash claimed by multiple live continuations: {$claimedLiveWires[$hash]} and $cId";
 				}
 				$claimedLiveWires[$hash] = $cId;
 			}
-			foreach ($c['mergingSources'] ?? [] as $srcId => $src) {
-				foreach ($src['wires'] ?? [] as $hash => $coords) {
+			foreach ($c->mergingSources ?? [] as $srcId => $src) {
+				foreach ($src->wires ?? [] as $hash => $coords) {
 					if (isset($claimedLiveWires[$hash])) {
 						$this->violations[] = "Wire hash $hash claimed by multiple live continuations (in merge): {$claimedLiveWires[$hash]} and $srcId";
 					}
@@ -147,7 +149,5 @@ class StressHarness {
 }
 
 function createEnvironment(int $budget) : array {
-	$fixture = new WireContinuationBudgetTest('testSettledCleanupPreventsDuplicateContinuation');
-	$method = new \ReflectionMethod($fixture, 'createEnvironment');
-	return $method->invoke($fixture, $budget);
+	return RedstoneTestEnvironment::create($budget);
 }

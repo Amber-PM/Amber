@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,7 +23,6 @@ declare(strict_types=1);
 
 namespace pocketmine\player;
 
-use pocketmine\addon\entity\AddonEntity;
 use pocketmine\block\BaseSign;
 use pocketmine\block\Bed;
 use pocketmine\block\BlockTypeTags;
@@ -43,13 +42,13 @@ use pocketmine\entity\animation\MagicHitAnimation;
 use pocketmine\entity\Attribute;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\entity\Entity;
-use pocketmine\entity\Human;
 use pocketmine\entity\GlidePhysics;
+use pocketmine\entity\Human;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\entity\NeverSavedWithChunkEntity;
-use pocketmine\entity\object\ItemEntity;
 use pocketmine\entity\object\FireworkRocket as FireworkEntity;
+use pocketmine\entity\object\ItemEntity;
 use pocketmine\entity\projectile\Arrow;
 use pocketmine\entity\Skin;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
@@ -70,6 +69,7 @@ use pocketmine\event\player\PlayerEntityInteractEvent;
 use pocketmine\event\player\PlayerEntityPickEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
 use pocketmine\event\player\PlayerGameModeChangeEvent;
+use pocketmine\event\player\PlayerInputLockEvent;
 use pocketmine\event\player\PlayerInteractEvent;
 use pocketmine\event\player\PlayerItemConsumeEvent;
 use pocketmine\event\player\PlayerItemHeldEvent;
@@ -78,7 +78,6 @@ use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerJumpEvent;
 use pocketmine\event\player\PlayerKickEvent;
 use pocketmine\event\player\PlayerMissSwingEvent;
-use pocketmine\event\player\PlayerInputLockEvent;
 use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerPostChunkSendEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -107,8 +106,8 @@ use pocketmine\item\ConsumableItem;
 use pocketmine\item\Durable;
 use pocketmine\item\Elytra;
 use pocketmine\item\enchantment\EnchantmentInstance;
-use pocketmine\item\FireworkRocket;
 use pocketmine\item\enchantment\MeleeWeaponEnchantment;
+use pocketmine\item\FireworkRocket;
 use pocketmine\item\Item;
 use pocketmine\item\ItemUseResult;
 use pocketmine\item\Releasable;
@@ -121,18 +120,18 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
-use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\MovementEffectPacket;
+use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
-use pocketmine\network\mcpe\protocol\types\MovementEffectType;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
-use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\PlayerMetadataFlags;
+use pocketmine\network\mcpe\protocol\types\MovementEffectType;
+use pocketmine\network\mcpe\protocol\UpdateClientInputLocksPacket;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\permission\DefaultPermissions;
 use pocketmine\permission\PermissibleBase;
@@ -149,21 +148,22 @@ use pocketmine\world\ChunkLoader;
 use pocketmine\world\ChunkTicker;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
+use pocketmine\world\shape\PositionedShape;
+use pocketmine\world\shape\Shape;
+use pocketmine\world\shape\ShapeHandle;
+use pocketmine\world\shape\ShapeRegistry;
 use pocketmine\world\sound\EntityAttackNoDamageSound;
 use pocketmine\world\sound\EntityAttackSound;
 use pocketmine\world\sound\FireExtinguishSound;
 use pocketmine\world\sound\ItemBreakSound;
 use pocketmine\world\sound\RespawnAnchorDepleteSound;
 use pocketmine\world\sound\Sound;
-use pocketmine\world\shape\PositionedShape;
-use pocketmine\world\shape\Shape;
-use pocketmine\world\shape\ShapeHandle;
-use pocketmine\world\shape\ShapeRegistry;
 use pocketmine\world\World;
 use pocketmine\YmlServerProperties;
 use Ramsey\Uuid\UuidInterface;
 use function abs;
 use function array_filter;
+use function array_keys;
 use function array_shift;
 use function assert;
 use function count;
@@ -820,15 +820,21 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if($ticks > 0){
 			$this->usedItemsCooldown[$item->getCooldownTag() ?? $item->getStateId()] = $this->server->getTick() + $ticks;
 			$this->getNetworkSession()->onItemCooldownChanged($item, $ticks);
+			$this->updateBlockingState();
 		}
 	}
 
 	protected function checkItemCooldowns() : void{
 		$serverTick = $this->server->getTick();
+		$hadCooldown = false;
 		foreach($this->usedItemsCooldown as $itemId => $cooldownUntil){
 			if($cooldownUntil <= $serverTick){
 				unset($this->usedItemsCooldown[$itemId]);
+				$hadCooldown = true;
 			}
+		}
+		if($hadCooldown){
+			$this->updateBlockingState();
 		}
 	}
 
@@ -847,6 +853,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->usedChunks = [];
 				$this->loadQueue = [];
 				$this->getNetworkSession()->onEnterWorld();
+				if($oldWorld !== null){
+					\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+				}
 			}
 
 			return true;
@@ -1749,6 +1758,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->timings->startTiming();
 
 		if($this->spawned){
+			$this->checkItemCooldowns();
 			Timings::$playerMove->startTiming();
 			$this->processMostRecentMovements();
 			$this->motion = Vector3::zero(); //TODO: HACK! (Fixes player knockback being messed up)
@@ -2346,6 +2356,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 		$this->setSneaking($sneak);
+		if($sneak){
+			\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
+		}
 		return true;
 	}
 
@@ -2380,7 +2393,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			!$this->isTouchingWater() &&
 			!$this->isSwimming() &&
 			!$this->isSleeping() &&
-			AddonEntity::getVehicleOf($this) === null;
+			\pocketmine\entity\object\Boat::getVehicleOf($this) === null;
 	}
 
 	private function isTouchingWater() : bool{
@@ -2622,8 +2635,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	// position-tracked self-attach — Bedrock doesn't render attachedToEntityId for the local player entity
-	public function attachShape(\pocketmine\world\shape\Shape $shape, ?\pocketmine\math\Vector3 $offset = null) : ShapeHandle{
-		$off = $offset ?? \pocketmine\math\Vector3::zero();
+	public function attachShape(Shape $shape, ?Vector3 $offset = null) : ShapeHandle{
+		$off = $offset ?? Vector3::zero();
 		$absPos = $this->getPosition()->addVector($off);
 		$handle = $this->addShape(new PositionedShape($shape, $absPos));
 		$this->selfAttachedShapes[] = ['handle' => $handle, 'shape' => $shape, 'offset' => $off];
@@ -2895,6 +2908,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
@@ -2972,6 +2986,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
 		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->setGliding(false);

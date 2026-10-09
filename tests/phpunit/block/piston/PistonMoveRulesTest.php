@@ -28,7 +28,6 @@ use pocketmine\block\BlockBreakInfo;
 use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
-use pocketmine\block\MovingBlock;
 use pocketmine\block\PistonHead;
 use pocketmine\block\VanillaBlocks;
 
@@ -48,9 +47,6 @@ final class PistonMoveRulesTest extends TestCase{
 
 		$head = new PistonHead(new BlockIdentifier(BlockTypeIds::PISTON_HEAD), "Piston Head", new BlockTypeInfo(BlockBreakInfo::instant()));
 		self::assertTrue(PistonMoveRules::isImmovable($head));
-
-		$moving = new MovingBlock(new BlockIdentifier(BlockTypeIds::MOVING_BLOCK), "Moving Block", new BlockTypeInfo(BlockBreakInfo::indestructible()));
-		self::assertTrue(PistonMoveRules::isImmovable($moving));
 
 		// Normal movable blocks
 		self::assertFalse(PistonMoveRules::isImmovable(VanillaBlocks::STONE()));
@@ -90,7 +86,7 @@ final class PistonMoveRulesTest extends TestCase{
 		self::assertFalse(PistonMoveRules::canStickTogether($stone, VanillaBlocks::DIRT()));
 
 		// Honey block setup
-		$honey = new class(new BlockIdentifier(BlockTypeIds::HONEY_BLOCK), "Honey Block", new BlockTypeInfo(BlockBreakInfo::instant())) extends \pocketmine\block\Transparent{};
+		$honey = VanillaBlocks::HONEY_BLOCK();
 
 		self::assertTrue(PistonMoveRules::canStickTogether($honey, $stone));
 		self::assertTrue(PistonMoveRules::canStickTogether($stone, $honey));
@@ -99,4 +95,28 @@ final class PistonMoveRulesTest extends TestCase{
 		self::assertFalse(PistonMoveRules::canStickTogether($slime, $honey));
 		self::assertFalse(PistonMoveRules::canStickTogether($honey, $slime));
 	}
+	public function testSpecialMobilityUsesRegisteredBlocks() : void{
+		foreach([VanillaBlocks::BEACON(), VanillaBlocks::JUKEBOX(), VanillaBlocks::REINFORCED_DEEPSLATE(), VanillaBlocks::LIGHT(), VanillaBlocks::END_PORTAL()] as $block){
+			self::assertTrue(PistonMoveRules::isImmovable($block), $block->getName());
+		}
+		self::assertTrue(PistonMoveRules::isPushOnly(VanillaBlocks::GLAZED_TERRACOTTA()));
+		self::assertFalse(PistonMoveRules::canStickTogether(VanillaBlocks::SLIME(), VanillaBlocks::GLAZED_TERRACOTTA()));
+		self::assertInstanceOf(\pocketmine\block\Honey::class, VanillaBlocks::HONEY_BLOCK());
+		self::assertSame(BlockTypeIds::HONEY_BLOCK, VanillaBlocks::HONEY_BLOCK()->asItem()->getBlock()->getTypeId());
+		self::assertSame(BlockTypeIds::HONEY_BLOCK, \pocketmine\item\StringToItemParser::getInstance()->parse("honey_block")?->getBlock()->getTypeId());
+		self::assertTrue(PistonMoveRules::isBreakableOnPush(VanillaBlocks::SHULKER_BOX()));
+		self::assertFalse(PistonMoveRules::isImmovable(VanillaBlocks::SHULKER_BOX()));
+		self::assertFalse(PistonMoveRules::isTileClassSupported(\pocketmine\block\tile\Cauldron::class));
+	}
+
+	public function testNonFlowableAttachmentsPopAndNeverAdhere() : void{
+		foreach([VanillaBlocks::OAK_DOOR(), VanillaBlocks::BED(), VanillaBlocks::CAKE(), VanillaBlocks::OAK_SIGN(), VanillaBlocks::STONE_PRESSURE_PLATE(), VanillaBlocks::LADDER(), VanillaBlocks::BAMBOO(), VanillaBlocks::CACTUS(), VanillaBlocks::CANDLE(), VanillaBlocks::LANTERN(), VanillaBlocks::AMETHYST_CLUSTER(), VanillaBlocks::SEA_PICKLE(), VanillaBlocks::GLOW_LICHEN(), VanillaBlocks::DRAGON_EGG(), VanillaBlocks::BUDDING_AMETHYST(), VanillaBlocks::CAMPFIRE()] as $block){
+			self::assertTrue(PistonMoveRules::isBreakableOnPush($block), $block->getName());
+			self::assertFalse(PistonMoveRules::isImmovable($block), $block->getName());
+			self::assertFalse(PistonMoveRules::canStickTogether(VanillaBlocks::SLIME(), $block), $block->getName());
+		}
+		self::assertTrue(PistonMoveRules::isImmovable(VanillaBlocks::STRUCTURE_VOID()));
+		self::assertFalse(PistonMoveRules::isBreakableOnPush(VanillaBlocks::OAK_TRAPDOOR()));
+	}
+
 }

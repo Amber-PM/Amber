@@ -28,7 +28,6 @@ use pocketmine\block\BlockBreakInfo;
 use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
-use pocketmine\block\MovingBlock;
 use pocketmine\block\PistonHead;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
@@ -39,7 +38,6 @@ final class PistonHeadBlockTest extends TestCase{
 		self::assertSame(10830, BlockTypeIds::PISTON);
 		self::assertSame(10831, BlockTypeIds::STICKY_PISTON);
 		self::assertSame(10832, BlockTypeIds::PISTON_HEAD);
-		self::assertSame(10833, BlockTypeIds::MOVING_BLOCK);
 	}
 
 	public function testPistonHeadProperties() : void{
@@ -77,10 +75,18 @@ final class PistonHeadBlockTest extends TestCase{
 		self::assertNotSame($head1->getStateId(), $head2->getStateId());
 	}
 
-	public function testMovingBlockProperties() : void{
-		$moving = new MovingBlock(new BlockIdentifier(BlockTypeIds::MOVING_BLOCK), "Moving Block", new BlockTypeInfo(BlockBreakInfo::indestructible()));
-		self::assertSame(BlockTypeIds::MOVING_BLOCK, $moving->getTypeId());
-		self::assertEmpty($moving->getDrops(VanillaItems::DIAMOND_PICKAXE()));
-		self::assertEmpty($moving->getCollisionBoxes());
+	public function testCollisionGeometryForAllFacings() : void{
+		foreach(Facing::ALL as $facing){
+			$head = \pocketmine\block\VanillaBlocks::PISTON_HEAD()->setFacing($facing);
+			$boxes = $head->getCollisionBoxes();
+			self::assertCount(2, $boxes);
+			$volume = 0.0;
+			foreach($boxes as $box){
+				$volume += ($box->maxX - $box->minX) * ($box->maxY - $box->minY) * ($box->maxZ - $box->minZ);
+			}
+			self::assertEqualsWithDelta(0.296875, $volume, 0.000001);
+			self::assertFalse($head->isFullCube());
+		}
 	}
+
 }

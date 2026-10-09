@@ -25,10 +25,6 @@ namespace pocketmine\block\piston;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
-use pocketmine\block\BlockBreakInfo;
-use pocketmine\block\BlockIdentifier;
-use pocketmine\block\BlockTypeIds;
-use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -111,6 +107,26 @@ final class PistonStructureCalculatorTest extends TestCase{
 		self::assertTrue($toMove[11]->equals(new Vector3(1, 64, 0)));
 	}
 
+	public function testAdhesiveRowIncludesGroundInPushLimit() : void{
+		foreach([VanillaBlocks::SLIME(), VanillaBlocks::HONEY_BLOCK()] as $adhesive){
+			[$world] = $this->createTestWorld();
+			$base = new Vector3(0, 64, 0);
+			for($x = 1; $x <= 12; ++$x){
+				$this->setBlock($world, new Vector3($x, 64, 0), $adhesive);
+				$this->setBlock($world, new Vector3($x, 63, 0), VanillaBlocks::STONE());
+			}
+			$grounded = new PistonStructureCalculator($world, $base, Facing::EAST, extending: true);
+			self::assertFalse($grounded->calculate());
+			self::assertEmpty($grounded->getBlocksToMove());
+			for($x = 1; $x <= 12; ++$x){
+				$this->setBlock($world, new Vector3($x, 63, 0), VanillaBlocks::AIR());
+			}
+			$airborne = new PistonStructureCalculator($world, $base, Facing::EAST, extending: true);
+			self::assertTrue($airborne->calculate());
+			self::assertCount(12, $airborne->getBlocksToMove());
+		}
+	}
+
 	public function testPushExceeding12BlocksFails() : void{
 		[$world] = $this->createTestWorld();
 		$pistonPos = new Vector3(0, 64, 0);
@@ -172,7 +188,7 @@ final class PistonStructureCalculatorTest extends TestCase{
 		[$world] = $this->createTestWorld();
 		$pistonPos = new Vector3(0, 64, 0);
 
-		$honey = new class(new BlockIdentifier(BlockTypeIds::HONEY_BLOCK), "Honey Block", new BlockTypeInfo(BlockBreakInfo::instant())) extends \pocketmine\block\Transparent{};
+		$honey = VanillaBlocks::HONEY_BLOCK();
 
 		$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::SLIME());
 		$this->setBlock($world, new Vector3(1, 65, 0), $honey); // Honey adjacent to Slime
@@ -250,4 +266,28 @@ final class PistonStructureCalculatorTest extends TestCase{
 		// Overloaded: sticky piston retracts without pulling
 		self::assertEmpty($calc->getBlocksToMove());
 	}
+	public function testPushOnlyGlazedTerracottaIsNotPulled() : void{
+		[$world] = $this->createTestWorld();
+		$this->setBlock($world, new Vector3(2, 64, 0), VanillaBlocks::GLAZED_TERRACOTTA());
+		$calculator = new PistonStructureCalculator($world, new Vector3(0, 64, 0), Facing::EAST, false);
+		self::assertTrue($calculator->calculate());
+		self::assertEmpty($calculator->getBlocksToMove());
+	}
+
+	public function testOrdinaryBlockDoesNotCaptureAnAdjacentStickyBlock() : void{
+		[$world] = $this->createTestWorld();
+		$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::STONE());
+		$this->setBlock($world, new Vector3(1, 65, 0), VanillaBlocks::SLIME());
+		$calculator = new PistonStructureCalculator($world, new Vector3(0, 64, 0), Facing::EAST, true);
+		self::assertTrue($calculator->calculate());
+		self::assertCount(1, $calculator->getBlocksToMove());
+	}
+
+	public function testReplaceableLightStillBlocksPiston() : void{
+		[$world] = $this->createTestWorld();
+		$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::LIGHT());
+		$calculator = new PistonStructureCalculator($world, new Vector3(0, 64, 0), Facing::EAST, true);
+		self::assertFalse($calculator->calculate());
+	}
+
 }

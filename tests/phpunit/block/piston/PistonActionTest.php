@@ -31,7 +31,6 @@ use pocketmine\block\PistonHead;
 use pocketmine\block\StickyPiston;
 use pocketmine\block\tile\Chest as ChestTile;
 use pocketmine\block\tile\Tile;
-use pocketmine\block\Torch;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Entity;
 use pocketmine\item\Item;
@@ -44,25 +43,29 @@ use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\World;
 
 class TestPistonEntity extends Entity{
+	public function __destruct(){}
 	public static function getNetworkTypeId() : string{ return "minecraft:test"; }
 	protected function getInitialGravity() : float{ return 0.04; }
 	protected function getInitialDragMultiplier() : float{ return 0.02; }
 	protected function getInitialSizeInfo() : \pocketmine\entity\EntitySizeInfo{ return new \pocketmine\entity\EntitySizeInfo(1.0, 1.0); }
 
-	public ?Vector3 $teleportedTo = null;
+	public ?Vector3 $movedTo = null;
 
-	public function teleport(Vector3 $pos, ?float $yaw = null, ?float $pitch = null) : bool{
-		$this->teleportedTo = clone $pos;
-		return true;
+	public function moveByPiston(Vector3 $offset) : void{
+		$this->movedTo = $this->getPosition()->addVector($offset);
+		$this->location->x = $this->movedTo->x;
+		$this->location->y = $this->movedTo->y;
+		$this->location->z = $this->movedTo->z;
+		$this->boundingBox->offset($offset->x, $offset->y, $offset->z);
 	}
 }
 
 final class PistonActionTest extends TestCase{
 
 	/**
-	 * @param Entity[] $entities
+	 * @param Entity[]            $entities
 	 * @param array<string, Tile> $tiles
-	 * @param list<Item> $droppedItems
+	 * @param list<Item>          $droppedItems
 	 * @return array{0: World, 1: array<string, Block>, 2: array<string, Tile>, 3: list<Item>}
 	 */
 	private function createTestWorld(array $entities = [], array &$tiles = [], array &$droppedItems = []) : array{
@@ -70,12 +73,13 @@ final class PistonActionTest extends TestCase{
 		$blocks = [];
 		$world = $this->getMockBuilder(World::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["getBlockAt", "setBlockAt", "getBlock", "setBlock", "isInWorld", "isChunkLoaded", "isLoaded", "useBreakOn", "addSound", "getNearbyEntities", "getTile", "getTileAt", "addTile", "removeTile", "getDisplayName"])
+			->onlyMethods(["getBlockAt", "setBlockAt", "getBlock", "setBlock", "isInWorld", "isChunkLoaded", "isLoaded", "useBreakOn", "addSound", "getNearbyEntities", "getTile", "getTileAt", "addTile", "removeTile", "getDisplayName", "isInLoadedTerrain", "scheduleDelayedBlockUpdate", "notifyNeighbourBlockUpdate", "invalidateBlockCache", "iterateEntityCandidates"])
 			->getMock();
 
 		$world->method("isInWorld")->willReturn(true);
 		$world->method("isChunkLoaded")->willReturn(true);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInLoadedTerrain")->willReturn(true);
 		$world->method("getDisplayName")->willReturn("test_world");
 
 		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
@@ -83,7 +87,7 @@ final class PistonActionTest extends TestCase{
 			if(isset($blocks[$key])){
 				$b = clone $blocks[$key];
 				$b->position($world, $x, $y, $z);
-				return $b;
+				return $b->readStateFromWorld();
 			}
 			$air = clone VanillaBlocks::AIR();
 			$air->position($world, $x, $y, $z);
@@ -174,12 +178,26 @@ final class PistonActionTest extends TestCase{
 			return $result;
 		});
 
+		$world->method("iterateEntityCandidates")->willReturnCallback(function(AxisAlignedBB $bb) use (&$entities) : \Generator{
+			foreach($entities as $entity){
+				yield $entity;
+			}
+		});
+
 		return [$world, $blocks, $tiles, $droppedItems];
 	}
 
 	private function setBlock(World $world, Vector3 $pos, Block $block) : void{
 		$block->position($world, $pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		$world->setBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ(), $block);
+	}
+
+	private function finishMovement(World $world, Vector3 $pos) : void{
+		$arm = $world->getTile($pos);
+		for($tick = 0; $tick < 2 && $arm->isMoving(); ++$tick){
+			PistonMovement::tick($arm);
+		}
+		self::assertFalse($arm->isMoving());
 	}
 
 	public function testPistonExtendPushSingleBlock() : void{
@@ -191,6 +209,8 @@ final class PistonActionTest extends TestCase{
 		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::STONE());
 
 		self::assertTrue($piston->extend());
+
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertTrue($piston->isExtended());
 
 		// (0, 64, 1) should now have PistonHead
@@ -213,7 +233,10 @@ final class PistonActionTest extends TestCase{
 		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::STONE());
 
 		$piston->extend();
+
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertTrue($piston->retract());
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertFalse($piston->isExtended());
 
 		// Head should be gone
@@ -235,6 +258,8 @@ final class PistonActionTest extends TestCase{
 
 		self::assertTrue($sticky->extend());
 
+		$this->finishMovement($world, $sticky->getPosition());
+
 		// Head is sticky
 		$head = $world->getBlock(new Vector3(0, 64, 1));
 		self::assertInstanceOf(PistonHead::class, $head);
@@ -245,6 +270,7 @@ final class PistonActionTest extends TestCase{
 
 		// Retract pulls stone back to (0, 64, 1)
 		self::assertTrue($sticky->retract());
+		$this->finishMovement($world, $sticky->getPosition());
 		self::assertFalse($sticky->isExtended());
 
 		self::assertSame(VanillaBlocks::STONE()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
@@ -260,6 +286,8 @@ final class PistonActionTest extends TestCase{
 		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::TORCH());
 
 		self::assertTrue($piston->extend());
+
+		$this->finishMovement($world, $piston->getPosition());
 		$head = $world->getBlock(new Vector3(0, 64, 1));
 		self::assertInstanceOf(PistonHead::class, $head);
 	}
@@ -282,12 +310,13 @@ final class PistonActionTest extends TestCase{
 		$entityBB = new AxisAlignedBB(0.2, 64.0, 2.2, 0.8, 65.8, 2.8);
 
 		$mockEntity = (new \ReflectionClass(TestPistonEntity::class))->newInstanceWithoutConstructor();
-		(new \ReflectionProperty(Entity::class, "closed"))->setValue($mockEntity, true);
+		(new \ReflectionProperty(Entity::class, "closed"))->setValue($mockEntity, false);
 		(new \ReflectionProperty(Entity::class, "id"))->setValue($mockEntity, 999);
 		(new \ReflectionProperty(Entity::class, "boundingBox"))->setValue($mockEntity, $entityBB);
 		(new \ReflectionProperty(Entity::class, "location"))->setValue($mockEntity, new \pocketmine\entity\Location($entityPos->x, $entityPos->y, $entityPos->z, null, 0.0, 0.0));
 
 		[$world, $blocks] = $this->createTestWorld([$mockEntity]);
+		(new \ReflectionProperty(Entity::class, "location"))->setValue($mockEntity, new \pocketmine\entity\Location($entityPos->x, $entityPos->y, $entityPos->z, $world, 0.0, 0.0));
 		$pos = new Vector3(0, 64, 0);
 
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
@@ -296,11 +325,12 @@ final class PistonActionTest extends TestCase{
 
 		self::assertTrue($piston->extend());
 
-		// Entity should have been displaced by +1 on Z (SOUTH)
-		self::assertNotNull($mockEntity->teleportedTo);
-		self::assertEqualsWithDelta(0.5, $mockEntity->teleportedTo->x, 0.001);
-		self::assertEqualsWithDelta(64.0, $mockEntity->teleportedTo->y, 0.001);
-		self::assertEqualsWithDelta(3.5, $mockEntity->teleportedTo->z, 0.001);
+		$this->finishMovement($world, $piston->getPosition());
+
+		self::assertNotNull($mockEntity->movedTo);
+		self::assertEqualsWithDelta(0.5, $mockEntity->movedTo->x, 0.001);
+		self::assertEqualsWithDelta(64.0, $mockEntity->movedTo->y, 0.001);
+		self::assertEqualsWithDelta(3.31, $mockEntity->movedTo->z, 0.001);
 	}
 
 	public function testStringToItemParser() : void{
@@ -342,6 +372,8 @@ final class PistonActionTest extends TestCase{
 		$chestTile->getInventory()->setItem(0, $diamonds);
 
 		self::assertTrue($piston->extend());
+
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertTrue($piston->isExtended());
 
 		// (0, 64, 1) should now have PistonHead and no chest tile
@@ -381,6 +413,7 @@ final class PistonActionTest extends TestCase{
 
 		// Extend sticky piston, pushing chest to (0, 64, 2)
 		self::assertTrue($sticky->extend());
+		$this->finishMovement($world, $sticky->getPosition());
 		self::assertTrue($sticky->isExtended());
 
 		$destPos = new Vector3(0, 64, 2);
@@ -390,6 +423,7 @@ final class PistonActionTest extends TestCase{
 
 		// Retract sticky piston, pulling chest back to (0, 64, 1)
 		self::assertTrue($sticky->retract());
+		$this->finishMovement($world, $sticky->getPosition());
 		self::assertFalse($sticky->isExtended());
 
 		$pulledBlock = $world->getBlock($chestPos);
@@ -418,6 +452,7 @@ final class PistonActionTest extends TestCase{
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
 		$this->setBlock($world, $basePos, $piston);
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 
 		self::assertInstanceOf(Piston::class, $world->getBlock($basePos));
 		self::assertInstanceOf(PistonHead::class, $world->getBlock($headPos));
@@ -447,6 +482,7 @@ final class PistonActionTest extends TestCase{
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
 		$this->setBlock($world, $basePos, $piston);
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 
 		self::assertInstanceOf(Piston::class, $world->getBlock($basePos));
 		self::assertInstanceOf(PistonHead::class, $world->getBlock($headPos));
@@ -476,6 +512,7 @@ final class PistonActionTest extends TestCase{
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
 		$this->setBlock($world, $basePos, $piston);
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 
 		$head = $world->getBlock($headPos);
 		self::assertInstanceOf(PistonHead::class, $head);
@@ -503,6 +540,7 @@ final class PistonActionTest extends TestCase{
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
 		$this->setBlock($world, $basePos, $piston);
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 
 		$base = $world->getBlock($basePos);
 		self::assertInstanceOf(Piston::class, $base);
@@ -561,7 +599,9 @@ final class PistonActionTest extends TestCase{
 		$tile1->getInventory()->setItem(0, $diamonds);
 		$tile2->getInventory()->setItem(0, $emeralds);
 
+		self::assertTrue($tile1->pairWith($tile2));
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertTrue($piston->isExtended());
 
 		// (0, 64, 2) now has Chest 1 with 12 diamonds
@@ -576,9 +616,7 @@ final class PistonActionTest extends TestCase{
 	}
 
 	private function createTestRedstoneEngine(World $world) : RedstoneEngine{
-		$engine = (new \ReflectionClass(RedstoneEngine::class))->newInstanceWithoutConstructor();
-		(new \ReflectionProperty(RedstoneEngine::class, "world"))->setValue($engine, $world);
-		return $engine;
+		return new RedstoneEngine($world, 100);
 	}
 
 	public function testReconstructedExtendedPistonRetractsWhenPowerRemoved() : void{
@@ -590,6 +628,7 @@ final class PistonActionTest extends TestCase{
 
 		// Extend piston
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertTrue($piston->isExtended());
 		self::assertInstanceOf(PistonHead::class, $world->getBlock(new Vector3(0, 64, 1)));
 
@@ -607,6 +646,7 @@ final class PistonActionTest extends TestCase{
 
 		// Trigger redstone update with power removed
 		$reconstructed->onRedstoneUpdate($engine);
+		$this->finishMovement($world, $pos);
 
 		// Piston should have retracted: head is removed from (0, 64, 1)
 		self::assertFalse($reconstructed->isExtended());
@@ -622,6 +662,7 @@ final class PistonActionTest extends TestCase{
 
 		// Extend piston
 		self::assertTrue($piston->extend());
+		$this->finishMovement($world, $piston->getPosition());
 		self::assertInstanceOf(PistonHead::class, $world->getBlock(new Vector3(0, 64, 1)));
 
 		// Fresh reconstructed instance where both powered and extended are false
@@ -633,8 +674,60 @@ final class PistonActionTest extends TestCase{
 
 		// onRedstoneUpdate should detect actual extension state in the world and retract
 		$freshPiston->onRedstoneUpdate($engine);
+		$this->finishMovement($world, $pos);
 
 		self::assertFalse($freshPiston->isExtended());
 		self::assertSame(VanillaBlocks::AIR()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
 	}
+	public function testSupportedContainerInventoriesSurviveMovementAndSaveLoad() : void{
+		foreach([VanillaBlocks::BARREL(), VanillaBlocks::DISPENSER(), VanillaBlocks::DROPPER(), VanillaBlocks::HOPPER(), VanillaBlocks::FURNACE(), VanillaBlocks::BLAST_FURNACE(), VanillaBlocks::SMOKER(), VanillaBlocks::BREWING_STAND()] as $block){
+			[$world] = $this->createTestWorld();
+			$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+			$this->setBlock($world, new Vector3(0, 64, 0), $piston);
+			$this->setBlock($world, new Vector3(0, 64, 1), $block);
+			$tile = $world->getTile(new Vector3(0, 64, 1));
+			self::assertInstanceOf(\pocketmine\block\tile\Container::class, $tile);
+			$item = VanillaItems::DIAMOND()->setCount(3)->setCustomName("preserved");
+			$tile->getRealInventory()->setItem(0, $item);
+			self::assertTrue($piston->extend(), $block->getName());
+			$this->finishMovement($world, $piston->getPosition());
+			$moved = $world->getTile(new Vector3(0, 64, 2));
+			self::assertInstanceOf(\pocketmine\block\tile\Container::class, $moved);
+			self::assertTrue($moved->getRealInventory()->getItem(0)->equalsExact($item));
+			$reloaded = \pocketmine\block\tile\TileFactory::getInstance()->createFromData($world, $moved->saveNBT());
+			self::assertInstanceOf(\pocketmine\block\tile\Container::class, $reloaded);
+			self::assertTrue($reloaded->getRealInventory()->getItem(0)->equalsExact($item));
+			self::assertTrue($reloaded->getPosition()->equals(new Vector3(0, 64, 2)));
+		}
+	}
+
+	public function testRapidPowerEdgesKeepHeadAndBaseConsistent() : void{
+		[$world] = $this->createTestWorld();
+		$piston = VanillaBlocks::STICKY_PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, new Vector3(0, 64, 0), $piston);
+		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::STONE());
+		$engine = $this->createTestRedstoneEngine($world);
+		for($cycle = 0; $cycle < 8; ++$cycle){
+			$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::REDSTONE());
+			$piston->onRedstoneUpdate($engine);
+			$this->finishMovement($world, $piston->getPosition());
+			self::assertTrue($piston->isExtended());
+			self::assertSame(VanillaBlocks::STONE()->getTypeId(), $world->getBlock(new Vector3(0, 64, 2))->getTypeId());
+			$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::AIR());
+			$piston->onRedstoneUpdate($engine);
+			$this->finishMovement($world, $piston->getPosition());
+			self::assertFalse($piston->isExtended());
+			self::assertSame(VanillaBlocks::STONE()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
+		}
+	}
+
+	public function testPistonDoesNotReceivePowerThroughFrontFace() : void{
+		[$world] = $this->createTestWorld();
+		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
+		$this->setBlock($world, new Vector3(0, 64, 0), $piston);
+		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::REDSTONE());
+		$piston->onRedstoneUpdate($this->createTestRedstoneEngine($world));
+		self::assertFalse($piston->isExtended());
+	}
+
 }

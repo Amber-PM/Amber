@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,9 @@ require_once __DIR__ . '/StressHarness.php';
 
 use pocketmine\block\VanillaBlocks;
 use pocketmine\world\World;
+use function array_slice;
+use function implode;
+use function sprintf;
 
 function runPhaseMutationStress(int $targetPhase, int $size, int $budget, int $maxTicks) : array {
 	$phaseNames = [
@@ -39,7 +42,7 @@ function runPhaseMutationStress(int $targetPhase, int $size, int $budget, int $m
 	];
 	$phaseName = $phaseNames[$targetPhase] ?? "PHASE_$targetPhase";
 
-	[$engine, $world, $blocks] = createEnvironment($budget);
+	[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 	// Create a line of wires with power source at x=-1
 	$world->setBlockAt(-1, 64, 0, VanillaBlocks::REDSTONE(), false);
@@ -62,7 +65,7 @@ function runPhaseMutationStress(int $targetPhase, int $size, int $budget, int $m
 			$net->processDeferred(1);
 			$harness->checkInvariants();
 			foreach ($harness->getContinuations() as $c) {
-				if ($c['phase'] === WireNetwork::PHASE_MERGE) {
+				if ($c->phase->value === WireNetwork::PHASE_MERGE) {
 					$entered = true;
 					break 2;
 				}
@@ -90,7 +93,7 @@ function runPhaseMutationStress(int $targetPhase, int $size, int $budget, int $m
 				$net->processDeferred(1);
 				$harness->checkInvariants();
 				foreach ($harness->getContinuations() as $c) {
-					if ($c['phase'] === $targetPhase) {
+					if ($c->phase->value === $targetPhase) {
 						$entered = true;
 						break 2;
 					}

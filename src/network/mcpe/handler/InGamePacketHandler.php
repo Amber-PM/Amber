@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -93,7 +93,6 @@ use pocketmine\network\mcpe\protocol\types\inventory\UseItemOnEntityTransactionD
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\PlayerAction;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
-use pocketmine\network\mcpe\protocol\types\PlayerBlockAction;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\player\Player;
 use pocketmine\utils\AssumptionFailedError;
@@ -182,6 +181,11 @@ class InGamePacketHandler extends PacketHandler{
 		$rawPos = $packet->getPosition();
 		$rawYaw = $packet->getYaw();
 		$rawPitch = $packet->getPitch();
+		$inputFlags = $packet->getInputFlags();
+		$isPredictedVehicle = $inputFlags->get(PlayerAuthInputFlags::IN_CLIENT_PREDICTED_VEHICLE);
+		$vehicleInfo = $packet->getVehicleInfo();
+		$boat = \pocketmine\entity\object\Boat::getVehicleOf($this->player);
+		$isPredictedBoat = $boat !== null && $isPredictedVehicle && $vehicleInfo !== null && $vehicleInfo->getPredictedVehicleActorUniqueId() === $boat->getId();
 		foreach([$rawPos->x, $rawPos->y, $rawPos->z, $rawYaw, $packet->getHeadYaw(), $rawPitch, $packet->getDelta()->x, $packet->getDelta()->y, $packet->getDelta()->z] as $float){
 			if(is_infinite($float) || is_nan($float)){
 				$this->session->getLogger()->debug("Invalid movement received, contains NAN/INF components");
@@ -205,7 +209,7 @@ class InGamePacketHandler extends PacketHandler{
 		$hasMoved = $this->lastPlayerAuthInputPosition === null || !$this->lastPlayerAuthInputPosition->equals($rawPos);
 		$newPos = $rawPos->subtract(0, 1.62, 0)->round(4);
 
-		if($this->forceMoveSync && $hasMoved){
+		if($this->forceMoveSync && $hasMoved && !$isPredictedBoat){
 			$curPos = $this->player->getLocation();
 
 			if($newPos->distanceSquared($curPos) > 1){  //Tolerate up to 1 block to avoid problems with client-sided physics when spawning in blocks
@@ -218,10 +222,21 @@ class InGamePacketHandler extends PacketHandler{
 			$this->forceMoveSync = false;
 		}
 
-		$inputFlags = $packet->getInputFlags();
 		$this->player->setLastPlayerInputTick($packet->getTick());
-		//steering an add-on mount (a no-op unless the player rides one)
-		\pocketmine\addon\entity\AddonEntity::setRiderInput($this->player, $packet->getMoveVecX(), $packet->getMoveVecZ(), $inputFlags->get(PlayerAuthInputFlags::JUMPING));
+		if($boat !== null){
+			if($vehicleInfo !== null ? $vehicleInfo->getPredictedVehicleActorUniqueId() === $boat->getId() : !$isPredictedVehicle){
+				$vehicleRotation = $vehicleInfo?->getVehicleRotation();
+				$vehicleYaw = $vehicleRotation?->y ?? (!$isPredictedVehicle ? $packet->getYaw() : null);
+				\pocketmine\entity\object\Boat::setRiderInput(
+					$this->player,
+					$packet->getMoveVecX(),
+					$packet->getMoveVecZ(),
+					$inputFlags->get(PlayerAuthInputFlags::PADDLING_LEFT),
+					$inputFlags->get(PlayerAuthInputFlags::PADDLING_RIGHT),
+					$vehicleYaw
+				);
+			}
+		}
 		if($this->lastPlayerAuthInputFlags === null || !$inputFlags->equals($this->lastPlayerAuthInputFlags)){
 			$this->lastPlayerAuthInputFlags = $inputFlags;
 
@@ -253,7 +268,7 @@ class InGamePacketHandler extends PacketHandler{
 			$this->player->missSwing();
 		}
 
-		if(!$this->forceMoveSync && ($hasMoved || $this->player->isGliding())){
+		if(!$this->forceMoveSync && !$isPredictedBoat && ($hasMoved || $this->player->isGliding())){
 			$this->lastPlayerAuthInputPosition = $rawPos;
 			//TODO: this packet has WAYYYYY more useful information that we're not using
 			$this->player->handleMovementInput($newPos, $packet->getTick(), $packet->getDelta());
@@ -654,7 +669,7 @@ class InGamePacketHandler extends PacketHandler{
 			return true;
 		}
 		if($packet->action === InteractPacket::ACTION_LEAVE_VEHICLE){
-			\pocketmine\addon\entity\AddonEntity::getVehicleOf($this->player)?->removeRider($this->player);
+			\pocketmine\entity\object\Boat::getVehicleOf($this->player)?->removeRider($this->player);
 			return true;
 		}
 		$target = $this->player->getWorld()->getEntity($packet->targetActorRuntimeId);
@@ -662,11 +677,20 @@ class InGamePacketHandler extends PacketHandler{
 			return false;
 		}
 		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target === $this->player){
+			$vehicle = \pocketmine\entity\object\Boat::getVehicleOf($this->player);
+			if($vehicle instanceof \pocketmine\entity\object\ChestBoat && $vehicle->getWorld() === $this->player->getWorld() && $vehicle->isRider($this->player) && !$this->player->isSpectator()){
+				$this->player->setCurrentWindow($vehicle->getInventory());
+				return true;
+			}
 			$this->inventoryManager->onClientOpenMainInventory();
 			return true;
 		}
-		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target instanceof \pocketmine\addon\entity\AddonEntity){
-			return $target->openInventoryFor($this->player);
+		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target instanceof \pocketmine\entity\object\ChestBoat){
+			if($this->player->isSpectator() || !$this->player->canInteract($target->getLocation(), 8)){
+				return false;
+			}
+			$this->player->setCurrentWindow($target->getInventory());
+			return true;
 		}
 		return false; //TODO
 	}

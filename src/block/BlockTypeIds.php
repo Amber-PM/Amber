@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -856,6 +856,8 @@ final class BlockTypeIds{
 	public const FLOWERING_AZALEA = 10826;
 	public const END_PORTAL = 10827;
 
+	public const DISPENSER = 10828;
+	public const DROPPER = 10829;
 	public const PISTON = 10830;
 	public const STICKY_PISTON = 10831;
 	public const PISTON_HEAD = 10832;
