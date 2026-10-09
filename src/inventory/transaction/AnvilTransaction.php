@@ -184,7 +184,7 @@ class AnvilTransaction extends InventoryTransaction{
 		if(count($createdItems) > 1){
 			throw new TransactionValidationException("Transaction resulted into more than 1 item stack");
 		}
-		if(!$createdItems[0]->equals($this->result) || $createdItems[0]->getCount() !== $this->result->getCount()){
+		if(!$createdItems[0]->equalsExact($this->result)){
 			throw new TransactionValidationException("Transaction produced a different output item");
 		}
 		self::assertConsumed($deletedItems, $this->consumed);
