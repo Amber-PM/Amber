@@ -59,6 +59,7 @@ final class ChunkProtocolGroupTest extends TestCase{
 		}
 
 		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
 
 		$itemFrame = new ItemFrame($world, new Vector3(2, 64, 3));
 		$itemFrame->setItem(VanillaItems::DIAMOND_SWORD());
