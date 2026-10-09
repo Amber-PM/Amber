@@ -915,6 +915,7 @@ class Server{
 				])
 			);
 			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
+			TypeConverter::setNativeSpectator($this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true));
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
@@ -1758,7 +1759,7 @@ class Server{
 
 			$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_crash_submit($crashDumpPath)));
 
-			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, true)){
+			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, false)){
 				$report = true;
 
 				$stamp = Path::join($this->dataPath, "crashdumps", ".last_crash");
