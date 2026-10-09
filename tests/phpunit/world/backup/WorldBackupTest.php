@@ -348,19 +348,22 @@ final class WorldBackupTest extends TestCase{
 		@mkdir($sourceDb, 0777, true);
 		file_put_contents(Path::join($source, "level.dat"), "world data");
 
-		// Populate enough data (5 MB) with a small write buffer to force LevelDB to flush to .ldb/.sst table files
+		// Populate data with small write buffer and compact to force LevelDB to flush to .ldb/.sst table files
 		$db = new \LevelDB($sourceDb, [
 			"create_if_missing" => true,
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 4096,
 			"write_buffer_size" => 4096,
 		]);
-		$batch = new \LevelDBWriteBatch();
 		$payload = str_repeat("abcdefghijklmnop", 64); // 1024 bytes per record
-		for($i = 0; $i < 5000; ++$i){
-			$batch->put("key_" . $i, $payload);
+		for($batchIndex = 0; $batchIndex < 10; ++$batchIndex){
+			$batch = new \LevelDBWriteBatch();
+			for($i = 0; $i < 200; ++$i){
+				$batch->put("key_" . $batchIndex . "_" . $i, $payload);
+			}
+			$db->write($batch);
 		}
-		$db->write($batch);
+		$db->compactRange("", "\xff\xff\xff\xff");
 		unset($db); // close to flush tables and write CURRENT
 
 		// Find a .ldb or .sst file and corrupt one byte in the data blocks
@@ -368,7 +371,7 @@ final class WorldBackupTest extends TestCase{
 			glob(Path::join($sourceDb, "*.ldb")) ?: [],
 			glob(Path::join($sourceDb, "*.sst")) ?: []
 		);
-		self::assertNotEmpty($tableFiles, "Expected at least one LevelDB table file");
+		self::assertNotEmpty($tableFiles, "Expected at least one LevelDB table file in $sourceDb, found: " . implode(", ", scandir($sourceDb) ?: []));
 		$tableFile = $tableFiles[0];
 
 		$contents = file_get_contents($tableFile);
@@ -388,9 +391,8 @@ final class WorldBackupTest extends TestCase{
 		$result = $task->getResult();
 		self::assertNotNull($result);
 		self::assertTrue(
-			str_contains($result, "Corruption") ||
-			str_contains($result, "checksum") ||
-			str_contains($result, "corrupt"),
+			stripos($result, "corrupt") !== false ||
+			stripos($result, "checksum") !== false,
 			"Expected corruption/checksum error message, got: " . $result
 		);
 		self::assertFileDoesNotExist($target);
