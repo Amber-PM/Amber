@@ -70,7 +70,7 @@ final class ChunkProtocolGroupTest extends TestCase{
 		$chunk->addTile($flowerPot);
 
 		$movingBlock = new MovingBlock($world, new Vector3(6, 64, 7));
-		$movingBlock->setMovingBlock(VanillaBlocks::STONE());
+		(new \ReflectionProperty(MovingBlock::class, "carriedBlock"))->setValue($movingBlock, VanillaBlocks::STONE());
 		$chunk->addTile($movingBlock);
 
 		$groups = [];
