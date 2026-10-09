@@ -28,7 +28,10 @@ use pocketmine\data\SavedDataLoadingException;
 use pocketmine\entity\animation\TotemUseAnimation;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\VanillaEffects;
+use pocketmine\entity\projectile\Projectile;
 use pocketmine\entity\projectile\ProjectileSource;
+use pocketmine\event\entity\EntityDamageByChildEntityEvent;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
 use pocketmine\inventory\CallbackInventoryListener;
@@ -39,8 +42,11 @@ use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\enchantment\EnchantingHelper;
 use pocketmine\item\enchantment\VanillaEnchantments;
+use pocketmine\item\Axe;
 use pocketmine\item\Item;
+use pocketmine\item\Shield;
 use pocketmine\item\Totem;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\NBT;
 use pocketmine\nbt\tag\CompoundTag;
@@ -58,6 +64,8 @@ use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
 use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
 use pocketmine\network\mcpe\protocol\types\DeviceOS;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\PropertySyncData;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
@@ -67,16 +75,21 @@ use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
 use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
 use pocketmine\network\mcpe\protocol\UpdateAbilitiesPacket;
 use pocketmine\player\Player;
+use pocketmine\world\sound\ShieldBlockSound;
 use pocketmine\world\sound\TotemUseSound;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
+use function abs;
 use function array_fill;
 use function array_filter;
 use function array_key_exists;
 use function array_merge;
 use function array_values;
+use function atan2;
+use function floor;
 use function min;
+use const M_PI;
 
 class Human extends Living implements ProjectileSource, InventoryHolder{
 
@@ -104,6 +117,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	protected PlayerInventory $inventory;
 	protected PlayerOffHandInventory $offHandInventory;
 	protected PlayerEnderInventory $enderInventory;
+	protected bool $blocking = false;
 
 	protected UuidInterface $uuid;
 
@@ -245,6 +259,135 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 	public function getOffHandInventory() : PlayerOffHandInventory{ return $this->offHandInventory; }
 
+	public function isBlocking() : bool{
+		return $this->blocking;
+	}
+
+	public function hasShieldEquipped() : bool{
+		return (isset($this->inventory) && $this->inventory->getItemInHand() instanceof Shield)
+			|| (isset($this->offHandInventory) && $this->offHandInventory->getItem(0) instanceof Shield);
+	}
+
+	public function hasShieldCooldown() : bool{
+		if($this instanceof Player){
+			return $this->hasItemCooldown(VanillaItems::SHIELD());
+		}
+		return false;
+	}
+
+	public function updateBlockingState() : void{
+		$shouldBlock = $this->isSneaking() && $this->hasShieldEquipped() && !$this->hasShieldCooldown();
+		$this->setBlocking($shouldBlock);
+	}
+
+	public function setBlocking(bool $blocking) : void{
+		if($this->blocking !== $blocking){
+			$this->blocking = $blocking;
+			$this->networkPropertiesDirty = true;
+			if(isset($this->networkProperties)){
+				$this->networkProperties->setGenericFlag(EntityMetadataFlags::BLOCKING, $blocking);
+			}
+		}
+	}
+
+	public function setSneaking(bool $value = true) : void{
+		parent::setSneaking($value);
+		$this->updateBlockingState();
+	}
+
+	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
+		parent::syncNetworkData($properties);
+		$properties->setGenericFlag(EntityMetadataFlags::BLOCKING, $this->blocking);
+	}
+
+	public function isFacingAttack(Vector3 $sourcePos, Vector3 $targetPos, float $targetYaw) : bool{
+		$diffX = $sourcePos->x - $targetPos->x;
+		$diffZ = $sourcePos->z - $targetPos->z;
+
+		$rot = -atan2($diffX, $diffZ) * (180.0 / M_PI);
+		if($rot < 0.0){
+			$rot += 360.0;
+		}
+
+		$angleDiff = abs($targetYaw - $rot);
+		while($angleDiff > 360.0){
+			$angleDiff -= 360.0;
+		}
+		if($angleDiff > 180.0){
+			$angleDiff = 360.0 - $angleDiff;
+		}
+
+		return $angleDiff <= 90.0;
+	}
+
+	public function isDamageBlocked(EntityDamageEvent $source) : bool{
+		if(!$this->isBlocking()){
+			return false;
+		}
+
+		$cause = $source->getCause();
+		if($cause === EntityDamageEvent::CAUSE_VOID ||
+			$cause === EntityDamageEvent::CAUSE_SUICIDE ||
+			$cause === EntityDamageEvent::CAUSE_MAGIC ||
+			$cause === EntityDamageEvent::CAUSE_STARVATION ||
+			$cause === EntityDamageEvent::CAUSE_DROWNING ||
+			$cause === EntityDamageEvent::CAUSE_SUFFOCATION ||
+			$cause === EntityDamageEvent::CAUSE_FALL ||
+			$cause === EntityDamageEvent::CAUSE_FIRE_TICK
+		){
+			return false;
+		}
+
+		if($source instanceof EntityDamageByChildEntityEvent){
+			$child = $source->getChild();
+			if($child !== null){
+				return $this->isFacingAttack($child->getPosition(), $this->getPosition(), $this->location->getYaw());
+			}
+		}
+
+		if($source instanceof EntityDamageByEntityEvent){
+			$damager = $source->getDamager();
+			if($damager !== null){
+				return $this->isFacingAttack($damager->getPosition(), $this->getPosition(), $this->location->getYaw());
+			}
+		}
+
+		return false;
+	}
+
+	public static function calculateShieldDurabilityLoss(float $damage) : int{
+		if($damage < 3.0){
+			return 0;
+		}
+		return (int) floor($damage);
+	}
+
+	public function damageEquippedShield(int $durabilityLoss) : void{
+		if($durabilityLoss <= 0){
+			return;
+		}
+		$hand = $this->inventory->getItemInHand();
+		if($hand instanceof Shield){
+			if($hand->applyDamage($durabilityLoss)){
+				$this->inventory->setItemInHand($hand->isBroken() ? VanillaItems::AIR() : $hand);
+			}
+			return;
+		}
+		$offHand = $this->offHandInventory->getItem(0);
+		if($offHand instanceof Shield){
+			if($offHand->applyDamage($durabilityLoss)){
+				$this->offHandInventory->setItem(0, $offHand->isBroken() ? VanillaItems::AIR() : $offHand);
+			}
+		}
+	}
+
+	public function disableShield(int $ticks = 100) : void{
+		$this->setBlocking(false);
+		if($this instanceof Player){
+			$this->resetItemCooldown(VanillaItems::SHIELD(), $ticks);
+		}
+	}
+
 	public function getEnderInventory() : PlayerEnderInventory{
 		return $this->enderInventory;
 	}
@@ -290,13 +433,16 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 				if($slot === $this->inventory->getHeldItemIndex()){
 					$syncHeldItem();
 				}
+				$this->updateBlockingState();
 			},
 			function(Inventory $unused, array $oldItems) use ($syncHeldItem) : void{
 				if(array_key_exists($this->inventory->getHeldItemIndex(), $oldItems)){
 					$syncHeldItem();
 				}
+				$this->updateBlockingState();
 			}
 		));
+		$this->inventory->getHeldItemIndexChangeListeners()->add(fn(int $oldIndex) => $this->updateBlockingState());
 		$this->offHandInventory = new PlayerOffHandInventory($this);
 		$this->enderInventory = new PlayerEnderInventory($this);
 		$this->initHumanData($nbt);
@@ -326,10 +472,13 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		if($offHand !== null){
 			$this->offHandInventory->setItem(0, Item::safeNbtDeserialize($offHand, "Human off-hand item"));
 		}
-		$this->offHandInventory->getListeners()->add(CallbackInventoryListener::onAnyChange(fn() => NetworkBroadcastUtils::broadcastEntityEvent(
-			$this->getViewers(),
-			fn(EntityEventBroadcaster $broadcaster, array $recipients) => $broadcaster->onMobOffHandItemChange($recipients, $this)
-		)));
+		$this->offHandInventory->getListeners()->add(CallbackInventoryListener::onAnyChange(function() : void{
+			NetworkBroadcastUtils::broadcastEntityEvent(
+				$this->getViewers(),
+				fn(EntityEventBroadcaster $broadcaster, array $recipients) => $broadcaster->onMobOffHandItemChange($recipients, $this)
+			);
+			$this->updateBlockingState();
+		}));
 
 		$enderChestInventoryTag = $nbt->getListTag(self::TAG_ENDER_CHEST_INVENTORY, CompoundTag::class);
 		if($enderChestInventoryTag !== null){
@@ -379,6 +528,11 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	}
 
 	public function applyDamageModifiers(EntityDamageEvent $source) : void{
+		if($this->isDamageBlocked($source)){
+			$source->setModifier(-$source->getFinalDamage(), EntityDamageEvent::MODIFIER_SHIELD);
+			return;
+		}
+
 		parent::applyDamageModifiers($source);
 
 		$type = $source->getCause();
@@ -393,7 +547,23 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	}
 
 	protected function applyPostDamageEffects(EntityDamageEvent $source) : void{
+		if($source->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
+			$this->broadcastSound(new ShieldBlockSound());
+
+			$durabilityLoss = self::calculateShieldDurabilityLoss($source->getBaseDamage());
+			$this->damageEquippedShield($durabilityLoss);
+
+			if($source instanceof EntityDamageByEntityEvent && !$source instanceof EntityDamageByChildEntityEvent){
+				$damager = $source->getDamager();
+				if($damager instanceof Human && $damager->getInventory()->getItemInHand() instanceof Axe){
+					$this->disableShield(100);
+				}
+			}
+			return;
+		}
+
 		parent::applyPostDamageEffects($source);
+
 		$totemModifier = $source->getModifier(EntityDamageEvent::MODIFIER_TOTEM);
 		if($totemModifier < 0){ //Totem prevented death
 			$this->effectManager->clear();

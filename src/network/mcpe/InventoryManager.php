@@ -38,6 +38,7 @@ use pocketmine\block\inventory\SmithingTableInventory;
 use pocketmine\block\inventory\StonecutterInventory;
 use pocketmine\crafting\FurnaceType;
 use pocketmine\data\bedrock\EnchantmentIdMap;
+use pocketmine\entity\object\ChestBoatInventory;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
@@ -328,7 +329,6 @@ class InventoryManager{
 			$inventory instanceof CraftingTableInventory => UIInventorySlotOffset::CRAFTING3X3_INPUT,
 			$inventory instanceof CartographyTableInventory => UIInventorySlotOffset::CARTOGRAPHY_TABLE,
 			$inventory instanceof SmithingTableInventory => UIInventorySlotOffset::SMITHING_TABLE,
-			$inventory instanceof \pocketmine\addon\entity\trade\TradeInventory => $inventory->getTrader()->usesNewTradeScreen() ? UIInventorySlotOffset::TRADE2_INGREDIENT : UIInventorySlotOffset::TRADE_INGREDIENT,
 			default => null,
 		};
 	}
@@ -396,6 +396,9 @@ class InventoryManager{
 				default => WindowTypes::CONTAINER
 			};
 			return [ContainerOpenPacket::blockInv($id, $windowType, $blockPosition)];
+		}
+		if($inv instanceof ChestBoatInventory){
+			return [ContainerOpenPacket::entityInv($id, WindowTypes::CONTAINER, $inv->getHolder()->getId())];
 		}
 		return null;
 	}

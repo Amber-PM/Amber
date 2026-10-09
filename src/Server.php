@@ -144,6 +144,7 @@ use function filemtime;
 use function fopen;
 use function get_class;
 use function gettype;
+use function in_array;
 use function ini_set;
 use function is_array;
 use function is_dir;
@@ -269,7 +270,6 @@ class Server{
 	private CraftingManager $craftingManager;
 
 	private ResourcePackManager $resourceManager;
-	private \pocketmine\addon\AddonManager $addonManager;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -479,10 +479,6 @@ class Server{
 		return $this->resourceManager;
 	}
 
-	/** Bedrock add-ons (addons/ directory): resource packs, custom items, blocks and entities. */
-	public function getAddonManager() : \pocketmine\addon\AddonManager{
-		return $this->addonManager;
-	}
 	public function getWorldManager() : WorldManager{
 		return $this->worldManager;
 	}
@@ -1085,18 +1081,12 @@ class Server{
 
 			$this->commandMap = new SimpleCommandMap($this);
 
-			//add-on items, blocks and entities must exist before recipes, worlds and the network tables are built
-			$this->addonManager = new \pocketmine\addon\AddonManager($this, Path::join($this->dataPath, "addons"), $this->logger);
-			$this->addonManager->load();
-			$this->commandMap->register("pocketmine", new \pocketmine\addon\AddonsCommand($this->addonManager));
 			$this->craftingManager = CraftingManagerFromDataHelper::make(BedrockDataFiles::RECIPES);
-			$this->addonManager->registerRecipes($this->craftingManager);
 			if(!$this->educationContentEnabled){
 				CreativeInventory::getInstance()->removeEducationEditionContent();
 			}
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
-			$this->addonManager->registerResourcePacks($this->resourceManager);
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
@@ -1162,9 +1152,6 @@ class Server{
 				$this->forceShutdownExit();
 				return;
 			}
-
-			//add-on runtime: scripts, natural spawning and the event bridge, once worlds and plugins are up
-			$this->addonManager->start();
 
 			CameraPresetRegistry::getInstance()->freeze();
 
@@ -1628,10 +1615,6 @@ class Server{
 
 			$this->shutdown();
 
-			if(isset($this->addonManager)){
-				$this->addonManager->shutdown();
-			}
-
 			if(isset($this->pluginManager)){
 				$this->logger->debug("Disabling all plugins");
 				$this->pluginManager->disablePlugins();
@@ -1977,8 +1960,6 @@ class Server{
 		Timings::$scheduler->startTiming();
 		$this->pluginManager->tickSchedulers($this->tickCounter);
 		Timings::$scheduler->stopTiming();
-
-		$this->addonManager->tick($this->tickCounter);
 
 		Timings::$schedulerAsync->startTiming();
 		$this->asyncPool->collectTasks();

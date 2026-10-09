@@ -6,8 +6,6 @@ namespace pocketmine\player;
 
 use Logger;
 use PHPUnit\Framework\TestCase;
-use pocketmine\addon\entity\AddonEntity;
-use pocketmine\addon\entity\AddonEntityDefinition;
 use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\Entity;
@@ -17,16 +15,17 @@ use pocketmine\entity\Human;
 use pocketmine\entity\HungerManager;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
+use pocketmine\entity\object\Boat;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
+use pocketmine\item\BoatType;
 use pocketmine\item\Elytra;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
-use pocketmine\player\GameMode;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use ReflectionClass;
@@ -64,12 +63,8 @@ class PlayerGlideStateTest extends TestCase{
 		}
 	}
 
-	private function createVehicle(Player $player) : AddonEntity{
-		$definition = AddonEntityDefinition::fromJson(["minecraft:entity" => [
-			"description" => ["identifier" => "test:glide_mount"],
-			"components" => ["minecraft:health" => ["value" => 10, "max" => 10], "minecraft:rideable" => ["seat_count" => 1]],
-		]], "glide-mount.json", "test");
-		return new AddonEntity(clone $player->getLocation(), $definition);
+	private function createVehicle(Player $player) : Boat{
+		return new Boat(clone $player->getLocation(), BoatType::OAK);
 	}
 
 	public function testAirborneRiderCannotBeginGliding() : void{
@@ -78,7 +73,7 @@ class PlayerGlideStateTest extends TestCase{
 		$vehicle = $this->createVehicle($player);
 		try{
 			self::assertTrue($vehicle->addRider($player));
-			self::assertSame($vehicle, AddonEntity::getVehicleOf($player));
+			self::assertSame($vehicle, Boat::getVehicleOf($player));
 			self::assertFalse($player->toggleGlide(true));
 			self::assertFalse($player->isGliding());
 		}finally{
@@ -98,7 +93,7 @@ class PlayerGlideStateTest extends TestCase{
 			(new ReflectionClass(Player::class))->getMethod("entityBaseTick")->invoke($player, 20);
 			self::assertFalse($player->isGliding());
 			self::assertSame(0, $player->getArmorInventory()->getChestplate()->getDamage());
-			self::assertSame($vehicle, AddonEntity::getVehicleOf($player));
+			self::assertSame($vehicle, Boat::getVehicleOf($player));
 		}finally{
 			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
 			$vehicle->close();

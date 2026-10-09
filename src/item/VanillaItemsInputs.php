@@ -318,6 +318,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("rotten_flesh", fn(IID $id) => new RottenFlesh($id, "Rotten Flesh"));
 		self::register("scute", fn(IID $id) => new Item($id, "Scute"));
 		self::register("shears", fn(IID $id) => new Shears($id, "Shears", [EnchantmentTags::SHEARS]));
+		self::register("shield", fn(IID $id) => new Shield($id, "Shield", [EnchantmentTags::SHIELD]));
 		self::register("shulker_shell", fn(IID $id) => new Item($id, "Shulker Shell"));
 		self::register("slimeball", fn(IID $id) => new Item($id, "Slimeball"));
 		self::register("snowball", fn(IID $id) => new Snowball($id, "Snowball"));
@@ -345,7 +346,13 @@ final class VanillaItemsInputs extends RegistrySource{
 
 		foreach(BoatType::cases() as $type){
 			//boat type is static, because different types of wood may have different properties
-			self::register(strtolower($type->name) . "_boat", fn(IID $id) => new Boat($id, $type->getDisplayName() . " Boat", $type));
+			$boatKey = $type === BoatType::BAMBOO ? "bamboo_raft" : strtolower($type->name) . "_boat";
+			$boatName = $type === BoatType::BAMBOO ? "Bamboo Raft" : $type->getDisplayName() . " Boat";
+			self::register($boatKey, fn(IID $id) => new Boat($id, $boatName, $type));
+
+			$chestBoatKey = $type === BoatType::BAMBOO ? "bamboo_chest_raft" : strtolower($type->name) . "_chest_boat";
+			$chestBoatName = $type === BoatType::BAMBOO ? "Bamboo Chest Raft" : $type->getDisplayName() . " Boat with Chest";
+			self::register($chestBoatKey, fn(IID $id) => new ChestBoat($id, $chestBoatName, $type));
 		}
 	}
 
