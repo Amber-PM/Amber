@@ -1,0 +1,194 @@
+{
+  "source": {
+    "serverVersions": ["1.21.60.10", "1.21.70.03", "1.26.44.3"],
+    "method": "Bedrock Dedicated Server playtest capture with client session wire recordings. Verifies that across 1.21.60 (legacy buttons array), 1.21.70 (first protocol with elements array), and recent 1.26.44, the client ModalFormResponsePacket returns ordinal button indices (0 for Parkour, 1 for Bed Wars) rather than the raw interleaved elements array indices (1 and 4)."
+  },
+  "1.21.60": {
+    "protocol": 776,
+    "wireRequest": {
+      "type": "form",
+      "title": "Games",
+      "content": "Pick one\nSolo\nTeam games",
+      "buttons": [
+        {
+          "text": "Parkour",
+          "image": {
+            "type": "path",
+            "data": "textures/items/feather"
+          }
+        },
+        {
+          "text": "Bed Wars",
+          "image": {
+            "type": "url",
+            "data": "https://example.com/b.png"
+          }
+        }
+      ]
+    },
+    "responses": [
+      {
+        "description": "click first button (Parkour)",
+        "wireData": "0",
+        "cancelReason": null,
+        "expectedClicked": 0,
+        "expectedSubmitted": 0
+      },
+      {
+        "description": "click second button (Bed Wars)",
+        "wireData": "1",
+        "cancelReason": null,
+        "expectedClicked": null,
+        "expectedSubmitted": 1
+      },
+      {
+        "description": "close form via X button or ESC",
+        "wireData": null,
+        "cancelReason": 0,
+        "expectedCloseReason": "closed"
+      },
+      {
+        "description": "client busy dismiss",
+        "wireData": null,
+        "cancelReason": 1,
+        "expectedCloseReason": "busy"
+      }
+    ]
+  },
+  "1.21.70": {
+    "protocol": 786,
+    "wireRequest": {
+      "type": "form",
+      "title": "Games",
+      "content": "Pick one",
+      "elements": [
+        {
+          "type": "header",
+          "text": "Solo"
+        },
+        {
+          "type": "button",
+          "text": "Parkour",
+          "image": {
+            "type": "path",
+            "data": "textures/items/feather"
+          }
+        },
+        {
+          "type": "divider",
+          "text": ""
+        },
+        {
+          "type": "label",
+          "text": "Team games"
+        },
+        {
+          "type": "button",
+          "text": "Bed Wars",
+          "image": {
+            "type": "url",
+            "data": "https://example.com/b.png"
+          }
+        }
+      ]
+    },
+    "responses": [
+      {
+        "description": "click first button (Parkour at element index 1)",
+        "elementIndex": 1,
+        "wireData": "0",
+        "cancelReason": null,
+        "expectedClicked": 0,
+        "expectedSubmitted": 0
+      },
+      {
+        "description": "click second button (Bed Wars at element index 4)",
+        "elementIndex": 4,
+        "wireData": "1",
+        "cancelReason": null,
+        "expectedClicked": null,
+        "expectedSubmitted": 1
+      },
+      {
+        "description": "close form via X button or ESC",
+        "wireData": null,
+        "cancelReason": 0,
+        "expectedCloseReason": "closed"
+      },
+      {
+        "description": "client busy dismiss",
+        "wireData": null,
+        "cancelReason": 1,
+        "expectedCloseReason": "busy"
+      }
+    ]
+  },
+  "1.26.44": {
+    "protocol": 2169,
+    "wireRequest": {
+      "type": "form",
+      "title": "Games",
+      "content": "Pick one",
+      "elements": [
+        {
+          "type": "header",
+          "text": "Solo"
+        },
+        {
+          "type": "button",
+          "text": "Parkour",
+          "image": {
+            "type": "path",
+            "data": "textures/items/feather"
+          }
+        },
+        {
+          "type": "divider",
+          "text": ""
+        },
+        {
+          "type": "label",
+          "text": "Team games"
+        },
+        {
+          "type": "button",
+          "text": "Bed Wars",
+          "image": {
+            "type": "url",
+            "data": "https://example.com/b.png"
+          }
+        }
+      ]
+    },
+    "responses": [
+      {
+        "description": "click first button (Parkour at element index 1)",
+        "elementIndex": 1,
+        "wireData": "0",
+        "cancelReason": null,
+        "expectedClicked": 0,
+        "expectedSubmitted": 0
+      },
+      {
+        "description": "click second button (Bed Wars at element index 4)",
+        "elementIndex": 4,
+        "wireData": "1",
+        "cancelReason": null,
+        "expectedClicked": null,
+        "expectedSubmitted": 1
+      },
+      {
+        "description": "close form via X button or ESC",
+        "wireData": null,
+        "cancelReason": 0,
+        "expectedCloseReason": "closed"
+      },
+      {
+        "description": "client busy dismiss",
+        "wireData": null,
+        "cancelReason": 1,
+        "expectedCloseReason": "busy"
+      }
+    ]
+  }
+}
