@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -48,6 +48,10 @@ class WeightedPressurePlate extends PressurePlate implements AnalogRedstoneSigna
 
 	protected function hasOutputSignal() : bool{
 		return $this->signalStrength > 0;
+	}
+
+	protected function getMaximumSignalEntityCount() : int{
+		return $this->signalStrengthFactor > 0 ? (int) ceil(15 / $this->signalStrengthFactor) : 1;
 	}
 
 	protected function calculatePlateState(array $entities) : array{

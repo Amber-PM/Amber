@@ -19,35 +19,8 @@
  *
  */
 
-
 declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
 
-use pocketmine\math\Vector3;
-
-final class TorchFeedbackCheck{
-	/** @var \SplQueue<array{Vector3, int}> */
-	public \SplQueue $pending;
-	/** @var array<int, true> */
-	public array $seen = [];
-	public ?bool $result = null;
-	/** @var array<int, int> */
-	public array $versions = [];
-	/** @var array<int, array{\stdClass, int}> at most 16 watched horizontal chunks */
-	public array $chunkVersions = [];
-	public bool $dirty = false;
-	public bool $cancelled = false;
-	public bool $queued = true;
-	public ?int $extinguishTick = null;
-	public ?\stdClass $identity = null;
-	public int $facing = 0;
-
-	public function __construct(
-		public Vector3 $position,
-		public Vector3 $target,
-		public int $stateId
-	){
-		$this->pending = new \SplQueue();
-	}
-}
+final class TorchFeedbackCheck extends torch\TorchFeedbackCheck{}

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,36 +25,24 @@ namespace pocketmine\block\dispenser;
 
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
-use pocketmine\math\Vector3;
-use pocketmine\world\particle\SmokeParticle;
+use pocketmine\world\particle\DispenserParticle;
 use pocketmine\world\sound\ClickSound;
-use function mt_rand;
 
 class DefaultDispenseBehavior implements DispenseBehavior{
 
 	public function dispense(BlockSource $source, Item $item) : Item{
+		if(!$source->isTargetAvailable()){
+			$source->getWorld()->addSound($source->getPos(), new \pocketmine\world\sound\ClickFailSound());
+			return $item;
+		}
 		$dispensed = $item->pop();
 
 		$facing = $source->getFacing();
-		[$dx, $dy, $dz] = Facing::OFFSET[$facing];
+		$motion = DispenseMotion::item($facing);
 
-		if($facing === Facing::UP || $facing === Facing::DOWN){
-			$motion = new Vector3(
-				(mt_rand(-10, 10) / 100) * 0.1,
-				$dy * 0.3 + (mt_rand(-10, 10) / 100) * 0.05,
-				(mt_rand(-10, 10) / 100) * 0.1
-			);
-		}else{
-			$motion = new Vector3(
-				$dx * 0.3 + (mt_rand(-10, 10) / 100) * 0.05,
-				0.2 + (mt_rand(-10, 10) / 100) * 0.05,
-				$dz * 0.3 + (mt_rand(-10, 10) / 100) * 0.05
-			);
-		}
-
-		$dispensePos = $source->getDispensePosition();
+		$dispensePos = $source->getDispensePosition()->subtract(0, $facing === Facing::UP || $facing === Facing::DOWN ? 0.125 : 0.15625, 0);
 		$source->getWorld()->dropItem($dispensePos, $dispensed, $motion, 10);
-		$source->getWorld()->addParticle($dispensePos, new SmokeParticle());
+		$source->getWorld()->addParticle($dispensePos, new DispenserParticle());
 		$source->getWorld()->addSound($source->getPos(), new ClickSound());
 
 		return $item;

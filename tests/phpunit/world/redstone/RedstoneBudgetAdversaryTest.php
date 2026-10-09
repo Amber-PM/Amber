@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -29,7 +29,8 @@ use pocketmine\block\tile\Container;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
-use function count;
+use function intdiv;
+use function memory_get_usage;
 
 final class RedstoneBudgetAdversaryTest extends TestCase{
 	/** @var array<string, bool> */
@@ -172,16 +173,16 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 			$engine->schedule($pos, 10);
 		}
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		$hashesBefore = $delayedProp->getValue($engine)[10];
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		$hashesBefore = $delayedProp->getValue($engine->getScheduler())[10];
 		self::assertCount(500, $hashesBefore);
 
 		$engine->tick(10);
 
-		$delayedCursorProp = new \ReflectionProperty(RedstoneEngine::class, "delayedCursor");
-		$cursor = $delayedCursorProp->getValue($engine)[10] ?? 0;
+		$delayedCursorProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedCursor");
+		$cursor = $delayedCursorProp->getValue($engine->getScheduler())[10] ?? 0;
 		self::assertSame(1, $cursor, "Delayed cursor must advance without reallocating the underlying array");
-		self::assertCount(500, $delayedProp->getValue($engine)[10]);
+		self::assertCount(500, $delayedProp->getValue($engine->getScheduler())[10]);
 	}
 
 	public function testScheduleAvoidsSynchronousFullKsort() : void{
@@ -193,9 +194,9 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 			$engine->schedule($pos, $d);
 		}
 
-		$heapProp = new \ReflectionProperty(RedstoneEngine::class, "delayedTicksHeap");
+		$heapProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedTicksHeap");
 		/** @var \SplMinHeap<int> $heap */
-		$heap = $heapProp->getValue($engine);
+		$heap = $heapProp->getValue($engine->getScheduler());
 		self::assertSame(1, $heap->top(), "MinHeap top must be minimum due tick");
 	}
 
@@ -209,7 +210,7 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 		];
 
 		for($i = 0; $i < 500; ++$i){
-			$engine->request(160 + ($i % 16), 1 + (int)($i / 16), 160);
+			$engine->request(160 + ($i % 16), 1 + (int) ($i / 16), 160);
 		}
 
 		$engine->request(0, 64, 0);
@@ -226,15 +227,14 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 		$blocks = [];
 		[$engine, $world] = $this->createWorld($blocks, 1);
 
-		$this->loadedChunks["5:5"] = false;
-
 		for($i = 0; $i < 256; ++$i){
-			$pos = new Vector3(80 + ($i % 16), 64, 80 + (int)($i / 16));
+			$pos = new Vector3(80 + ($i % 16), 64, 80 + (int) ($i / 16));
 			$rep = VanillaBlocks::REDSTONE_REPEATER();
 			$rep->position($world, $pos->x, $pos->y, $pos->z);
 			$blocks["{$pos->x}:64:{$pos->z}"] = $rep;
 			$engine->schedule($pos, 1);
 		}
+		$this->loadedChunks["5:5"] = false;
 
 		for($tick = 1; $tick <= 256; ++$tick){
 			$engine->tick($tick);
@@ -242,18 +242,18 @@ final class RedstoneBudgetAdversaryTest extends TestCase{
 		self::assertSame(256, $engine->getUnloadedDelayedCount());
 
 		for($i = 0; $i < 256; ++$i){
-			$pos = new Vector3(80 + ($i % 16), 64, 80 + (int)($i / 16));
+			$pos = new Vector3(80 + ($i % 16), 64, 80 + (int) ($i / 16));
 			$engine->schedule($pos, 20, 999999);
 		}
 
 		$this->loadedChunks["5:5"] = true;
 
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
 		$chunkHash = World::chunkHash(5, 5);
-		self::assertCount(256, $unloadedProp->getValue($engine)[$chunkHash]);
+		self::assertCount(256, $unloadedProp->getValue($engine->getScheduler())[$chunkHash]);
 
 		$engine->tick(257);
 
-		self::assertArrayHasKey($chunkHash, $unloadedProp->getValue($engine), "Stale events in newly loaded chunk must not be scanned all at once without budget");
+		self::assertArrayHasKey($chunkHash, $unloadedProp->getValue($engine->getScheduler()), "Stale events in newly loaded chunk must not be scanned all at once without budget");
 	}
 }

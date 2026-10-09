@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,212 +23,172 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use pocketmine\block\inventory\DispenserInventory;
-use pocketmine\block\inventory\DropperInventory;
 use pocketmine\block\tile\Dispenser as TileDispenser;
 use pocketmine\block\tile\Dropper as TileDropper;
+use pocketmine\block\tile\Tile;
+use pocketmine\inventory\Inventory;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
-use pocketmine\world\Position;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\World;
 
 final class DispenserRedstoneTest extends TestCase{
+	private World $world;
+	private RedstoneEngine $engine;
+	private array $blocks = [];
+	private bool $chunksLoaded = true;
+	private TileDispenser|TileDropper $tile;
+	private Dispenser|Dropper $receiver;
+	private Inventory $inventory;
+	private array $entities = [];
 
-	/**
-	 * @param array<string, Block> $blocks
-	 * @return array{RedstoneEngine, World&\PHPUnit\Framework\MockObject\MockObject}
-	 */
-	private function createEnvironment(array &$blocks) : array{
-		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods([
-			"getBlockAt",
-			"setBlockAt",
-			"setBlock",
-			"getTile",
-			"isInWorld",
-			"isChunkLoaded",
-			"isLoaded",
-			"dropItem",
-			"notifyNeighbourBlockUpdate"
+	public static function receivers() : array{
+		return [[false], [true]];
+	}
+
+	private function initialize(bool $dropper) : void{
+		$this->world = $this->getMockBuilder(World::class)->disableOriginalConstructor()->onlyMethods([
+			"getBlockAt", "setBlock", "getTile", "isInWorld", "isChunkLoaded", "isLoaded", "dropItem", "addParticle", "addSound", "getDisplayName", "removeTile", "iterateEntityCandidates"
 		])->getMock();
-
-		$world->method("isInWorld")->willReturn(true);
-		$world->method("isChunkLoaded")->willReturn(true);
-		$world->method("isLoaded")->willReturn(true);
-		$world->method("dropItem")->willReturn(null);
-
-		$engine = new RedstoneEngine($world, 100000);
-
-		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks, $world) : Block{
-			$key = "$x:$y:$z";
-			if(isset($blocks[$key])){
-				return $blocks[$key];
-			}
-			$air = clone VanillaBlocks::AIR();
-			$air->position($world, $x, $y, $z);
-			return $air;
+		$this->world->method("isInWorld")->willReturn(true);
+		$this->world->method("isChunkLoaded")->willReturnCallback(fn() => $this->chunksLoaded);
+		$this->world->method("isLoaded")->willReturn(true);
+		$this->world->method("getDisplayName")->willReturn("test");
+		$this->engine = new RedstoneEngine($this->world, 1000);
+		(new \ReflectionProperty(World::class, "redstone"))->setValue($this->world, $this->engine);
+		$this->world->method("iterateEntityCandidates")->willReturnCallback(function() : \Generator{ yield from $this->entities; });
+		$this->world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) : Block{
+			$block = clone ($this->blocks["$x:$y:$z"] ?? VanillaBlocks::AIR());
+			$block->position($this->world, $x, $y, $z);
+			return $block;
 		});
-
-		$world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $b) use (&$blocks) : bool{
-			$key = "{$pos->x}:{$pos->y}:{$pos->z}";
-			$blocks[$key] = $b;
-			return true;
+		$this->world->method("setBlock")->willReturnCallback(function(Vector3 $pos, Block $block) : void{
+			$block = clone $block;
+			$block->position($this->world, $pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+			$this->blocks["{$pos->x}:{$pos->y}:{$pos->z}"] = $block;
+			$this->engine->onBlockChanged($block);
 		});
-
-		return [$engine, $world];
+		$pos = new Vector3(0, 64, 0);
+		$this->tile = $dropper ? new TileDropper($this->world, $pos) : new TileDispenser($this->world, $pos);
+		$this->world->method("getTile")->willReturnCallback(fn(Vector3 $target) : ?Tile => $target->equals($pos) ? $this->tile : null);
+		$this->receiver = ($dropper ? VanillaBlocks::DROPPER() : VanillaBlocks::DISPENSER())->setFacing(Facing::EAST);
+		$this->receiver->position($this->world, 0, 64, 0);
+		$this->blocks["0:64:0"] = clone $this->receiver;
+		$this->inventory = $this->tile->getInventory();
+		$this->inventory->setItem(0, VanillaItems::DIAMOND()->setCount(5));
 	}
 
-	public function testDispenserRisingEdgeTrigger() : void{
-		$blocks = [];
-		[$engine, $world] = $this->createEnvironment($blocks);
-
-		$dispenser = VanillaBlocks::DISPENSER();
-		$dispenser->setFacing(Facing::NORTH);
-		$pos = new Position(10, 20, 30, $world);
-		$dispenser->position($world, 10, 20, 30);
-		$blocks["10:20:30"] = $dispenser;
-
-		$inventory = new DispenserInventory($pos);
-		$inventory->setItem(0, VanillaItems::DIAMOND()->setCount(5));
-
-		$tile = $this->createMock(TileDispenser::class);
-		$tile->method("getInventory")->willReturn($inventory);
-
-		$world->method("getTile")->willReturnCallback(function(Vector3 $p) use ($pos, $tile) : ?TileDispenser{
-			if($p->equals($pos)){
-				return $tile;
-			}
-			return null;
-		});
-
-		// 1. Initial unpowered state
-		self::assertFalse($dispenser->isPowered());
-		$dispenser->onRedstoneUpdate($engine);
-		self::assertFalse($dispenser->isPowered());
-		self::assertSame(5, $inventory->getItem(0)->getCount());
-
-		// 2. Rising edge: Redstone block placed adjacent at (10, 21, 30)
-		$redstoneBlock = VanillaBlocks::REDSTONE();
-		$redstoneBlock->position($world, 10, 21, 30);
-		$blocks["10:21:30"] = $redstoneBlock;
-
-		$dispenser->onRedstoneUpdate($engine);
-		self::assertTrue($dispenser->isPowered());
-		self::assertSame(4, $inventory->getItem(0)->getCount());
-
-		// 3. High sustain: redstone block still present, does not re-trigger
-		$dispenser->onRedstoneUpdate($engine);
-		self::assertSame(4, $inventory->getItem(0)->getCount());
-
-		// 4. Falling edge: redstone block removed (air)
-		unset($blocks["10:21:30"]);
-		$dispenser->onRedstoneUpdate($engine);
-		self::assertFalse($dispenser->isPowered());
-		self::assertSame(4, $inventory->getItem(0)->getCount());
-
-		// 5. Rising edge again: triggers second dispense
-		$blocks["10:21:30"] = $redstoneBlock;
-		$dispenser->onRedstoneUpdate($engine);
-		self::assertTrue($dispenser->isPowered());
-		self::assertSame(3, $inventory->getItem(0)->getCount());
+	private function power(bool $powered) : void{
+		$this->blocks["0:65:0"] = $powered ? VanillaBlocks::REDSTONE() : VanillaBlocks::AIR();
+		$this->receiver->onRedstoneUpdate($this->engine);
 	}
 
-	public function testDropperRisingEdgeTrigger() : void{
-		$blocks = [];
-		[$engine, $world] = $this->createEnvironment($blocks);
-
-		$dropper = VanillaBlocks::DROPPER();
-		$dropper->setFacing(Facing::NORTH);
-		$pos = new Position(10, 20, 30, $world);
-		$dropper->position($world, 10, 20, 30);
-		$blocks["10:20:30"] = $dropper;
-
-		$inventory = new DropperInventory($pos);
-		$inventory->setItem(0, VanillaItems::EMERALD()->setCount(3));
-
-		$tile = $this->createMock(TileDropper::class);
-		$tile->method("getInventory")->willReturn($inventory);
-
-		$world->method("getTile")->willReturnCallback(function(Vector3 $p) use ($pos, $tile) : ?TileDropper{
-			if($p->equals($pos)){
-				return $tile;
-			}
-			return null;
-		});
-
-		// 1. Initial unpowered state
-		self::assertFalse($dropper->isPowered());
-		$dropper->onRedstoneUpdate($engine);
-		self::assertFalse($dropper->isPowered());
-		self::assertSame(3, $inventory->getItem(0)->getCount());
-
-		// 2. Rising edge: Redstone block placed adjacent at (10, 21, 30)
-		$redstoneBlock = VanillaBlocks::REDSTONE();
-		$redstoneBlock->position($world, 10, 21, 30);
-		$blocks["10:21:30"] = $redstoneBlock;
-
-		$dropper->onRedstoneUpdate($engine);
-		self::assertTrue($dropper->isPowered());
-		self::assertSame(2, $inventory->getItem(0)->getCount());
-
-		// 3. High sustain: redstone block still present, does not re-trigger
-		$dropper->onRedstoneUpdate($engine);
-		self::assertSame(2, $inventory->getItem(0)->getCount());
-
-		// 4. Falling edge: redstone block removed
-		unset($blocks["10:21:30"]);
-		$dropper->onRedstoneUpdate($engine);
-		self::assertFalse($dropper->isPowered());
-		self::assertSame(2, $inventory->getItem(0)->getCount());
-
-		// 5. Rising edge again: triggers second drop
-		$blocks["10:21:30"] = $redstoneBlock;
-		$dropper->onRedstoneUpdate($engine);
-		self::assertTrue($dropper->isPowered());
-		self::assertSame(1, $inventory->getItem(0)->getCount());
+	private function armorCrowd() : void{
+		$this->initialize(false);
+		(new \ReflectionProperty(RedstoneEngine::class, "maxUpdatesPerTick"))->setValue($this->engine, 8);
+		$this->inventory->setItem(0, VanillaItems::DIAMOND_HELMET());
+		for($i = 0; $i < 130; ++$i){
+			$entity = $this->createMock(\pocketmine\entity\Entity::class);
+			(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($entity, true);
+			$this->entities[] = $entity;
+		}
 	}
 
-	public function testDispenserRedstonePowerWithSingleBoneMealFacingCrop() : void{
-		$blocks = [];
-		[$engine, $world] = $this->createEnvironment($blocks);
-
-		$pos = new Vector3(10, 20, 30);
-		$dispenser = VanillaBlocks::DISPENSER();
-		$dispenser->setFacing(Facing::NORTH);
-		$dispenser->position($world, 10, 20, 30);
-		$blocks["10:20:30"] = $dispenser;
-
-		$wheat = VanillaBlocks::WHEAT();
-		$wheat->position($world, 10, 20, 29);
-		$blocks["10:20:29"] = $wheat;
-
-		$inventory = new DispenserInventory(new Position(10, 20, 30, $world));
-		$inventory->setItem(0, VanillaItems::BONE_MEAL()); // Single-item stack (count 1)
-		self::assertSame(1, $inventory->getItem(0)->getCount());
-
-		$tile = $this->createMock(TileDispenser::class);
-		$tile->method("getInventory")->willReturn($inventory);
-
-		$world->method("getTile")->willReturnCallback(function(Vector3 $p) use ($pos, $tile) : ?TileDispenser{
-			if($p->equals($pos)){
-				return $tile;
-			}
-			return null;
-		});
-
-		// Rising edge: Redstone block placed adjacent at (10, 21, 30)
-		$redstoneBlock = VanillaBlocks::REDSTONE();
-		$redstoneBlock->position($world, 10, 21, 30);
-		$blocks["10:21:30"] = $redstoneBlock;
-
-		// Powering the dispenser must not throw InvalidArgumentException out of the redstone tick
-		$dispenser->onRedstoneUpdate($engine);
-
-		self::assertTrue($dispenser->isPowered());
-		self::assertTrue($inventory->getItem(0)->isNull());
-		self::assertInstanceOf(Crops::class, $blocks["10:20:29"]);
-		self::assertGreaterThan(0, $blocks["10:20:29"]->getAge());
+	public function testArmorCrowdResumesTheSelectedStackWithoutLosingOrDuplicatingIt() : void{
+		$this->armorCrowd();
+		$living = $this->createMock(\pocketmine\entity\Living::class);
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($living, true);
+		$living->method("isAlive")->willReturn(true);
+		$living->method("canBeCollidedWith")->willReturn(true);
+		$living->method("getWorld")->willReturn($this->world);
+		$living->method("getBoundingBox")->willReturn(new \pocketmine\math\AxisAlignedBB(1, 64, 0, 2, 66, 1));
+		$living->method("getLocation")->willReturn(new \pocketmine\entity\Location(1.5, 64, 0.5, $this->world, 0, 0));
+		$armor = new \pocketmine\inventory\ArmorInventory($living);
+		$living->method("getArmorInventory")->willReturn($armor);
+		$this->entities[] = $living;
+		$this->world->expects(self::never())->method("dropItem");
+		$this->power(true);
+		for($tick = 1; $tick <= 4; ++$tick){ $this->engine->tick($tick); }
+		self::assertSame(0, $this->tile->getPendingDispenseSlot());
+		self::assertSame(1, $this->inventory->getItem(0)->getCount());
+		for($tick = 5; $tick <= 60; ++$tick){ $this->engine->tick($tick); }
+		self::assertNull($this->tile->getPendingDispenseSlot());
+		self::assertTrue($this->inventory->getItem(0)->isNull());
+		self::assertTrue($armor->getHelmet()->equalsExact(VanillaItems::DIAMOND_HELMET()));
 	}
+
+	public function testChangingDeferredArmorSlotCancelsItsOldAction() : void{
+		$this->armorCrowd();
+		$this->world->expects(self::never())->method("dropItem");
+		$this->power(true);
+		for($tick = 1; $tick <= 4; ++$tick){ $this->engine->tick($tick); }
+		self::assertSame(0, $this->tile->getPendingDispenseSlot());
+		$this->inventory->setItem(0, VanillaItems::DIAMOND()->setCount(3));
+		for($tick = 5; $tick <= 60; ++$tick){ $this->engine->tick($tick); }
+		self::assertNull($this->tile->getPendingDispenseSlot());
+		self::assertTrue($this->inventory->getItem(0)->equalsExact(VanillaItems::DIAMOND()->setCount(3)));
+	}
+
+	#[DataProvider('receivers')]
+	public function testFourTickDelayAndContinuousPower(bool $dropper) : void{
+		$this->initialize($dropper);
+		$this->power(true);
+		self::assertSame(5, $this->inventory->getItem(0)->getCount());
+		for($tick = 1; $tick < 4; ++$tick){
+			$this->engine->tick($tick);
+			self::assertSame(5, $this->inventory->getItem(0)->getCount());
+		}
+		$this->engine->tick(4);
+		self::assertSame(4, $this->inventory->getItem(0)->getCount());
+		for($tick = 5; $tick <= 10; ++$tick){
+			$this->power(true);
+			$this->engine->tick($tick);
+		}
+		self::assertSame(4, $this->inventory->getItem(0)->getCount());
+		$this->power(false);
+		$this->power(true);
+		$this->engine->tick(13);
+		self::assertSame(4, $this->inventory->getItem(0)->getCount());
+		$this->engine->tick(14);
+		self::assertSame(3, $this->inventory->getItem(0)->getCount());
+	}
+
+	#[DataProvider('receivers')]
+	public function testPulseSurvivesFallingEdgeAndSelectsSlotAtExecution(bool $dropper) : void{
+		$this->initialize($dropper);
+		$this->power(true);
+		$this->engine->tick(1);
+		$this->power(false);
+		$this->inventory->clear(0);
+		$this->inventory->setItem(8, VanillaItems::EMERALD()->setCount(2));
+		$this->engine->tick(3);
+		self::assertSame(2, $this->inventory->getItem(8)->getCount());
+		$this->engine->tick(4);
+		self::assertSame(1, $this->inventory->getItem(8)->getCount());
+	}
+
+	#[DataProvider('receivers')]
+	public function testReplacementCancelsEvenForIdenticalState(bool $dropper) : void{
+		$this->initialize($dropper);
+		$this->power(true);
+		$this->world->setBlock($this->receiver->getPosition(), clone $this->receiver);
+		self::assertFalse($this->engine->isScheduled($this->receiver->getPosition()));
+		$this->engine->tick(4);
+		self::assertSame(5, $this->inventory->getItem(0)->getCount());
+	}
+	#[DataProvider('receivers')]
+	public function testScheduledActionWaitsForChunkReload(bool $dropper) : void{
+		$this->initialize($dropper);
+		$this->power(true);
+		$this->chunksLoaded = false;
+		$this->engine->tick(4);
+		self::assertSame(5, $this->inventory->getItem(0)->getCount());
+		$this->chunksLoaded = true;
+		$this->engine->tick(5);
+		self::assertSame(4, $this->inventory->getItem(0)->getCount());
+	}
+
 }

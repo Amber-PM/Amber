@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,9 +26,9 @@ namespace pocketmine\block;
 use pocketmine\block\dispenser\BlockSource;
 use pocketmine\block\dispenser\DispenseBehaviorRegistry;
 use pocketmine\block\tile\Dispenser as TileDispenser;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
-use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
@@ -40,7 +40,7 @@ use pocketmine\world\sound\ClickFailSound;
 use function array_rand;
 use function count;
 
-class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
+class Dispenser extends Opaque implements PoweredByRedstone, DelayedRedstoneReceiver{
 	use PoweredByRedstoneTrait;
 
 	private int $facing = Facing::NORTH;
@@ -56,6 +56,7 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 
 	/** @return $this */
 	public function setFacing(int $facing) : self{
+		Facing::validate($facing);
 		$this->facing = $facing;
 		return $this;
 	}
@@ -78,7 +79,7 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
 		if($player !== null){
 			$tile = $this->position->getWorld()->getTile($this->position);
-			if($tile instanceof TileDispenser){
+			if($tile instanceof TileDispenser && $tile->canOpenWith($item->getCustomName())){
 				$player->setCurrentWindow($tile->getInventory());
 			}
 			return true;
@@ -90,12 +91,16 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 		$isPowered = $engine->getReceivedPower($this->position) > 0;
 		if($isPowered !== $this->powered){
 			$this->setPowered($isPowered);
-			$engine->getWorld()->setBlock($this->position, $this);
+			$engine->updateReceiverState($this);
 
 			if($isPowered){
-				$this->dispense();
+				$engine->schedule($this->position, 4);
 			}
 		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$this->dispense();
 	}
 
 	public function dispense() : void{
@@ -106,6 +111,12 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 		}
 
 		$inventory = $tile->getInventory();
+		$pendingSlot = $tile->getPendingDispenseSlot();
+		if($pendingSlot !== null && !$tile->isPendingDispenseValid()){
+			$tile->clearPendingDispense();
+			$world->getRedstoneEngine()?->cancelEntityScan($this->position);
+			return;
+		}
 		$occupiedSlots = [];
 		foreach($inventory->getContents() as $slot => $item){
 			if(!$item->isNull()){
@@ -118,16 +129,18 @@ class Dispenser extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 			return;
 		}
 
-		$randomSlot = $occupiedSlots[array_rand($occupiedSlots)];
+		$randomSlot = $pendingSlot ?? $occupiedSlots[array_rand($occupiedSlots)];
 		$sourceItem = $inventory->getItem($randomSlot);
 		if($sourceItem->isNull()){
 			$world->addSound($this->position, new ClickFailSound());
 			return;
 		}
 
-		$source = new BlockSource($world, $this->position, $this->facing, $tile);
+		$source = new BlockSource($world, $this->position, $this->facing, $tile, $randomSlot);
 		$behavior = DispenseBehaviorRegistry::getInstance()->get($sourceItem);
 		$leftover = $behavior->dispense($source, $sourceItem);
-		$inventory->setItem($randomSlot, $leftover);
+		if($tile->getPendingDispenseSlot() === null){
+			$inventory->setItem($randomSlot, $leftover);
+		}
 	}
 }

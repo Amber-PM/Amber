@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -99,6 +99,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperPushesIntoContainer() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);
@@ -141,6 +143,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperFailsWhenContainerFull() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);
@@ -184,6 +188,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperDoesNotInsertNonFuelIntoFurnaceSide() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);
@@ -228,6 +234,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperDoesNotInsertDiamondIntoEmptyFurnaceOutputFromSideEvenWhenInputAndFuelEmpty() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);
@@ -270,6 +278,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperInsertsFuelIntoFurnaceSide() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);
@@ -311,6 +321,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperInsertsItemIntoFurnaceTop() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::DOWN); // Dropper above furnace facing down
@@ -352,6 +364,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperDoesNotInsertIntoFurnaceBottom() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::UP); // Dropper below furnace facing up
@@ -393,6 +407,8 @@ final class DropperDispenseTest extends TestCase{
 	public function testDropperDoesNotInsertShulkerBoxIntoShulkerBox() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 
 		$dropperBlock = VanillaBlocks::DROPPER();
 		$dropperBlock->setFacing(Facing::NORTH);

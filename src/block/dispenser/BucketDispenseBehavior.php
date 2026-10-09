@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -30,20 +30,20 @@ use pocketmine\block\Water;
 use pocketmine\item\Item;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\item\VanillaItems;
-use pocketmine\world\sound\BucketEmptyLavaSound;
-use pocketmine\world\sound\BucketEmptyWaterSound;
-use pocketmine\world\sound\BucketFillLavaSound;
-use pocketmine\world\sound\BucketFillWaterSound;
+use pocketmine\world\sound\ClickFailSound;
 
 class BucketDispenseBehavior implements DispenseBehavior{
 
 	public function dispense(BlockSource $source, Item $item) : Item{
+		if(!$source->isTargetAvailable()){
+			$source->getWorld()->addSound($source->getPos(), new ClickFailSound());
+			return $item;
+		}
 		$world = $source->getWorld();
 		$targetPos = $source->getPos()->getSide($source->getFacing());
 		$targetBlock = $world->getBlock($targetPos);
 
 		if($item->getTypeId() === ItemTypeIds::BUCKET){
-			// Empty bucket picking up water or lava
 			$replacement = null;
 			if($targetBlock instanceof Water && $targetBlock->isSource()){
 				$world->setBlock($targetPos, VanillaBlocks::AIR());
@@ -65,11 +65,11 @@ class BucketDispenseBehavior implements DispenseBehavior{
 				return $item;
 			}
 
-			// Cannot pickup liquid: fall back to default behavior
+			// cannot pickup liquid, fall back to default behavior
 			return DispenseBehaviorRegistry::getInstance()->getDefault()->dispense($source, $item);
 		}
 
-		// Placing water or lava
+		// placing water or lava
 		$isWater = $item->getTypeId() === ItemTypeIds::WATER_BUCKET;
 		$isLava = $item->getTypeId() === ItemTypeIds::LAVA_BUCKET;
 

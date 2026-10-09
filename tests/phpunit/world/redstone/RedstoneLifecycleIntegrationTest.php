@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -39,6 +39,8 @@ use pocketmine\world\format\io\WritableWorldProvider;
 use pocketmine\world\generator\executor\GeneratorExecutor;
 use pocketmine\world\World;
 use pocketmine\world\WorldTimings;
+use function get_class;
+use function property_exists;
 
 final class RedstoneLifecycleIntegrationTest extends TestCase{
 
@@ -152,10 +154,10 @@ final class RedstoneLifecycleIntegrationTest extends TestCase{
 
 		// 4. Parked chunk events
 		$chunkKey = "30:30";
-		$this->loadedChunks[$chunkKey] = false;
 		$parkedPos = new Vector3(480, 64, 480);
 		$world->setBlockAt(480, 64, 480, $receiver, false);
 		$engine->schedule($parkedPos, 1);
+		$this->loadedChunks[$chunkKey] = false;
 		$engine->tick(1);
 		self::assertGreaterThan(0, $engine->getUnloadedDelayedCount());
 
@@ -177,12 +179,12 @@ final class RedstoneLifecycleIntegrationTest extends TestCase{
 		$queuedProp = new \ReflectionProperty(RedstoneEngine::class, "queued");
 		self::assertSame([], $queuedProp->getValue($engine));
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		self::assertSame([], $delayedProp->getValue($engine));
-		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
-		self::assertSame([], $delayedIndexProp->getValue($engine));
-		$delayedStateProp = new \ReflectionProperty(RedstoneEngine::class, "delayedState");
-		self::assertSame([], $delayedStateProp->getValue($engine));
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine->getScheduler()));
+		$delayedIndexProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedIndex");
+		self::assertSame([], $delayedIndexProp->getValue($engine->getScheduler()));
+		$delayedStateProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedState");
+		self::assertSame([], $delayedStateProp->getValue($engine->getScheduler()));
 		self::assertFalse($engine->isScheduled($schedPos));
 
 		self::assertFalse($engine->getWires()->hasDeferred(), "Wire network must have no deferred continuations");
@@ -190,8 +192,8 @@ final class RedstoneLifecycleIntegrationTest extends TestCase{
 		self::assertNull($engine->getWires()->getContinuationOwner(World::blockHash(0, 64, 50)));
 
 		self::assertSame(0, $engine->getUnloadedDelayedCount());
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
-		self::assertSame([], $unloadedProp->getValue($engine));
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
+		self::assertSame([], $unloadedProp->getValue($engine->getScheduler()));
 
 		self::assertFalse($engine->getTorchBurnout()->isBurntOut($burnoutPos, 1));
 		$burnoutRef = new \ReflectionClass(TorchBurnout::class);

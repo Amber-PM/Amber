@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -50,7 +50,6 @@ final class DispenseBehaviorRegistry{
 		$this->register(ItemTypeIds::EGG, $projectileBehavior);
 		$this->register(ItemTypeIds::SPLASH_POTION, $projectileBehavior);
 		$this->register(ItemTypeIds::EXPERIENCE_BOTTLE, $projectileBehavior);
-		$this->register(ItemTypeIds::ENDER_PEARL, $projectileBehavior);
 
 		$bucketBehavior = new BucketDispenseBehavior();
 		$this->register(ItemTypeIds::BUCKET, $bucketBehavior);

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\block\dispenser;
 
 use pocketmine\block\BlockTypeIds;
+use pocketmine\block\tile\Dispenser;
+use pocketmine\entity\Entity;
 use pocketmine\entity\Living;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\Armor;
@@ -35,6 +37,15 @@ use pocketmine\world\sound\ArmorEquipGenericSound;
 class ArmorDispenseBehavior implements DispenseBehavior{
 
 	public function dispense(BlockSource $source, Item $item) : Item{
+		if(!$source->isTargetAvailable()){
+			$tile = $source->getTile();
+			if($tile instanceof Dispenser){
+				$tile->clearPendingDispense();
+				$source->getWorld()->getRedstoneEngine()?->cancelEntityScan($source->getPos());
+			}
+			$source->getWorld()->addSound($source->getPos(), new \pocketmine\world\sound\ClickFailSound());
+			return $item;
+		}
 		$world = $source->getWorld();
 		$targetPos = $source->getPos()->getSide($source->getFacing());
 
@@ -52,8 +63,27 @@ class ArmorDispenseBehavior implements DispenseBehavior{
 			return DispenseBehaviorRegistry::getInstance()->getDefault()->dispense($source, $item);
 		}
 
-		foreach($world->getCollidingEntities($bb) as $entity){
-			if($entity instanceof Living){
+		$engine = $world->getRedstoneEngine();
+		$tile = $source->getTile();
+		$inventorySlot = $source->getInventorySlot();
+		if($engine !== null && $engine->isTicking() && $tile instanceof Dispenser && $inventorySlot !== null){
+			$entities = $engine->collectEntities($source->getBlock(), $bb, 1,
+				fn(Entity $entity) : bool => $entity instanceof Living && $entity->isAlive() && $entity->canBeCollidedWith() && $entity->getArmorInventory()->getItem($slot)->isNull()
+			);
+			if($entities === null){
+				$tile->deferDispense($inventorySlot, $item);
+				$engine->schedule($source->getPos(), 1, $source->getBlock()->getStateId());
+				return $item;
+			}
+			$tile->clearPendingDispense();
+		}else{
+			if($tile instanceof Dispenser){
+				$tile->clearPendingDispense();
+			}
+			$entities = $world->iterateEntityCandidates($bb);
+		}
+		foreach($entities as $entity){
+			if($entity instanceof Living && !$entity->isClosed() && $entity->getWorld() === $world && $entity->canBeCollidedWith() && $entity->getBoundingBox()->intersectsWith($bb) && $entity->isAlive() && !$entity->isFlaggedForDespawn()){
 				$armorInv = $entity->getArmorInventory();
 				if($armorInv->getItem($slot)->isNull()){
 					$armorInv->setItem($slot, (clone $item)->setCount(1));

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -76,6 +76,7 @@ use function array_map;
 use function array_search;
 use function count;
 use function get_class;
+use function hrtime;
 use function implode;
 use function is_int;
 use function max;
@@ -111,6 +112,7 @@ class InventoryManager{
 	private ObjectSet $containerOpenCallbacks;
 
 	private ?int $pendingCloseWindowId = null;
+	private ?int $pendingCloseDeadline = null;
 	/** @phpstan-var \Closure() : void */
 	private ?\Closure $pendingOpenWindowCallback = null;
 
@@ -420,6 +422,7 @@ class InventoryManager{
 	}
 
 	public function onCurrentWindowRemove() : void{
+		$this->pendingOpenWindowCallback = null;
 		if(isset($this->networkIdToInventoryMap[$this->lastInventoryNetworkId])){
 			$this->remove($this->lastInventoryNetworkId);
 			$this->session->sendDataPacket(ContainerClosePacket::create($this->lastInventoryNetworkId, $this->currentWindowType, true));
@@ -427,8 +430,13 @@ class InventoryManager{
 				throw new AssumptionFailedError("We should not have opened a new window while a window was waiting to be closed");
 			}
 			$this->pendingCloseWindowId = $this->lastInventoryNetworkId;
+			$this->pendingCloseDeadline = hrtime(true) + 10_000_000_000;
 			$this->enchantingTableOptions = [];
 		}
+	}
+
+	public function isWindowClosePending(int $id) : bool{
+		return $this->pendingCloseWindowId === $id;
 	}
 
 	public function onClientRemoveWindow(int $id) : void{
@@ -456,6 +464,7 @@ class InventoryManager{
 
 		if($this->pendingCloseWindowId === $id){
 			$this->pendingCloseWindowId = null;
+			$this->pendingCloseDeadline = null;
 			if($this->pendingOpenWindowCallback !== null){
 				$this->session->getLogger()->debug("Opening deferred window after close ack of window $id");
 				($this->pendingOpenWindowCallback)();
@@ -669,6 +678,11 @@ class InventoryManager{
 	}
 
 	public function flushPendingUpdates() : void{
+		if($this->pendingCloseDeadline !== null && hrtime(true) >= $this->pendingCloseDeadline){
+			$this->session->disconnect("Inventory close acknowledgement timed out");
+			return;
+		}
+
 		if($this->fullSyncRequested){
 			$this->fullSyncRequested = false;
 			$this->session->getLogger()->debug("Full inventory sync requested, sending contents of " . count($this->inventories) . " inventories");

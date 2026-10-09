@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -30,12 +30,13 @@ use pocketmine\block\BlockIdentifier;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\BlockTypeInfo;
 use pocketmine\block\Opaque;
-use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\RedstoneTorch;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
+use function array_column;
 
 final class TorchBurnoutTest extends TestCase{
 	/** @var array<string, bool> */
@@ -146,7 +147,7 @@ final class TorchBurnoutTest extends TestCase{
 			self::assertInstanceOf(RedstoneTorch::class, $torch);
 			$engine->getTorchBurnout()->checkFeedback($torch, $engine, false);
 		}
-		$checks = (new \ReflectionProperty(TorchBurnout::class, "feedbackChecks"))->getValue($engine->getTorchBurnout());
+		$checks = (new \ReflectionProperty(torch\TorchFeedbackTracker::class, "feedbackChecks"))->getValue($engine->getTorchBurnout()->getFeedbackTracker());
 		$events = [];
 		$receiver = new class(new BlockIdentifier(BlockTypeIds::newId()), "Fair receiver", new BlockTypeInfo(BlockBreakInfo::indestructible()), $events) extends Opaque implements DelayedRedstoneReceiver{
 			public function __construct(BlockIdentifier $id, string $name, BlockTypeInfo $info, private array &$events){
@@ -163,8 +164,8 @@ final class TorchBurnoutTest extends TestCase{
 		$world->setBlockAt(311, 64, 20, $receiver, false);
 		$engine->schedule(new Vector3(310, 64, 20), 1);
 		$world->setBlockAt(480, 64, 480, $receiver, false);
-		$this->loadedChunks["30:30"] = false;
 		$engine->schedule(new Vector3(480, 64, 480), 1);
+		$this->loadedChunks["30:30"] = false;
 		$engine->request(311, 64, 20);
 		$world->setBlockAt(299, 64, 25, VanillaBlocks::REDSTONE(), false);
 		for($x = 300; $x < 303; ++$x){
@@ -225,7 +226,7 @@ final class TorchBurnoutTest extends TestCase{
 		$burnout->recordExtinguish($world->getBlockAt(8, 64, 8), $engine);
 		$engine->schedule(new Vector3(8, 64, 8), 1000);
 		$burnout->checkFeedback($world->getBlockAt(40, 64, 8), $engine, false);
-		$checks = (new \ReflectionProperty(TorchBurnout::class, 'feedbackChecks'))->getValue($burnout);
+		$checks = (new \ReflectionProperty(torch\TorchFeedbackTracker::class, "feedbackChecks"))->getValue($burnout->getFeedbackTracker());
 		$captured = $checks[World::blockHash(8, 64, 8)];
 		self::assertSame(0, $captured->extinguishTick);
 		for($tick = 1; $tick <= 40; ++$tick){
@@ -350,8 +351,8 @@ final class TorchBurnoutTest extends TestCase{
 		$engine->tick(1);
 		$world->setBlockAt(-1, 65, 0, VanillaBlocks::AIR(), false);
 		$torch->onRedstoneScheduledUpdate($engine);
-		$checks = new \ReflectionProperty(TorchBurnout::class, "feedbackChecks");
-		self::assertSame([], $checks->getValue($engine->getTorchBurnout()), "A cancelled transition must discard its pending verdict");
+		$checks = new \ReflectionProperty(torch\TorchFeedbackTracker::class, "feedbackChecks");
+		self::assertSame([], $checks->getValue($engine->getTorchBurnout()->getFeedbackTracker()), "A cancelled transition must discard its pending verdict");
 	}
 	public function testExternalSwitchingDoesNotCountAsBurnoutFeedback() : void{
 		[$engine, $world] = $this->createEnvironment();

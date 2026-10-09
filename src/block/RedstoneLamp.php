@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -56,7 +56,7 @@ class RedstoneLamp extends Opaque implements PoweredByRedstone, Lightable, Delay
 		if($powered && !$this->isLit()){
 			$engine->getWorld()->setBlock($this->position, $this->setLit(true));
 		}elseif(!$powered && $this->isLit()){
-			$engine->schedule($this->position, 2 * RedstoneEngine::REDSTONE_TICK); //lamps turn off with a delay
+			$engine->schedule($this->position, 3 * RedstoneEngine::REDSTONE_TICK); //lamps turn off with a delay
 		}
 	}
 

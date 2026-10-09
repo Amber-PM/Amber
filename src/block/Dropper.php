@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,23 +27,24 @@ use pocketmine\block\dispenser\BlockSource;
 use pocketmine\block\dispenser\DispenseBehaviorRegistry;
 use pocketmine\block\tile\Container;
 use pocketmine\block\tile\Dropper as TileDropper;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
-use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
-use pocketmine\world\hopper\HopperTicker;
+use pocketmine\world\hopper\ContainerTransfer;
+use pocketmine\world\hopper\ContainerTransferPolicy;
 use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\ClickFailSound;
 use pocketmine\world\sound\ClickSound;
 use function array_rand;
 use function count;
 
-class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
+class Dropper extends Opaque implements PoweredByRedstone, DelayedRedstoneReceiver{
 	use PoweredByRedstoneTrait;
 
 	private int $facing = Facing::NORTH;
@@ -59,6 +60,7 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 
 	/** @return $this */
 	public function setFacing(int $facing) : self{
+		Facing::validate($facing);
 		$this->facing = $facing;
 		return $this;
 	}
@@ -81,7 +83,7 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
 		if($player !== null){
 			$tile = $this->position->getWorld()->getTile($this->position);
-			if($tile instanceof TileDropper){
+			if($tile instanceof TileDropper && $tile->canOpenWith($item->getCustomName())){
 				$player->setCurrentWindow($tile->getInventory());
 			}
 			return true;
@@ -93,12 +95,16 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 		$isPowered = $engine->getReceivedPower($this->position) > 0;
 		if($isPowered !== $this->powered){
 			$this->setPowered($isPowered);
-			$engine->getWorld()->setBlock($this->position, $this);
+			$engine->updateReceiverState($this);
 
 			if($isPowered){
-				$this->drop();
+				$engine->schedule($this->position, 4);
 			}
 		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$this->drop();
 	}
 
 	public function drop() : void{
@@ -129,10 +135,15 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 		}
 
 		$targetPos = $this->position->getSide($this->facing);
+		if(!$world->isInWorld($targetPos->getFloorX(), $targetPos->getFloorY(), $targetPos->getFloorZ()) || !$world->isChunkLoaded($targetPos->getFloorX() >> 4, $targetPos->getFloorZ() >> 4)){
+			$world->addSound($this->position, new ClickFailSound());
+			return;
+		}
 		$targetTile = $world->getTile($targetPos);
 
 		if($targetTile instanceof Container){
-			if(HopperTicker::insertOne($targetTile, $sourceItem, Facing::opposite($this->facing))){
+			$transfer = new ContainerTransfer(new ContainerTransferPolicy());
+			if($transfer->insertOne($targetTile, $sourceItem, Facing::opposite($this->facing))){
 				$sourceItem->pop();
 				$inventory->setItem($randomSlot, $sourceItem);
 				$world->addSound($this->position, new ClickSound());
@@ -142,7 +153,6 @@ class Dropper extends Opaque implements PoweredByRedstone, RedstoneReceiver{
 			return;
 		}
 
-		// Not facing a container: drop as item entity in the world
 		$source = new BlockSource($world, $this->position, $this->facing, $tile);
 		$leftover = DispenseBehaviorRegistry::getInstance()->getDefault()->dispense($source, $sourceItem);
 		$inventory->setItem($randomSlot, $leftover);

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -39,7 +39,6 @@ use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
-use pocketmine\world\Position;
 use pocketmine\world\World;
 
 final class DispenserBehaviorsTest extends TestCase{
@@ -52,7 +51,7 @@ final class DispenserBehaviorsTest extends TestCase{
 		self::assertInstanceOf(ProjectileDispenseBehavior::class, $registry->get(VanillaItems::EGG()));
 		self::assertInstanceOf(ProjectileDispenseBehavior::class, $registry->get(VanillaItems::SPLASH_POTION()));
 		self::assertInstanceOf(ProjectileDispenseBehavior::class, $registry->get(VanillaItems::EXPERIENCE_BOTTLE()));
-		self::assertInstanceOf(ProjectileDispenseBehavior::class, $registry->get(VanillaItems::ENDER_PEARL()));
+		self::assertSame($registry->getDefault(), $registry->get(VanillaItems::ENDER_PEARL()));
 
 		self::assertInstanceOf(BucketDispenseBehavior::class, $registry->get(VanillaItems::BUCKET()));
 		self::assertInstanceOf(BucketDispenseBehavior::class, $registry->get(VanillaItems::WATER_BUCKET()));
@@ -70,6 +69,8 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testBucketWaterPickup() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
 
@@ -95,6 +96,8 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testBucketLavaPickup() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
 
@@ -120,6 +123,8 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testBucketWaterPlacement() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
 
@@ -145,11 +150,14 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testArmorDispenseOntoLivingEntity() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$world->method("isLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
 
 		$living = $this->createMock(Living::class);
+		$living->method("isAlive")->willReturn(true);
 		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($living, true);
 
 		$armorInv = new ArmorInventory($living);
@@ -158,9 +166,14 @@ final class DispenserBehaviorsTest extends TestCase{
 		$loc = new Location($targetPos->x, $targetPos->y, $targetPos->z, $world, 0.0, 0.0);
 		$living->method("getArmorInventory")->willReturn($armorInv);
 		$living->method("getLocation")->willReturn($loc);
+		$living->method("getWorld")->willReturn($world);
+		$living->method("canBeCollidedWith")->willReturn(true);
+		$living->method("getBoundingBox")->willReturn(new AxisAlignedBB($targetPos->x, $targetPos->y, $targetPos->z, $targetPos->x + 0.6, $targetPos->y + 1.8, $targetPos->z + 0.6));
 
-		$world->method("getCollidingEntities")->willReturnCallback(function(AxisAlignedBB $bb) use ($living) : array{
-			return [$living];
+		$world->expects(self::never())->method("getCollidingEntities");
+		$world->method("iterateEntityCandidates")->willReturnCallback(function() use ($living) : \Generator{
+			yield $living;
+			self::fail("An equipped entity must end the search without materializing the remaining crowd");
 		});
 
 		$source = new BlockSource($world, $sourcePos, Facing::NORTH);
@@ -178,6 +191,8 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testBoneMealDispenseWithSingleItemStackOnCrop() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$world->method("isLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
@@ -211,6 +226,8 @@ final class DispenserBehaviorsTest extends TestCase{
 
 	public function testBoneMealDispenseWithMultipleItemStackOnCrop() : void{
 		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
 		$world->method("isLoaded")->willReturn(true);
 		$sourcePos = new Vector3(10, 20, 30);
 		$targetPos = $sourcePos->getSide(Facing::NORTH);
@@ -239,4 +256,16 @@ final class DispenserBehaviorsTest extends TestCase{
 		self::assertInstanceOf(Crops::class, $blockGrown);
 		self::assertGreaterThan(0, $blockGrown->getAge());
 	}
+	public function testInvalidBoneMealTargetKeepsEntireStack() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
+		$world->method("getBlock")->willReturn(VanillaBlocks::STONE());
+		$world->expects(self::never())->method("dropItem");
+		$item = VanillaItems::BONE_MEAL()->setCount(3);
+		$result = (new BoneMealDispenseBehavior())->dispense(new BlockSource($world, new Vector3(0, 64, 0), Facing::EAST), $item);
+		self::assertSame(3, $result->getCount());
+		self::assertSame($item->getTypeId(), $result->getTypeId());
+	}
+
 }

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\AnalogRedstoneSignalEmitter;
 use pocketmine\block\utils\AnalogRedstoneSignalEmitterTrait;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\RedstoneSource;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
@@ -39,7 +40,7 @@ use function max;
 use function round;
 use const M_PI;
 
-class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter, RedstoneSource{
+class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter, RedstoneSource, DelayedRedstoneReceiver{
 	use AnalogRedstoneSignalEmitterTrait;
 
 	protected bool $inverted = false;
@@ -77,6 +78,7 @@ class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter,
 		$this->inverted = !$this->inverted;
 		$this->signalStrength = $this->recalculateSignalStrength();
 		$this->position->getWorld()->setBlock($this->position, $this);
+		$this->scheduleUpdate(20);
 		return true;
 	}
 
@@ -87,7 +89,27 @@ class DaylightSensor extends Transparent implements AnalogRedstoneSignalEmitter,
 			$this->signalStrength = $signalStrength;
 			$world->setBlock($this->position, $this);
 		}
-		$world->scheduleDelayedBlockUpdate($this->position, 20);
+		$this->scheduleUpdate(20);
+	}
+
+	private function scheduleUpdate(int $delay) : void{
+		$world = $this->position->getWorld();
+		$engine = $world->getRedstoneEngine();
+		if($engine !== null){
+			$engine->schedule($this->position, $delay, $this->getStateId());
+		}else{
+			$world->scheduleDelayedBlockUpdate($this->position, $delay);
+		}
+	}
+
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$this->onScheduledUpdate();
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if(!$engine->isScheduled($this->position)){
+			$engine->schedule($this->position, 1, $this->getStateId());
+		}
 	}
 
 	private function recalculateSignalStrength() : int{

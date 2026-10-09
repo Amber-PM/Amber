@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,9 +27,7 @@ use pocketmine\item\Item;
 
 interface DispenseBehavior{
 
-	/**
-	 * Executes the dispense action from the source block with the given item stack.
-	 * Returns the leftover item to be retained in the dispenser slot.
-	 */
+	//executes the dispense action from the source block with the given item stack
+	//returns the leftover item to be retained in the dispenser slot
 	public function dispense(BlockSource $source, Item $item) : Item;
 }

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,6 +25,8 @@ namespace pocketmine\block\tile;
 
 use pocketmine\block\RedstoneComparator;
 use pocketmine\nbt\tag\CompoundTag;
+use function max;
+use function min;
 
 /**
  * @deprecated
@@ -40,11 +42,11 @@ class Comparator extends Tile{
 	}
 
 	public function setSignalStrength(int $signalStrength) : void{
-		$this->signalStrength = $signalStrength;
+		$this->signalStrength = max(0, min(15, $signalStrength));
 	}
 
 	public function readSaveData(CompoundTag $nbt) : void{
-		$this->signalStrength = $nbt->getInt(self::TAG_OUTPUT_SIGNAL, 0);
+		$this->setSignalStrength($nbt->getInt(self::TAG_OUTPUT_SIGNAL, 0));
 	}
 
 	protected function writeSaveData(CompoundTag $nbt) : void{

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,11 +27,16 @@ use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\particle\HappyVillagerParticle;
+use pocketmine\world\sound\ClickFailSound;
 use pocketmine\world\sound\ItemUseOnBlockSound;
 
 class BoneMealDispenseBehavior implements DispenseBehavior{
 
 	public function dispense(BlockSource $source, Item $item) : Item{
+		if(!$source->isTargetAvailable()){
+			$source->getWorld()->addSound($source->getPos(), new ClickFailSound());
+			return $item;
+		}
 		$world = $source->getWorld();
 		$targetPos = $source->getPos()->getSide($source->getFacing());
 		$targetBlock = $world->getBlock($targetPos);
@@ -43,6 +48,7 @@ class BoneMealDispenseBehavior implements DispenseBehavior{
 			return $item;
 		}
 
-		return DispenseBehaviorRegistry::getInstance()->getDefault()->dispense($source, $item);
+		$world->addSound($source->getPos(), new ClickFailSound());
+		return $item;
 	}
 }

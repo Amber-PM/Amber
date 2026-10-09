@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block\tile;
 
 use pocketmine\block\inventory\DispenserInventory;
+use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\world\World;
@@ -34,6 +35,29 @@ class Dispenser extends Spawnable implements Container, Nameable{
 	use NameableTrait;
 
 	private DispenserInventory $inventory;
+	private ?int $pendingDispenseSlot = null;
+	private ?Item $pendingDispenseItem = null;
+
+	public function getPendingDispenseSlot() : ?int{
+		return $this->pendingDispenseSlot;
+	}
+
+	public function isPendingDispenseValid() : bool{
+		return $this->pendingDispenseSlot !== null && $this->pendingDispenseItem !== null && $this->pendingDispenseItem->equalsExact($this->inventory->getItem($this->pendingDispenseSlot));
+	}
+
+	public function deferDispense(int $slot, Item $item) : void{
+		if(!$this->inventory->slotExists($slot)){
+			throw new \InvalidArgumentException("Invalid dispenser slot $slot");
+		}
+		$this->pendingDispenseSlot = $slot;
+		$this->pendingDispenseItem = clone $item;
+	}
+
+	public function clearPendingDispense() : void{
+		$this->pendingDispenseSlot = null;
+		$this->pendingDispenseItem = null;
+	}
 
 	public function __construct(World $world, Vector3 $pos){
 		parent::__construct($world, $pos);
@@ -52,6 +76,7 @@ class Dispenser extends Spawnable implements Container, Nameable{
 
 	public function close() : void{
 		if(!$this->closed){
+			$this->clearPendingDispense();
 			$this->inventory->removeAllViewers();
 
 			parent::close();

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -37,8 +37,24 @@ use pocketmine\math\Vector3;
 use pocketmine\world\format\io\WritableWorldProvider;
 use pocketmine\world\generator\executor\GeneratorExecutor;
 use pocketmine\world\World;
+use function count;
+use function get_class;
+use function intdiv;
 
 final class RedstoneScheduledUpdateBudgetTest extends TestCase{
+
+	public function testSchedulingWithoutKnownStateNeverReadsUnloadedChunks() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(false);
+		$world->expects(self::never())->method("getBlockAt");
+		$scheduler = new RedstoneScheduler($world, 1000);
+		$position = new Vector3(0, 64, 0);
+		$scheduler->schedule($position, 4, 0);
+		self::assertFalse($scheduler->isScheduled($position));
+		$scheduler->schedule($position, 4, 0, VanillaBlocks::DISPENSER()->getStateId());
+		self::assertTrue($scheduler->isScheduled($position));
+	}
 
 	/** @var array<string, bool> */
 	private array $loadedChunks = [];
@@ -316,9 +332,9 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		self::assertSame(1, $engine->getUnloadedDelayedCount(), "Event must be parked in unloaded collection");
 		self::assertTrue($engine->isScheduled($pos), "Position must remain marked as scheduled");
 
-		$prop = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
+		$prop = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
 		/** @var array<int, mixed> $parkedBefore */
-		$parkedBefore = $prop->getValue($engine);
+		$parkedBefore = $prop->getValue($engine->getScheduler());
 		self::assertArrayHasKey($chunkHash, $parkedBefore, "Chunk entry must exist in unloadedDelayed");
 		self::assertArrayHasKey(
 			$blockHash,
@@ -332,7 +348,7 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		self::assertFalse($engine->isScheduled($pos), "Position must not be scheduled after cancellation");
 
 		/** @var array<int, mixed> $parkedAfter */
-		$parkedAfter = $prop->getValue($engine);
+		$parkedAfter = $prop->getValue($engine->getScheduler());
 		self::assertArrayNotHasKey($chunkHash, $parkedAfter, "Chunk entry must be immediately pruned from map in O(1)");
 	}
 
@@ -367,10 +383,10 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		self::assertGreaterThan(0, $engine->getWires()->getContinuationCount());
 
 		$chunkKey = "30:30";
-		$this->loadedChunks[$chunkKey] = false;
 		$parkedPos = new Vector3(480, 64, 480);
 		$world->setBlockAt(480, 64, 480, $receiver, false);
 		$engine->schedule($parkedPos, 1);
+		$this->loadedChunks[$chunkKey] = false;
 		$engine->tick(1);
 		self::assertGreaterThan(0, $engine->getUnloadedDelayedCount(), "Parked chunk events must exist before clear");
 
@@ -383,12 +399,12 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		$queuedProp = new \ReflectionProperty(RedstoneEngine::class, "queued");
 		self::assertSame([], $queuedProp->getValue($engine), "Queued map must be empty after clear()");
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		self::assertSame([], $delayedProp->getValue($engine), "Delayed array must be empty after clear()");
-		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
-		self::assertSame([], $delayedIndexProp->getValue($engine), "Delayed index must be empty after clear()");
-		$delayedStateProp = new \ReflectionProperty(RedstoneEngine::class, "delayedState");
-		self::assertSame([], $delayedStateProp->getValue($engine), "Delayed state must be empty after clear()");
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine->getScheduler()), "Delayed array must be empty after clear()");
+		$delayedIndexProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedIndex");
+		self::assertSame([], $delayedIndexProp->getValue($engine->getScheduler()), "Delayed index must be empty after clear()");
+		$delayedStateProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedState");
+		self::assertSame([], $delayedStateProp->getValue($engine->getScheduler()), "Delayed state must be empty after clear()");
 		self::assertFalse($engine->isScheduled($schedPos), "Scheduled position must no longer be scheduled");
 
 		self::assertFalse($engine->getWires()->hasDeferred(), "WireNetwork must have no deferred continuations after clear()");
@@ -396,8 +412,8 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		self::assertNull($engine->getWires()->getContinuationOwner(World::blockHash(0, 64, 50)), "Continuation owner map must be empty after clear()");
 
 		self::assertSame(0, $engine->getUnloadedDelayedCount(), "Unloaded delayed count must be 0 after clear()");
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
-		self::assertSame([], $unloadedProp->getValue($engine), "Unloaded delayed collection must be empty after clear()");
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
+		self::assertSame([], $unloadedProp->getValue($engine->getScheduler()), "Unloaded delayed collection must be empty after clear()");
 
 		$lastPoweredProp = new \ReflectionProperty(RedstoneEngine::class, "lastPowered");
 		self::assertSame([], $lastPoweredProp->getValue($engine), "Last powered map must be empty after clear()");
@@ -422,8 +438,8 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 		$budget = 100;
 		$engine = new RedstoneEngine($world, $budget);
 
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
-		$countProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayedCount");
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
+		$countProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayedCount");
 
 		$buckets = [];
 		for($i = 0; $i < 5000; ++$i){
@@ -433,11 +449,11 @@ final class RedstoneScheduledUpdateBudgetTest extends TestCase{
 			$blockHash = World::blockHash($chunkX << 4, 64, $chunkZ << 4);
 			$buckets[$chunkHash] = [$blockHash => 1];
 		}
-		$unloadedProp->setValue($engine, $buckets);
-		$countProp->setValue($engine, 5000);
+		$unloadedProp->setValue($engine->getScheduler(), $buckets);
+		$countProp->setValue($engine->getScheduler(), 5000);
 
 		self::assertSame(5000, $engine->getUnloadedDelayedCount());
-		self::assertSame(5000, count($unloadedProp->getValue($engine)));
+		self::assertSame(5000, count($unloadedProp->getValue($engine->getScheduler())));
 
 		$isChunkLoadedCalls = 0;
 		$engine->tick(1);

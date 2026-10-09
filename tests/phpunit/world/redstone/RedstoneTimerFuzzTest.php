@@ -1,18 +1,22 @@
 <?php
 
 /*
- *     _             _                __  __             
- *    / \   _ __ ___ | |__   ___ _ __ |  \/  | __ _ _ __  
- *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|| |\/| |/ _` | '_ \ 
- *  / ___ \| | | | | | |_) |  __/ |   | |  | | (_| | |_) |
- * /_/   \_\_| |_| |_|_.__/ \___|_|   |_|  |_|\__,_| .__/ 
- *                                                 |_|    
- * 
- * AmberMap - High-Performance Bedrock World Map Renderer
- * https://github.com/Amber-PM/AmberMap
  *
- * Copyright (c) 2026 Amber-PM
- * Licensed under Apache-2.0 or MIT
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * @author AmberPM Team
+ * @link https://github.com/Amber-PM/Amber
+ *
+ *
  */
 
 declare(strict_types=1);
@@ -33,7 +37,6 @@ use pocketmine\math\Vector3;
 use pocketmine\world\format\io\WritableWorldProvider;
 use pocketmine\world\generator\executor\GeneratorExecutor;
 use pocketmine\world\World;
-use function count;
 use function gc_collect_cycles;
 use function gc_mem_caches;
 use function intdiv;
@@ -190,10 +193,10 @@ final class RedstoneTimerFuzzTest extends TestCase{
 			self::assertSame(1, $count, "Coordinate $coord fired multiple times");
 		}
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		self::assertSame([], $delayedProp->getValue($engine));
-		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
-		self::assertSame([], $delayedIndexProp->getValue($engine));
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine->getScheduler()));
+		$delayedIndexProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedIndex");
+		self::assertSame([], $delayedIndexProp->getValue($engine->getScheduler()));
 	}
 
 	public function testStaggeredUpdatesAcrossManyTicks() : void{
@@ -229,8 +232,8 @@ final class RedstoneTimerFuzzTest extends TestCase{
 		$engine->tick($totalTicks + 1);
 		self::assertArrayNotHasKey($totalTicks + 1, $firedPerTick);
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		self::assertSame([], $delayedProp->getValue($engine));
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine->getScheduler()));
 	}
 
 	public function testStaggeredUpdatesUnderConstrainedBudgetAccumulateAndDrain() : void{
@@ -497,9 +500,9 @@ final class RedstoneTimerFuzzTest extends TestCase{
 		$timersPerChunk = 2;
 		$totalTimers = $numChunks * $timersPerChunk;
 
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
-		$countProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayedCount");
-		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
+		$countProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayedCount");
+		$delayedIndexProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedIndex");
 
 		$buckets = [];
 		$index = [];
@@ -517,9 +520,9 @@ final class RedstoneTimerFuzzTest extends TestCase{
 			$buckets[$cHash] = $chunkEvents;
 		}
 
-		$unloadedProp->setValue($engine, $buckets);
-		$countProp->setValue($engine, $totalTimers);
-		$delayedIndexProp->setValue($engine, $index);
+		$unloadedProp->setValue($engine->getScheduler(), $buckets);
+		$countProp->setValue($engine->getScheduler(), $totalTimers);
+		$delayedIndexProp->setValue($engine->getScheduler(), $index);
 
 		for($t = 1; $t <= 5; ++$t){
 			$engine->tick($t);
@@ -602,13 +605,18 @@ final class RedstoneTimerFuzzTest extends TestCase{
 		}
 
 		$unloadedChunkKey = "50:50";
-		$this->loadedChunks[$unloadedChunkKey] = false;
 		for($i = 0; $i < 500; ++$i){
 			$pos = new Vector3((50 << 4) + ($i % 16), 64 + intdiv($i, 256), (50 << 4) + (intdiv($i, 16) % 16));
 			$world->setBlockAt($pos->x, $pos->y, $pos->z, $rec, false);
 			$engine->schedule($pos, 1);
 		}
+		$this->loadedChunks[$unloadedChunkKey] = false;
 		$engine->tick(1);
+		self::assertGreaterThan(0, $engine->getUnloadedDelayedCount());
+		self::assertGreaterThan(0, $engine->getProcessedCount());
+		for($tick = 2; $tick <= 4; ++$tick){
+			$engine->tick($tick);
+		}
 		self::assertSame(500, $engine->getUnloadedDelayedCount());
 
 		for($x = 0; $x < 50; ++$x){
@@ -632,17 +640,17 @@ final class RedstoneTimerFuzzTest extends TestCase{
 		$queuedProp = new \ReflectionProperty(RedstoneEngine::class, "queued");
 		self::assertSame([], $queuedProp->getValue($engine));
 
-		$delayedProp = new \ReflectionProperty(RedstoneEngine::class, "delayed");
-		self::assertSame([], $delayedProp->getValue($engine));
+		$delayedProp = new \ReflectionProperty(RedstoneScheduler::class, "delayed");
+		self::assertSame([], $delayedProp->getValue($engine->getScheduler()));
 
-		$delayedIndexProp = new \ReflectionProperty(RedstoneEngine::class, "delayedIndex");
-		self::assertSame([], $delayedIndexProp->getValue($engine));
+		$delayedIndexProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedIndex");
+		self::assertSame([], $delayedIndexProp->getValue($engine->getScheduler()));
 
-		$delayedStateProp = new \ReflectionProperty(RedstoneEngine::class, "delayedState");
-		self::assertSame([], $delayedStateProp->getValue($engine));
+		$delayedStateProp = new \ReflectionProperty(RedstoneScheduler::class, "delayedState");
+		self::assertSame([], $delayedStateProp->getValue($engine->getScheduler()));
 
-		$unloadedProp = new \ReflectionProperty(RedstoneEngine::class, "unloadedDelayed");
-		self::assertSame([], $unloadedProp->getValue($engine));
+		$unloadedProp = new \ReflectionProperty(RedstoneScheduler::class, "unloadedDelayed");
+		self::assertSame([], $unloadedProp->getValue($engine->getScheduler()));
 		self::assertSame(0, $engine->getUnloadedDelayedCount());
 
 		self::assertFalse($engine->getWires()->hasDeferred());
