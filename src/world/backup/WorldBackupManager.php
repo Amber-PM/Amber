@@ -33,7 +33,6 @@ use function basename;
 use function copy;
 use function count;
 use function date;
-use function file_exists;
 use function filesize;
 use function glob;
 use function in_array;
@@ -46,27 +45,17 @@ use function str_ends_with;
 use function str_starts_with;
 use function strtolower;
 use function time;
-use function touch;
 use function unlink;
 
 /**
  * Automatic world backups for LevelDB worlds: snapshots are captured via hard-links and zipped asynchronously.
  *
- * Consistency and Capture / Retry Invariant:
- * 1. World Save: $world->save(true) pauses application-level world writes and flushes active write batches.
- * 2. Ordered Capture: LevelDB immutable tables (.ldb/.sst) are hard-linked first (O(1) filesystem link per file with zero bulk data copying),
- *    mutable metadata files (MANIFEST, root level.dat) are copied next within an explicit aggregate budget
- *    (MAX_METADATA_TOTAL_BYTES = 64 MiB, MAX_METADATA_FILE_COUNT = 100, MAX_METADATA_FILE_SIZE = 16 MiB), and CURRENT is copied strictly last.
- * 3. Non-Blocking Bounds: Because bulk world storage (gigabytes) resides in immutable table files, hard-linking completes in milliseconds.
- *    Synchronous main-thread copies are strictly limited to small mutable metadata up to the explicit budget.
- * 4. Compaction Handling: If a concurrent LevelDB background compaction rotates or modifies table references
- *    during capture, hard-linked tables retain their physical data blocks. However, if CURRENT advances to a
- *    new MANIFEST referencing uncaptured tables, WorldBackupTask::checkLevelDB() validates the snapshot
- *    with paranoid checks and verify_check_sum on all blocks in an async worker thread.
- * 5. Automatic Retry: If checkLevelDB() detects an inconsistency or missing referenced table, the staging directory
- *    is discarded and another attempt is scheduled (up to MAX_ATTEMPTS = 3).
- * 6. Atomic Publishing: The archive is zipped to a temporary file (.tmp) and atomically renamed only upon
- *    complete success, ensuring corrupted or partial backups are never published or retained.
+ * Saving and capturing run on the main thread. The provider closes its database for capture, waiting for
+ * background compaction and releasing Windows file locks, then reopens it even if capture fails.
+ * Immutable tables are hard-linked; metadata and write-ahead logs are copied intact within byte/file budgets.
+ * Subsequent source writes and compaction cannot modify the captured tables or copied recovery files.
+ * Database close/reopen and filesystem operations can still delay a tick; the copy budgets are not time limits.
+ * Integrity verification and ZIP compression run asynchronously, with publication only after verification.
  */
 final class WorldBackupManager{
 	private const STAGING_DIR = ".staging";
@@ -99,9 +88,8 @@ final class WorldBackupManager{
 	 * Called once a second.
 	 *
 	 * Backs up eligible loaded worlds sequentially on the main thread:
-	 * For each world, world saving and O(1) table hardlinking occur synchronously within
-	 * the aggregate metadata copy budget. The expensive integrity verification and compression
-	 * tasks are dispatched immediately to async worker threads, keeping main thread tick lag minimal.
+	 * Each capture temporarily closes the provider, hard-links tables, and copies recovery metadata within
+	 * the aggregate copy budget. Integrity verification and compression are dispatched to async workers.
 	 * Worlds with a backup currently in progress are automatically skipped until completion.
 	 */
 	public function tick() : void{
@@ -149,7 +137,13 @@ final class WorldBackupManager{
 		$staging = Path::join($this->backupPath, self::STAGING_DIR, $name . "-" . $stamp . "-" . $attempt);
 		try{
 			$world->save(true);
-			$this->snapshot($world->getProvider()->getPath(), $staging);
+			$provider = $world->getProvider();
+			if(!($provider instanceof LevelDB)){
+				throw new \RuntimeException("Unsupported world provider: only LevelDB worlds are supported");
+			}
+			$provider->withClosedDatabase(function() use ($provider, $staging) : void{
+				$this->snapshot($provider->getPath(), $staging);
+			});
 		}catch(\Throwable $e){
 			try{
 				if(is_dir($staging)){
@@ -169,8 +163,7 @@ final class WorldBackupManager{
 		$target = Path::join($this->backupPath, $name, $name . "-" . $stamp . ".zip");
 		$this->server->getAsyncPool()->submitTask(new WorldBackupTask($staging, $target, true, function(?string $error) use ($world, $name, $target, $attempt, $onDone, $logger) : void{
 			if($error !== null && $attempt < self::MAX_ATTEMPTS && $world->isLoaded()){
-				//most likely LevelDB compacted its files while the snapshot was taken; take another
-				$logger->debug("Backup of world \"$name\" was not consistent ($error), retrying");
+				$logger->debug("Backup of world \"$name\" failed ($error), retrying");
 				$this->attempt($world, $attempt + 1, $onDone);
 				return;
 			}
@@ -192,7 +185,7 @@ final class WorldBackupManager{
 	 * LevelDB table files (.ldb / .sst) are hard-linked first (O(1) filesystem link per file with zero bulk data copying),
 	 * mutable metadata files (MANIFEST, active write-ahead logs, level.dat) are copied next within an explicit aggregate
 	 * budget (MAX_METADATA_TOTAL_BYTES = 64 MiB, MAX_METADATA_FILE_COUNT = 100, MAX_METADATA_FILE_SIZE = 16 MiB), and CURRENT is copied strictly last.
-	 * Must run on the main thread straight after $world->save(true).
+	 * Must run on the main thread after saving, inside LevelDB::withClosedDatabase().
 	 */
 	private function snapshot(string $source, string $target) : void{
 		if(!is_dir($source)){
@@ -218,10 +211,7 @@ final class WorldBackupManager{
 			$base = basename($file);
 			$size = @filesize($file);
 			if($size === false){
-				if(!is_file($file)){
-					return; // Deleted or rotated concurrently
-				}
-				$size = 0;
+				throw new \RuntimeException("Cannot determine metadata file size: " . $base);
 			}
 			if($size > self::MAX_METADATA_FILE_SIZE){
 				throw new \RuntimeException("Metadata file $base exceeds maximum individual file size limit (" . self::MAX_METADATA_FILE_SIZE . " bytes)");
@@ -233,17 +223,6 @@ final class WorldBackupManager{
 				throw new \RuntimeException("Snapshot exceeded aggregate metadata copy budget (" . self::MAX_METADATA_TOTAL_BYTES . " bytes)");
 			}
 			if(!@copy($file, $dest)){
-				if(!is_file($file)){
-					return; // Rotated or deleted concurrently
-				}
-				if(str_ends_with(strtolower($base), ".log")){
-					// On Windows, LevelDB holds exclusive access (share_mode = 0) on the active WAL log file.
-					// A placeholder empty log satisfies LevelDB recovery without blocking on Windows file sharing.
-					if(@touch($dest) || file_exists($dest)){
-						$totalFilesCopied++;
-						return;
-					}
-				}
 				throw new \RuntimeException("Cannot copy metadata file " . $base);
 			}
 			$totalBytesCopied += $size;
@@ -298,10 +277,7 @@ final class WorldBackupManager{
 		foreach($tables as $table){
 			$dest = Path::join($targetDb, basename($table));
 			if(!@link($table, $dest)){
-				if(!is_file($table)){
-					continue; // Deleted by compaction meanwhile: checkLevelDB will verify
-				}
-				throw new \RuntimeException("Cannot hardlink table file " . basename($table) . ": world and backup directories must reside on the same filesystem to ensure non-blocking snapshots");
+				throw new \RuntimeException("Cannot hardlink table file " . basename($table) . ": world and backup directories must support hardlinks on the same filesystem");
 			}
 		}
 

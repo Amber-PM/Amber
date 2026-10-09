@@ -51,6 +51,105 @@ final class DummyBackupLogger extends \pocketmine\thread\log\AttachableThreadSaf
 final class WorldBackupTest extends TestCase{
 	private string $tempDir;
 
+	private function provider(string $path) : \pocketmine\world\format\io\leveldb\LevelDB{
+		$provider = (new \ReflectionClass(\pocketmine\world\format\io\leveldb\LevelDB::class))->newInstanceWithoutConstructor();
+		(new \ReflectionProperty($provider, "path"))->setValue($provider, $path);
+		(new \ReflectionProperty($provider, "db"))->setValue($provider, new \LevelDB(Path::join($path, "db"), ["create_if_missing" => true, "compression" => LEVELDB_ZLIB_RAW_COMPRESSION]));
+		return $provider;
+	}
+
+	public function testSnapshotPreservesWritesStillInWalAndReopensProvider() : void{
+		$source = Path::join($this->tempDir, "wal_world");
+		mkdir($source);
+		file_put_contents(Path::join($source, "level.dat"), "world metadata");
+		$provider = $this->provider($source);
+		$dbProperty = new \ReflectionProperty($provider, "db");
+		$dbProperty->getValue($provider)->put("saved_key", "saved_value");
+		self::assertSame([], glob(Path::join($source, "db", "*.ldb")));
+		$staging = Path::join($this->tempDir, "wal_staging");
+		$manager = (new \ReflectionClass(WorldBackupManager::class))->newInstanceWithoutConstructor();
+		try{
+			$provider->withClosedDatabase(function() use ($manager, $source, $staging) : void{
+				(new \ReflectionMethod(WorldBackupManager::class, "snapshot"))->invoke($manager, $source, $staging);
+			});
+			self::assertSame("saved_value", $dbProperty->getValue($provider)->get("saved_key"));
+			$dbProperty->getValue($provider)->put("later_key", "later_value");
+			$dbProperty->getValue($provider)->compactRange("", "\xff\xff\xff\xff");
+			$target = Path::join($this->tempDir, "wal.zip");
+			$task = new WorldBackupTask($staging, $target, true, static function(?string $error) : void{});
+			$task->onRun();
+			self::assertNull($task->getResult());
+			$zip = new \ZipArchive();
+			self::assertTrue($zip->open($target));
+			$restore = Path::join($this->tempDir, "wal_restore");
+			self::assertTrue($zip->extractTo($restore));
+			$zip->close();
+			$restored = new \LevelDB(Path::join($restore, "db"), ["create_if_missing" => false, "compression" => LEVELDB_ZLIB_RAW_COMPRESSION], ["verify_check_sum" => true]);
+			self::assertSame("saved_value", $restored->get("saved_key"));
+			self::assertFalse($restored->get("later_key"));
+			unset($restored);
+		}finally{
+			$provider->close();
+		}
+	}
+
+	public function testProviderReopensAfterCaptureThrows() : void{
+		$source = Path::join($this->tempDir, "failed_capture");
+		mkdir($source);
+		$provider = $this->provider($source);
+		$dbProperty = new \ReflectionProperty($provider, "db");
+		$dbProperty->getValue($provider)->put("saved", "value");
+		try{
+			try{
+				$provider->withClosedDatabase(static function() : void{ throw new \RuntimeException("capture failed"); });
+				self::fail("Capture exception should propagate");
+			}catch(\RuntimeException $e){
+				self::assertSame("capture failed", $e->getMessage());
+			}
+			self::assertSame("value", $dbProperty->getValue($provider)->get("saved"));
+			$dbProperty->getValue($provider)->put("next", "write");
+			self::assertSame("write", $dbProperty->getValue($provider)->get("next"));
+		}finally{
+			$provider->close();
+		}
+	}
+
+	public function testActiveReaderPreventsCaptureWithoutClosingItsDatabase() : void{
+		$source = Path::join($this->tempDir, "active_reader");
+		mkdir($source);
+		$provider = $this->provider($source);
+		$database = (new \ReflectionProperty($provider, "db"))->getValue($provider);
+		$database->put("saved", "value");
+		$iterator = $database->getIterator();
+		unset($database);
+		try{
+			try{
+				$provider->withClosedDatabase(static function() : void{ self::fail("Capture must not run with outstanding readers"); });
+				self::fail("Expected active reader rejection");
+			}catch(\RuntimeException){
+				$iterator->rewind();
+				self::assertTrue($iterator->valid());
+				self::assertSame("value", $iterator->current());
+			}
+		}finally{
+			unset($iterator);
+			$provider->close();
+		}
+	}
+
+	public function testSnapshotRejectsFailedWalCopy() : void{
+		$source = Path::join($this->tempDir, "failed_wal_source");
+		$target = Path::join($this->tempDir, "failed_wal_target");
+		mkdir(Path::join($source, "db"), 0777, true);
+		file_put_contents(Path::join($source, "db", "000001.log"), "saved writes");
+		file_put_contents(Path::join($source, "db", "CURRENT"), "MANIFEST-000002\n");
+		mkdir(Path::join($target, "db", "000001.log"), 0777, true);
+		$manager = (new \ReflectionClass(WorldBackupManager::class))->newInstanceWithoutConstructor();
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage("Cannot copy metadata file 000001.log");
+		(new \ReflectionMethod(WorldBackupManager::class, "snapshot"))->invoke($manager, $source, $target);
+	}
+
 	protected function setUp() : void{
 		$this->tempDir = Path::join(sys_get_temp_dir(), "amber_backup_test_" . uniqid());
 		@mkdir($this->tempDir, 0777, true);
@@ -294,12 +393,19 @@ final class WorldBackupTest extends TestCase{
 		$task = new WorldBackupTask($staging, $target, false, function(?string $error) : void{});
 
 		$fp = @fopen($lockedFile, "r");
+		set_error_handler(static function(int $severity, string $message, string $file, int $line) : bool{
+			if((error_reporting() & $severity) === 0){
+				return false;
+			}
+			throw new \ErrorException($message, 0, $severity, $file, $line);
+		});
 		try{
 			// onRun must catch any cleanup error and safely record result without throwing an uncaught exception
 			$task->onRun();
 			$result = $task->getResult();
 			self::assertTrue($result === null || str_contains((string) $result, "Cleanup failed"));
 		}finally{
+			restore_error_handler();
 			if(is_resource($fp)){
 				fclose($fp);
 			}
@@ -429,7 +535,7 @@ final class WorldBackupTest extends TestCase{
 		self::assertFileDoesNotExist($target . ".tmp");
 	}
 
-	public function testLevelDBSnapshotRecoversConsistentStateAcrossConcurrentCompaction() : void{
+	public function testClosedProviderSnapshotSurvivesSubsequentSourceCompaction() : void{
 		if(!class_exists(\LevelDB::class)){
 			self::markTestSkipped("ext-leveldb is required for this test");
 		}
@@ -456,6 +562,8 @@ final class WorldBackupTest extends TestCase{
 			}
 			$db->write($batch);
 			$db->compactRange("", "\xff\xff\xff\xff"); // flush initial records to SSTable files
+			unset($db);
+			$provider = $this->provider($source);
 
 			// 2. Take consistent snapshot via WorldBackupManager::snapshot()
 			$staging = Path::join($this->tempDir, "staging_snapshot");
@@ -465,7 +573,10 @@ final class WorldBackupTest extends TestCase{
 			$manager = new WorldBackupManager($server, Path::join($this->tempDir, "backups"), false, 3600, 3, []);
 
 			$snapshotMethod = new \ReflectionMethod(WorldBackupManager::class, "snapshot");
-			$snapshotMethod->invoke($manager, $source, $staging);
+			$provider->withClosedDatabase(static function() use ($snapshotMethod, $manager, $source, $staging) : void{
+				$snapshotMethod->invoke($manager, $source, $staging);
+			});
+			$db = (new \ReflectionProperty($provider, "db"))->getValue($provider);
 
 			// 3. Simulate active concurrent operations and compaction on the source database:
 			// Delete old keys, write new keys, and compact the source database while the snapshot exists
@@ -478,6 +589,9 @@ final class WorldBackupTest extends TestCase{
 			$db->compactRange("", "\xff\xff\xff\xff"); // force compaction of source database
 		}finally{
 			unset($db); // ensure source database is always closed
+			if(isset($provider)){
+				$provider->close();
+			}
 		}
 
 		// 4. Verify snapshot with WorldBackupTask on the staging snapshot
@@ -513,7 +627,7 @@ final class WorldBackupTest extends TestCase{
 		}
 	}
 
-	public function testCompactionInconsistencyDuringCaptureDetectedByVerificationAndAbortsArchive() : void{
+	public function testMissingCapturedTableAbortsArchivePublication() : void{
 		if(!class_exists(\LevelDB::class)){
 			self::markTestSkipped("ext-leveldb is required for this test");
 		}
@@ -571,4 +685,3 @@ final class WorldBackupTest extends TestCase{
 		self::assertFileDoesNotExist($targetZip);
 	}
 }
-
