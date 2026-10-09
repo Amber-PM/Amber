@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -856,7 +856,10 @@ final class BlockTypeIds{
 	public const FLOWERING_AZALEA = 10826;
 	public const END_PORTAL = 10827;
 
-	public const FIRST_UNUSED_BLOCK_ID = 10828;
+	public const DISPENSER = 10828;
+	public const DROPPER = 10829;
+
+	public const FIRST_UNUSED_BLOCK_ID = 10830;
 
 	private static int $nextDynamicId = self::FIRST_UNUSED_BLOCK_ID;
 

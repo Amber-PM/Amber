@@ -298,10 +298,12 @@ final class VanillaBlocks{
 	private static Stair $_mDIORITE_STAIRS;
 	private static Wall $_mDIORITE_WALL;
 	private static Dirt $_mDIRT;
+	private static Dispenser $_mDISPENSER;
 	private static DoublePitcherCrop $_mDOUBLE_PITCHER_CROP;
 	private static DoubleTallGrass $_mDOUBLE_TALLGRASS;
 	private static DragonEgg $_mDRAGON_EGG;
 	private static DriedKelp $_mDRIED_KELP;
+	private static Dropper $_mDROPPER;
 	private static DyedCandle $_mDYED_CANDLE;
 	private static DyedShulkerBox $_mDYED_SHULKER_BOX;
 	private static Element $_mELEMENT_ACTINIUM;
@@ -1132,10 +1134,12 @@ final class VanillaBlocks{
 			"diorite_stairs" => fn(Stair $v) => self::$_mDIORITE_STAIRS = $v,
 			"diorite_wall" => fn(Wall $v) => self::$_mDIORITE_WALL = $v,
 			"dirt" => fn(Dirt $v) => self::$_mDIRT = $v,
+			"dispenser" => fn(Dispenser $v) => self::$_mDISPENSER = $v,
 			"double_pitcher_crop" => fn(DoublePitcherCrop $v) => self::$_mDOUBLE_PITCHER_CROP = $v,
 			"double_tallgrass" => fn(DoubleTallGrass $v) => self::$_mDOUBLE_TALLGRASS = $v,
 			"dragon_egg" => fn(DragonEgg $v) => self::$_mDRAGON_EGG = $v,
 			"dried_kelp" => fn(DriedKelp $v) => self::$_mDRIED_KELP = $v,
+			"dropper" => fn(Dropper $v) => self::$_mDROPPER = $v,
 			"dyed_candle" => fn(DyedCandle $v) => self::$_mDYED_CANDLE = $v,
 			"dyed_shulker_box" => fn(DyedShulkerBox $v) => self::$_mDYED_SHULKER_BOX = $v,
 			"element_actinium" => fn(Element $v) => self::$_mELEMENT_ACTINIUM = $v,
@@ -3010,6 +3014,11 @@ final class VanillaBlocks{
 		return clone self::$_mDIRT;
 	}
 
+	public static function DISPENSER() : Dispenser{
+		if(!isset(self::$_mDISPENSER)){ self::init(); }
+		return clone self::$_mDISPENSER;
+	}
+
 	public static function DOUBLE_PITCHER_CROP() : DoublePitcherCrop{
 		if(!isset(self::$_mDOUBLE_PITCHER_CROP)){ self::init(); }
 		return clone self::$_mDOUBLE_PITCHER_CROP;
@@ -3028,6 +3037,11 @@ final class VanillaBlocks{
 	public static function DRIED_KELP() : DriedKelp{
 		if(!isset(self::$_mDRIED_KELP)){ self::init(); }
 		return clone self::$_mDRIED_KELP;
+	}
+
+	public static function DROPPER() : Dropper{
+		if(!isset(self::$_mDROPPER)){ self::init(); }
+		return clone self::$_mDROPPER;
 	}
 
 	public static function DYED_CANDLE() : DyedCandle{

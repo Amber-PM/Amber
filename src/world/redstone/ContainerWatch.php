@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -19,7 +19,6 @@
  *
  */
 
-
 declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
@@ -29,7 +28,9 @@ use pocketmine\block\tile\Container;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
 use function array_key_first;
+use function count;
 use function floor;
+use function max;
 use function min;
 
 /**
@@ -113,9 +114,9 @@ final class ContainerWatch{
 		$fullness = 0.0;
 		$any = false;
 		foreach($inventory->getContents() as $item){
-			$fullness += $item->getCount() / min($inventory->getMaxStackSize(), $item->getMaxStackSize());
+			$fullness += min(1, max(0, $item->getCount()) / max(1, min($inventory->getMaxStackSize(), $item->getMaxStackSize())));
 			$any = true;
 		}
-		return $any ? (int) floor(1 + ($fullness / $size) * 14) : 0;
+		return $any ? min(15, (int) floor(1 + ($fullness / $size) * 14)) : 0;
 	}
 }

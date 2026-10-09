@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -30,6 +30,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\redstone\RedstoneEngine;
+use pocketmine\world\sound\MobHeadSound;
 use pocketmine\world\sound\NoteInstrument;
 use pocketmine\world\sound\NoteSound;
 use function assert;
@@ -88,12 +89,17 @@ class Note extends Opaque implements RedstoneReceiver{
 		return false;
 	}
 
-	/**
-	 * Plays the note, with the instrument picked by the block underneath. A note block only sounds with air above it.
-	 */
 	public function play() : void{
 		$world = $this->position->getWorld();
-		if($this->getSide(Facing::UP)->getTypeId() !== BlockTypeIds::AIR){
+		$above = $this->getSide(Facing::UP);
+		if($above instanceof MobHead){
+			$sound = MobHeadSound::forHead($above->getMobHeadType());
+			if($sound !== null){
+				$world->addSound($this->position->add(0.5, 0.5, 0.5), $sound);
+			}
+			return;
+		}
+		if($above->getTypeId() !== BlockTypeIds::AIR){
 			return;
 		}
 		$world->addSound($this->position->add(0.5, 0.5, 0.5), new NoteSound(self::instrumentFor($this->getSide(Facing::DOWN)), $this->pitch));

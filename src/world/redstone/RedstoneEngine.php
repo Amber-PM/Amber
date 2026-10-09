@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -19,7 +19,6 @@
  *
  */
 
-
 declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
@@ -27,13 +26,14 @@ namespace pocketmine\world\redstone;
 use pocketmine\block\Block;
 use pocketmine\block\Redstone;
 use pocketmine\block\RedstoneTorch;
-use pocketmine\block\utils\DelayedRedstoneReceiver;
 use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\RedstoneSource;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
-use function array_key_first;
+use function count;
+use function intdiv;
 use function max;
 use function min;
 
@@ -53,27 +53,18 @@ final class RedstoneEngine{
 	private \SplQueue $queue;
 	/** @var array<int, true> */
 	private array $queued = [];
-	/** @var array<int, list<int>> tick => block hashes whose delayed change is due */
-	private array $delayed = [];
-	/** @var array<int, int> due tick => offset index of next element to process */
-	private array $delayedCursor = [];
-	/** @var \SplMinHeap<int> */
-	private \SplMinHeap $delayedTicksHeap;
-	/** @var array<int, int> block hash => tick its delayed change is due */
-	private array $delayedIndex = [];
-	/** @var array<int, int> block hash => state ID of block when scheduled */
-	private array $delayedState = [];
-	/** @var array<int, array<int, int>> chunkHash => [blockHash => dueTick] */
-	private array $unloadedDelayed = [];
-	private int $unloadedDelayedCount = 0;
 	/** @var array<int, true> positions last seen powered by blocks that react to changes of power (doors, TNT...) */
 	private array $lastPowered = [];
 	private bool $active = false;
 	private int $processed = 0;
 	private int $currentTick = 0;
-	private int $currentBudget = 0;
+	private RedstoneBudget $budget;
+	private RedstoneScheduler $scheduler;
+	private RedstonePower $power;
 	private bool $isTicking = false;
 	private bool $feedbackTurn = false;
+	private int $workCursor = 0;
+	private array $entityScans = [];
 
 	private WireNetwork $wires;
 	private TorchBurnout $torchBurnout;
@@ -84,11 +75,15 @@ final class RedstoneEngine{
 		private int $maxUpdatesPerTick
 	){
 		$this->queue = new \SplQueue();
-		$this->delayedTicksHeap = new \SplMinHeap();
+		$this->budget = new RedstoneBudget();
+		$this->scheduler = new RedstoneScheduler($world, $maxUpdatesPerTick);
+		$this->power = new RedstonePower($this, $world);
 		$this->wires = new WireNetwork($this, $world);
 		$this->torchBurnout = new TorchBurnout();
 		$this->containerWatch = new ContainerWatch($world);
 	}
+
+	public function getScheduler() : RedstoneScheduler{ return $this->scheduler; }
 
 	public function getWorld() : World{ return $this->world; }
 
@@ -98,29 +93,22 @@ final class RedstoneEngine{
 
 	public function getMaxUpdatesPerTick() : int{ return $this->maxUpdatesPerTick; }
 
-	public function getRemainingBudget() : int{ return $this->currentBudget; }
+	public function getRemainingBudget() : int{ return $this->budget->remaining(); }
 
-	public function consumeBudget(int $amount) : int{
-		$consumed = min($this->currentBudget, $amount);
-		$this->currentBudget -= $consumed;
-		return $consumed;
-	}
+	public function consumeBudget(int $amount) : int{ return $this->budget->consume($amount); }
 
 	public function getUnloadedDelayedCount() : int{
-		return $this->unloadedDelayedCount;
+		return $this->scheduler->getUnloadedDelayedCount();
 	}
 
 	public function clear() : void{
 		$this->active = false;
+		$this->workCursor = 0;
+		$this->feedbackTurn = false;
+		$this->entityScans = [];
 		$this->queue = new \SplQueue();
 		$this->queued = [];
-		$this->delayed = [];
-		$this->delayedCursor = [];
-		$this->delayedTicksHeap = new \SplMinHeap();
-		$this->delayedIndex = [];
-		$this->delayedState = [];
-		$this->unloadedDelayed = [];
-		$this->unloadedDelayedCount = 0;
+		$this->scheduler->clear();
 		$this->lastPowered = [];
 		$this->wires->clear();
 		$this->torchBurnout->clear();
@@ -142,13 +130,66 @@ final class RedstoneEngine{
 
 	/** A block redstone power can pass through (a full, non-transparent block). */
 	public static function isConductor(Block $block) : bool{
-		return $block->isSolid() && !$block->isTransparent() && $block->isFullCube() && !$block instanceof Redstone;
+		return RedstonePower::isConductor($block);
 	}
 
 	/**
 	 * Called for every block that gets a neighbour update. Components are queued; a conductor queues the components
 	 * around it, since power passes through it.
 	 */
+	private ?int $updatingReceiver = null;
+
+	public function onBlockChanged(Block $block) : void{
+		$pos = $block->getPosition();
+		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		$this->cancelEntityScan($pos);
+		if($this->updatingReceiver !== $hash){
+			$this->scheduler->cancelSchedule($pos);
+		}
+		$this->torchBurnout->onBlockChanged($block);
+	}
+
+	public function cancelEntityScan(Vector3 $pos) : void{
+		$chunk = World::chunkHash($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4);
+		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		unset($this->entityScans[$chunk][$hash]);
+		if(($this->entityScans[$chunk] ?? []) === []){
+			unset($this->entityScans[$chunk]);
+		}
+	}
+
+	public function onChunkUnloaded(int $x, int $z) : void{
+		unset($this->entityScans[World::chunkHash($x, $z)]);
+	}
+
+	public function collectEntities(Block $block, AxisAlignedBB $area, int $maxMatches, \Closure $filter) : ?array{
+		$pos = $block->getPosition();
+		$chunk = World::chunkHash($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4);
+		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		$scan = $this->entityScans[$chunk][$hash] ?? null;
+		if($scan === null || $scan->getStateId() !== $block->getStateId()){
+			$scan = $this->entityScans[$chunk][$hash] = new EntityScan($this->world, $area, $block->getStateId());
+		}
+		$result = $scan->poll(min(64, max(1, $this->budget->remaining() + 1)), max(1, $maxMatches), $filter);
+		$this->budget->consume(max(0, $scan->getWork() - 1));
+		if($result !== null){
+			$this->cancelEntityScan($pos);
+		}
+		return $result;
+	}
+
+	public function updateReceiverState(Block $block) : void{
+		$pos = $block->getPosition();
+		$previous = $this->updatingReceiver;
+		$this->updatingReceiver = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		$this->scheduler->updateExpectedState($pos, $block->getStateId());
+		try{
+			$this->world->setBlock($pos, $block);
+		}finally{
+			$this->updatingReceiver = $previous;
+		}
+	}
+
 	public function onNeighbourUpdate(Block $block) : void{
 		$pos = $block->getPosition();
 		$this->torchBurnout->invalidateFeedbackAt($block);
@@ -159,7 +200,7 @@ final class RedstoneEngine{
 			if($block instanceof RedstoneTorch){
 				$this->torchBurnout->forgetIfReplaced($pos, $block->getStateId());
 			}
-			if(isset($this->delayedState[$hash]) && $this->delayedState[$hash] !== $block->getStateId()){
+			if($this->scheduler->hasDifferentState($hash, $block->getStateId())){
 				$this->cancelSchedule($pos);
 				$this->torchBurnout->forget($hash);
 			}
@@ -201,7 +242,7 @@ final class RedstoneEngine{
 		$y = $pos->getFloorY();
 		$z = $pos->getFloorZ();
 		foreach(Facing::OFFSET as [$dx, $dy, $dz]){
-			if(!$this->world->isInWorld($x + $dx, $y + $dy, $z + $dz)){
+			if(!$this->world->isInWorld($x + $dx, $y + $dy, $z + $dz) || !$this->world->isChunkLoaded(($x + $dx) >> 4, ($z + $dz) >> 4)){
 				continue;
 			}
 			$block = $this->world->getBlockAt($x + $dx, $y + $dy, $z + $dz);
@@ -215,7 +256,7 @@ final class RedstoneEngine{
 
 	private function requestComponentsAround(int $x, int $y, int $z) : void{
 		foreach(Facing::OFFSET as [$dx, $dy, $dz]){
-			if($this->world->isInWorld($x + $dx, $y + $dy, $z + $dz) && self::isComponent($this->world->getBlockAt($x + $dx, $y + $dy, $z + $dz))){
+			if($this->world->isInWorld($x + $dx, $y + $dy, $z + $dz) && $this->world->isChunkLoaded(($x + $dx) >> 4, ($z + $dz) >> 4) && self::isComponent($this->world->getBlockAt($x + $dx, $y + $dy, $z + $dz))){
 				$this->request($x + $dx, $y + $dy, $z + $dz);
 			}
 		}
@@ -226,46 +267,16 @@ final class RedstoneEngine{
 	 * has a change pending keeps that one; it is re-evaluated when it happens.
 	 */
 	public function schedule(Vector3 $pos, int $delay, ?int $expectedStateId = null) : void{
-		$x = $pos->getFloorX();
-		$y = $pos->getFloorY();
-		$z = $pos->getFloorZ();
-		if(!$this->world->isInWorld($x, $y, $z)){
-			return;
-		}
-		$hash = World::blockHash($x, $y, $z);
-		$stateId = $expectedStateId ?? $this->world->getBlockAt($x, $y, $z)->getStateId();
-		if(isset($this->delayedIndex[$hash])){
-			if(($this->delayedState[$hash] ?? null) === $stateId){
-				return;
-			}
-		}
 		$this->active = true;
-		$due = $this->currentTick + max(1, $delay);
-		$this->delayedIndex[$hash] = $due;
-		$this->delayedState[$hash] = $stateId;
-		if(!isset($this->delayed[$due])){
-			$this->delayed[$due] = [];
-			$this->delayedTicksHeap->insert($due);
-		}
-		$this->delayed[$due][] = $hash;
+		$this->scheduler->schedule($pos, $delay, $this->currentTick, $expectedStateId);
 	}
 
 	public function cancelSchedule(Vector3 $pos) : void{
-		$hash = World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
-		unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
-
-		$chunkHash = World::chunkHash($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4);
-		if(isset($this->unloadedDelayed[$chunkHash][$hash])){
-			unset($this->unloadedDelayed[$chunkHash][$hash]);
-			--$this->unloadedDelayedCount;
-			if($this->unloadedDelayed[$chunkHash] === []){
-				unset($this->unloadedDelayed[$chunkHash]);
-			}
-		}
+		$this->scheduler->cancelSchedule($pos);
 	}
 
 	public function isScheduled(Vector3 $pos) : bool{
-		return isset($this->delayedIndex[World::blockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ())]);
+		return $this->scheduler->isScheduled($pos);
 	}
 
 	/**
@@ -285,11 +296,11 @@ final class RedstoneEngine{
 
 	public function tick(int $currentTick) : void{
 		$this->currentTick = $currentTick;
-		$this->currentBudget = $this->maxUpdatesPerTick;
+		$this->budget->reset($this->maxUpdatesPerTick);
 		$this->isTicking = true;
 		try{
-			$otherWork = $this->delayed !== [] || $this->unloadedDelayed !== [] || $this->wires->hasDeferred() || !$this->queue->isEmpty();
-			$feedbackBudget = $this->currentBudget;
+			$otherWork = $this->scheduler->hasPending() || $this->wires->hasDeferred() || !$this->queue->isEmpty();
+			$feedbackBudget = $this->budget->remaining();
 			if($otherWork){
 				if($feedbackBudget === 1){
 					$this->feedbackTurn = !$this->feedbackTurn;
@@ -298,200 +309,98 @@ final class RedstoneEngine{
 					$feedbackBudget = max(1, (int) ($feedbackBudget / 4));
 				}
 			}
-			$this->currentBudget -= $this->torchBurnout->processFeedback($this, $feedbackBudget);
-			if($this->unloadedDelayed !== [] && $this->currentBudget > 0){
-				$chunkCheckLimit = min(count($this->unloadedDelayed), max(32, $this->currentBudget));
-				$checked = 0;
-				while($this->unloadedDelayed !== [] && $this->currentBudget > 0 && $checked < $chunkCheckLimit){
-					++$checked;
-					$chunkHash = array_key_first($this->unloadedDelayed);
-
-					$chunkX = null;
-					$chunkZ = null;
-					World::getXZ($chunkHash, $chunkX, $chunkZ);
-					if($chunkX === null || $chunkZ === null || !$this->world->isChunkLoaded($chunkX, $chunkZ)){
-						$events = $this->unloadedDelayed[$chunkHash];
-						unset($this->unloadedDelayed[$chunkHash]);
-						$this->unloadedDelayed[$chunkHash] = $events;
-						unset($events);
-						continue;
-					}
-
-					$staleChecks = 0;
-					$staleLimit = min(count($this->unloadedDelayed[$chunkHash]), max(32, $this->currentBudget));
-					while(isset($this->unloadedDelayed[$chunkHash]) && $this->unloadedDelayed[$chunkHash] !== [] && $this->currentBudget > 0){
-						$hash = array_key_first($this->unloadedDelayed[$chunkHash]);
-						$dueTick = $this->unloadedDelayed[$chunkHash][$hash];
-						unset($this->unloadedDelayed[$chunkHash][$hash]);
-						--$this->unloadedDelayedCount;
-
-						if(($this->delayedIndex[$hash] ?? null) !== $dueTick){
-							if(++$staleChecks >= $staleLimit){
-								break;
-							}
-							continue;
-						}
-
-						$expectedState = $this->delayedState[$hash] ?? null;
-						unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
-
-						--$this->currentBudget;
-						World::getBlockXYZ($hash, $x, $y, $z);
-						$block = $this->world->getBlockAt($x, $y, $z);
-						if($block instanceof DelayedRedstoneReceiver && ($expectedState === null || $block->getStateId() === $expectedState)){
-							$block->onRedstoneScheduledUpdate($this);
-						}
-					}
-
-					if(!isset($this->unloadedDelayed[$chunkHash])){
-						continue; // a callback may cancel the last remaining parked entry
-					}
-					if($this->unloadedDelayed[$chunkHash] === []){
-						unset($this->unloadedDelayed[$chunkHash]);
-					}else{
-						$remaining = $this->unloadedDelayed[$chunkHash];
-						unset($this->unloadedDelayed[$chunkHash]);
-						$this->unloadedDelayed[$chunkHash] = $remaining;
-						unset($remaining);
-					}
-				}
-			}
-
-			if(!$this->delayedTicksHeap->isEmpty()){
-				$staleChecks = 0;
-				$staleLimit = $this->maxUpdatesPerTick * 4;
-				while(!$this->delayedTicksHeap->isEmpty() && $this->currentBudget > 0){
-					$tick = $this->delayedTicksHeap->top();
-					if($tick > $currentTick){
-						break;
-					}
-					if(!isset($this->delayed[$tick])){
-						$this->delayedTicksHeap->extract();
-						continue;
-					}
-					$hashes = $this->delayed[$tick];
-					$count = count($hashes);
-					$idx = $this->delayedCursor[$tick] ?? 0;
-					while($idx < $count && $this->currentBudget > 0){
-						$hash = $hashes[$idx++];
-						if(($this->delayedIndex[$hash] ?? null) !== $tick){
-							if(++$staleChecks >= $staleLimit){
-								break;
-							}
-							continue;
-						}
-						--$this->currentBudget; // parking valid due work is metered as well
-						$expectedState = $this->delayedState[$hash] ?? null;
-						World::getBlockXYZ($hash, $x, $y, $z);
-						$chunkX = $x >> 4;
-						$chunkZ = $z >> 4;
-						if(!$this->world->isChunkLoaded($chunkX, $chunkZ)){
-							$chunkHash = World::chunkHash($chunkX, $chunkZ);
-							if(!isset($this->unloadedDelayed[$chunkHash][$hash])){
-								$this->unloadedDelayed[$chunkHash][$hash] = $tick;
-								++$this->unloadedDelayedCount;
-							}
-							continue;
-						}
-						unset($this->delayedIndex[$hash], $this->delayedState[$hash]);
-						$block = $this->world->getBlockAt($x, $y, $z);
-						if($block instanceof DelayedRedstoneReceiver && ($expectedState === null || $block->getStateId() === $expectedState)){
-							$block->onRedstoneScheduledUpdate($this);
-						}
-					}
-					if($idx >= $count){
-						$this->delayedTicksHeap->extract();
-						unset($this->delayed[$tick], $this->delayedCursor[$tick]);
-					}else{
-						$this->delayedCursor[$tick] = $idx;
-						break;
-					}
-				}
-			}
-
-			if($this->currentBudget > 0 && $currentTick % self::REDSTONE_TICK === 0 && $this->containerWatch->getWatchedCount() > 0){
-				$limit = min($this->currentBudget, max(1, (int) ($this->currentBudget / 4)));
-				$consumed = $this->containerWatch->check($this, $limit);
-				$this->currentBudget -= $consumed;
-			}
-
+			$this->budget->consume($this->torchBurnout->processFeedback($this, $feedbackBudget));
 			$this->wires->startTick();
-			if($this->wires->hasDeferred() && $this->currentBudget > 0){
-				$deferredBudget = $this->queue->isEmpty()
-					? $this->currentBudget
-					: min($this->currentBudget, max(1, (int) ($this->currentBudget / 2)));
-				$consumed = $this->wires->processDeferred($deferredBudget);
-				$this->currentBudget -= $consumed;
+			$pending = [
+				$this->scheduler->hasPending(),
+				$currentTick % self::REDSTONE_TICK === 0 && $this->containerWatch->getWatchedCount() > 0,
+				$this->wires->hasDeferred(),
+				!$this->queue->isEmpty()
+			];
+			$stages = 0;
+			foreach($pending as $hasWork){
+				$stages += (int) $hasWork;
 			}
-
-			$unloadedSkips = 0;
-			$unloadedSkipLimit = max(1, $this->currentBudget);
-			while($this->currentBudget > 0 && !$this->queue->isEmpty()){
-				$hash = $this->queue->dequeue();
-				unset($this->queued[$hash]);
-				World::getBlockXYZ($hash, $x, $y, $z);
-				if(!$this->world->isChunkLoaded($x >> 4, $z >> 4)){
-					if(++$unloadedSkips >= $unloadedSkipLimit){
-						break;
-					}
+			$start = $this->budget->remaining() < $stages ? $this->workCursor : 0;
+			for($i = 0; $i < count($pending) && $this->budget->remaining() > 0; ++$i){
+				$phase = ($start + $i) % count($pending);
+				if($phase === 3 && !$pending[$phase] && !$this->queue->isEmpty()){
+					$pending[$phase] = true;
+					++$stages;
+				}
+				if(!$pending[$phase]){
 					continue;
 				}
-				++$this->processed;
-				--$this->currentBudget;
-				$block = $this->world->getBlockAt($x, $y, $z);
-				if($block instanceof RedstoneReceiver){
-					$block->onRedstoneUpdate($this);
+				$limit = max(1, intdiv($this->budget->remaining(), max(1, $stages--)));
+				$reserved = $this->budget->remaining() - $limit;
+				$this->budget->reset($limit);
+				try{
+					switch($phase){
+						case 0:
+							$this->scheduler->tick($this, $this->budget, $currentTick);
+							break;
+						case 1:
+							$this->budget->consume($this->containerWatch->check($this, $limit));
+							break;
+						case 2:
+							$this->budget->consume($this->wires->processDeferred($limit));
+							break;
+						case 3:
+							$this->processQueuedUpdates();
+							break;
+					}
+				}finally{
+					if($this->budget->remaining() < $limit){
+						$this->workCursor = ($phase + 1) % count($pending);
+					}
+					$this->budget->reset($reserved + $this->budget->remaining());
 				}
 			}
 		}finally{
 			$this->isTicking = false;
-			$this->currentBudget = 0;
+			$this->budget->reset(0);
+		}
+	}
+
+	private function processQueuedUpdates() : void{
+		$unloadedSkips = 0;
+		$unloadedSkipLimit = max(1, $this->budget->remaining());
+		while($this->budget->remaining() > 0 && !$this->queue->isEmpty()){
+			$hash = $this->queue->dequeue();
+			unset($this->queued[$hash]);
+			World::getBlockXYZ($hash, $x, $y, $z);
+			if(!$this->world->isChunkLoaded($x >> 4, $z >> 4)){
+				if(++$unloadedSkips >= $unloadedSkipLimit){
+					break;
+				}
+				continue;
+			}
+			++$this->processed;
+			$this->budget->consume(1);
+			$block = $this->world->getBlockAt($x, $y, $z);
+			if($block instanceof RedstoneReceiver){
+				$block->onRedstoneUpdate($this);
+			}
 		}
 	}
 
 	/** Power the block sends through its face $face (see RedstoneSource::getRedstoneOutput()). */
 	public function getOutput(Block $block, int $face, bool $strongOnly) : int{
-		return $block instanceof RedstoneSource ? $block->getRedstoneOutput($face, $strongOnly, $this) : 0;
+		return $this->power->getOutput($block, $face, $strongOnly);
 	}
 
 	/** Power the block at the position gets from the blocks around it: all of it, or only strong power. */
 	public function getPowerIntoBlock(Vector3 $pos, bool $strongOnly) : int{
-		$x = $pos->getFloorX();
-		$y = $pos->getFloorY();
-		$z = $pos->getFloorZ();
-		$power = 0;
-		foreach(Facing::ALL as $face){
-			[$dx, $dy, $dz] = Facing::OFFSET[$face];
-			$power = max($power, $this->getOutput($this->world->getBlockAt($x + $dx, $y + $dy, $z + $dz), Facing::opposite($face), $strongOnly));
-			if($power >= 15){
-				break;
-			}
-		}
-		return $power;
+		return $this->power->getPowerIntoBlock($pos, $strongOnly);
 	}
 
 	/** Power a component at the position receives: from sources and wire beside it, and through powered blocks. */
 	public function getReceivedPower(Vector3 $pos) : int{
-		$power = 0;
-		foreach(Facing::ALL as $face){
-			$power = max($power, $this->getPowerFrom($pos->getSide($face), Facing::opposite($face)));
-			if($power >= 15){
-				break;
-			}
-		}
-		return $power;
+		return $this->power->getReceivedPower($pos);
 	}
 
 	/** Power a component gets from the block at $from, whose face $face points at the component. */
 	public function getPowerFrom(Vector3 $from, int $face) : int{
-		if(!$this->world->isInWorld($from->getFloorX(), $from->getFloorY(), $from->getFloorZ())){
-			return 0;
-		}
-		$block = $this->world->getBlockAt($from->getFloorX(), $from->getFloorY(), $from->getFloorZ());
-		$power = $this->getOutput($block, $face, false);
-		if($power < 15 && self::isConductor($block)){
-			$power = max($power, $this->getPowerIntoBlock($from, false));
-		}
-		return $power;
+		return $this->power->getPowerFrom($from, $face);
 	}
 }

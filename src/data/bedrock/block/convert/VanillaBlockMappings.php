@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -47,8 +47,10 @@ use pocketmine\block\CopperLantern;
 use pocketmine\block\DaylightSensor;
 use pocketmine\block\DetectorRail;
 use pocketmine\block\Dirt;
+use pocketmine\block\Dispenser;
 use pocketmine\block\DoublePitcherCrop;
 use pocketmine\block\DoublePlant;
+use pocketmine\block\Dropper;
 use pocketmine\block\EndPortalFrame;
 use pocketmine\block\EndRod;
 use pocketmine\block\Farmland;
@@ -1347,6 +1349,14 @@ final class VanillaBlockMappings{
 			new BoolProperty(StateNames::RAIL_DATA_BIT, fn(DetectorRail $b) => $b->isActivated(), fn(DetectorRail $b, bool $v) => $b->setActivated($v)),
 			new IntProperty(StateNames::RAIL_DIRECTION, 0, 5, fn(StraightOnlyRail $b) => $b->getShape(), fn(StraightOnlyRail $b, int $v) => $b->setShape($v)) //TODO: shared with ActivatorRail
 		]));
+		$reg->mapModel(Model::create(Blocks::DISPENSER(), Ids::DISPENSER)->properties([
+			new BoolProperty(StateNames::TRIGGERED_BIT, fn(PoweredByRedstone $b) => $b->isPowered(), fn(PoweredByRedstone $b, bool $v) => $b->setPowered($v)),
+			new ValueFromIntProperty(StateNames::FACING_DIRECTION, ValueMappings::getInstance()->facing, fn(Dispenser $b) => $b->getFacing(), fn(Dispenser $b, int $v) => $b->setFacing($v)),
+		]));
+		$reg->mapModel(Model::create(Blocks::DROPPER(), Ids::DROPPER)->properties([
+			new BoolProperty(StateNames::TRIGGERED_BIT, fn(PoweredByRedstone $b) => $b->isPowered(), fn(PoweredByRedstone $b, bool $v) => $b->setPowered($v)),
+			new ValueFromIntProperty(StateNames::FACING_DIRECTION, ValueMappings::getInstance()->facing, fn(Dropper $b) => $b->getFacing(), fn(Dropper $b, int $v) => $b->setFacing($v)),
+		]));
 
 		//E
 		$reg->mapModel(Model::create(Blocks::ENDER_CHEST(), Ids::ENDER_CHEST)->properties([$commonProperties->horizontalFacingCardinal]));
@@ -1692,5 +1702,6 @@ final class VanillaBlockMappings{
 				) :
 				self::deserializeAsymmetric($wallModel, $in));
 		}
+
 	}
 }

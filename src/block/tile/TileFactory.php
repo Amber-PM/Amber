@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -85,14 +85,12 @@ final class TileFactory{
 		//TODO: ChemistryTable
 		//TODO: CommandBlock
 		//TODO: Conduit
-		//TODO: Dispenser
-		//TODO: Dropper
+		$this->register(Dispenser::class, ["Dispenser", "Trap", "minecraft:dispenser"]);
+		$this->register(Dropper::class, ["Dropper", "minecraft:dropper"]);
 		//TODO: EndGateway
 		//TODO: EndPortal
 		//TODO: JigsawBlock
-		//TODO: MovingBlock
 		//TODO: NetherReactor
-		//TODO: PistonArm
 		//TODO: StructureBlock
 	}
 

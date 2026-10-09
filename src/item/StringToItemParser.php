@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -395,6 +395,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("diorite_wall", fn() => Blocks::DIORITE_WALL());
 		$result->registerBlock("dirt", fn() => Blocks::DIRT()->setDirtType(DirtType::NORMAL));
 		$result->registerBlock("dirt_with_roots", fn() => Blocks::DIRT()->setDirtType(DirtType::ROOTED));
+		$result->registerBlock("dispenser", fn() => Blocks::DISPENSER());
 		$result->registerBlock("door_block", fn() => Blocks::OAK_DOOR());
 		$result->registerBlock("double_plant", fn() => Blocks::SUNFLOWER());
 		$result->registerBlock("double_red_sandstone_slab", fn() => Blocks::RED_SANDSTONE_SLAB()->setSlabType(SlabType::DOUBLE));
@@ -410,6 +411,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("double_wooden_slab", fn() => Blocks::OAK_SLAB()->setSlabType(SlabType::DOUBLE));
 		$result->registerBlock("double_wooden_slabs", fn() => Blocks::OAK_SLAB()->setSlabType(SlabType::DOUBLE));
 		$result->registerBlock("dragon_egg", fn() => Blocks::DRAGON_EGG());
+		$result->registerBlock("dropper", fn() => Blocks::DROPPER());
 		$result->registerBlock("dragon_head", fn() => Blocks::MOB_HEAD()->setMobHeadType(MobHeadType::DRAGON));
 		$result->registerBlock("dried_kelp_block", fn() => Blocks::DRIED_KELP());
 		$result->registerBlock("dyed_shulker_box", fn() => Blocks::DYED_SHULKER_BOX());

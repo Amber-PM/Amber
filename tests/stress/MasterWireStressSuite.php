@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,13 @@ require_once __DIR__ . '/StressHarness.php';
 
 use pocketmine\block\VanillaBlocks;
 use pocketmine\world\World;
+use function array_slice;
+use function implode;
+use function microtime;
+use function min;
+use function number_format;
+use function round;
+use function sprintf;
 
 final class MasterWireStressSuite {
 	/** @var list<array{Workload: string, Size: int, Budget: int, 'Ticks to settle': int, 'Peak continuation count': int, 'Peak owner count': int, Result: string}> */
@@ -93,7 +100,7 @@ final class MasterWireStressSuite {
 
 	private function testLine(string $name, int $size, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $size; ++$x) {
 			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -121,7 +128,7 @@ final class MasterWireStressSuite {
 	private function testGrid(string $name, int $width, int $height, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
 		$size = $width * $height;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $width; ++$x) {
 			for ($z = 0; $z < $height; ++$z) {
@@ -150,7 +157,7 @@ final class MasterWireStressSuite {
 
 	private function testTree(string $name, int $ribsCount, int $ribLength, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		$totalWires = 0;
 		$spineLength = $ribsCount * 2;
@@ -194,7 +201,7 @@ final class MasterWireStressSuite {
 
 	private function testDenseLoops(string $name, int $gridDim, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		$totalWires = 0;
 		for ($x = 0; $x < $gridDim; ++$x) {
@@ -229,7 +236,7 @@ final class MasterWireStressSuite {
 	private function testDisconnected(string $name, int $numNetworks, int $wiresPerNet, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
 		$totalWires = $numNetworks * $wiresPerNet;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		$seeds = [];
 		for ($netIdx = 0; $netIdx < $numNetworks; ++$netIdx) {
@@ -263,7 +270,7 @@ final class MasterWireStressSuite {
 
 	private function testMultiSeedLine(string $name, int $size, int $seedCount, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $size; ++$x) {
 			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -295,7 +302,7 @@ final class MasterWireStressSuite {
 	private function testMultiSeed2DGrid(string $name, int $gridDim, int $seedsPerAxis, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
 		$size = $gridDim * $gridDim;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $gridDim; ++$x) {
 			for ($z = 0; $z < $gridDim; ++$z) {
@@ -332,7 +339,7 @@ final class MasterWireStressSuite {
 	private function testConnectedMidFlight(string $name, int $halfSize, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
 		$totalWires = $halfSize * 2 + 1;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $halfSize; ++$x) {
 			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -376,7 +383,7 @@ final class MasterWireStressSuite {
 
 	private function testSplitMidFlight(string $name, int $size, int $splitAt, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $size; ++$x) {
 			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -423,7 +430,7 @@ final class MasterWireStressSuite {
 	private function testMergeBoundaryMutation(string $name, int $halfSize, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
 		$totalWires = $halfSize * 2;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		for ($x = 0; $x < $totalWires; ++$x) {
 			$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -443,7 +450,7 @@ final class MasterWireStressSuite {
 			$net->processDeferred(1);
 			$conts = $harness->getContinuations();
 			foreach ($conts as $c) {
-				if ($c['phase'] === WireNetwork::PHASE_MERGE) {
+				if ($c->phase->value === WireNetwork::PHASE_MERGE) {
 					break 2;
 				}
 			}
@@ -473,7 +480,7 @@ final class MasterWireStressSuite {
 
 	private function testPhaseMutation(int $targetPhase, string $phaseName, int $size, int $budget, int $maxTicks) : void {
 		$initialBudget = $budget;
-		[$engine, $world, $blocks] = createEnvironment($budget);
+		[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 		$world->setBlockAt(-1, 64, 0, VanillaBlocks::REDSTONE(), false);
 		for ($x = 0; $x < $size; ++$x) {
@@ -490,7 +497,7 @@ final class MasterWireStressSuite {
 			for ($i = 0; $i < 10000; ++$i) {
 				$net->processDeferred(1);
 				foreach ($harness->getContinuations() as $c) {
-					if ($c['phase'] === WireNetwork::PHASE_MERGE) {
+					if ($c->phase->value === WireNetwork::PHASE_MERGE) {
 						break 2;
 					}
 				}
@@ -502,7 +509,7 @@ final class MasterWireStressSuite {
 				for ($i = 0; $i < 10000; ++$i) {
 					$net->processDeferred(1);
 					foreach ($harness->getContinuations() as $c) {
-						if ($c['phase'] === $targetPhase) {
+						if ($c->phase->value === $targetPhase) {
 							break 2;
 						}
 					}
@@ -546,7 +553,7 @@ final class MasterWireStressSuite {
 		];
 		$this->results[] = $entry;
 
-		$statusMark = $result === "PASS" ? "✓" : "✗";
+		$statusMark = $result === "PASS" ? "âœ“" : "âœ—";
 		echo sprintf("  %s %-36s | Size %5d | Budget %4d | Ticks %2d | Peak Cont %2d | Peak Owners %5d | %s\n",
 			$statusMark, $workload, $size, $budget, $ticks, $harness->peakContinuations, $harness->peakOwners, $result);
 	}

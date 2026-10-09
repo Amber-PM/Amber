@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,11 +27,14 @@ require_once __DIR__ . '/StressHarness.php';
 
 use pocketmine\block\VanillaBlocks;
 use pocketmine\world\World;
+use function array_slice;
+use function implode;
+use function sprintf;
 
 function runDisconnectedNetworksStress(int $numNetworks, int $wiresPerNetwork, int $budget, int $maxTicks) : array {
 	$initialBudget = $budget;
 	$totalWires = $numNetworks * $wiresPerNetwork;
-	[$engine, $world, $blocks] = createEnvironment($budget);
+	[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 	$seeds = [];
 	for ($netIdx = 0; $netIdx < $numNetworks; ++$netIdx) {
@@ -83,7 +86,7 @@ function runDisconnectedNetworksStress(int $numNetworks, int $wiresPerNetwork, i
 function runConnectedMidContinuationsStress(int $halfSize, int $budget, int $maxTicks) : array {
 	$initialBudget = $budget;
 	$totalWires = $halfSize * 2 + 1;
-	[$engine, $world, $blocks] = createEnvironment($budget);
+	[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 	// Left segment: 0 .. halfSize-1
 	for ($x = 0; $x < $halfSize; ++$x) {
@@ -152,7 +155,7 @@ function runConnectedMidContinuationsStress(int $halfSize, int $budget, int $max
 
 function runSplitMidContinuationsStress(int $size, int $splitAt, int $budget, int $maxTicks) : array {
 	$initialBudget = $budget;
-	[$engine, $world, $blocks] = createEnvironment($budget);
+	[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 	for ($x = 0; $x < $size; ++$x) {
 		$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -219,7 +222,7 @@ function runSplitMidContinuationsStress(int $size, int $splitAt, int $budget, in
 function runMergeBoundaryMutationStress(int $halfSize, int $budget, int $maxTicks) : array {
 	$initialBudget = $budget;
 	$totalWires = $halfSize * 2;
-	[$engine, $world, $blocks] = createEnvironment($budget);
+	[$engine, $world, $blocks] = RedstoneTestEnvironment::create($budget);
 
 	for ($x = 0; $x < $totalWires; ++$x) {
 		$world->setBlockAt($x, 63, 0, VanillaBlocks::STONE(), false);
@@ -243,7 +246,7 @@ function runMergeBoundaryMutationStress(int $halfSize, int $budget, int $maxTick
 		$net->processDeferred(1);
 		$conts = $harness->getContinuations();
 		foreach ($conts as $c) {
-			if ($c['phase'] === WireNetwork::PHASE_MERGE) {
+			if ($c->phase->value === WireNetwork::PHASE_MERGE) {
 				$mergeDetected = true;
 				break 2;
 			}

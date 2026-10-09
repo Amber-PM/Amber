@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,7 @@ use pocketmine\block\inventory\HopperInventory;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\world\World;
+use function max;
 
 class Hopper extends Spawnable implements Container, Nameable{
 
@@ -37,6 +38,7 @@ class Hopper extends Spawnable implements Container, Nameable{
 
 	private HopperInventory $inventory;
 	private int $transferCooldown = 0;
+	private ?int $lastCooldownTick = null;
 
 	public function __construct(World $world, Vector3 $pos){
 		parent::__construct($world, $pos);
@@ -47,7 +49,7 @@ class Hopper extends Spawnable implements Container, Nameable{
 		$this->loadItems($nbt);
 		$this->loadName($nbt);
 
-		$this->transferCooldown = $nbt->getInt(self::TAG_TRANSFER_COOLDOWN, 0);
+		$this->transferCooldown = max(0, $nbt->getInt(self::TAG_TRANSFER_COOLDOWN, 0));
 	}
 
 	protected function writeSaveData(CompoundTag $nbt) : void{
@@ -55,6 +57,21 @@ class Hopper extends Spawnable implements Container, Nameable{
 		$this->saveName($nbt);
 
 		$nbt->setInt(self::TAG_TRANSFER_COOLDOWN, $this->transferCooldown);
+	}
+
+	public function getTransferCooldown() : int{ return $this->transferCooldown; }
+
+	public function startTransferCooldown(int $currentTick, int $delay) : void{
+		$this->transferCooldown = max(0, $delay);
+		$this->lastCooldownTick = $currentTick;
+	}
+
+	public function resetCooldownClock() : void{ $this->lastCooldownTick = null; }
+
+	public function advanceTransferCooldown(int $currentTick) : void{
+		$elapsed = $this->lastCooldownTick === null ? 1 : max(0, $currentTick - $this->lastCooldownTick);
+		$this->lastCooldownTick = $currentTick;
+		$this->transferCooldown = max(0, $this->transferCooldown - $elapsed);
 	}
 
 	public function close() : void{
