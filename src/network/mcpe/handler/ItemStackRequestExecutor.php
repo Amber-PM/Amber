@@ -66,8 +66,12 @@ use pocketmine\utils\Utils;
 use function array_key_first;
 use function count;
 use function spl_object_id;
+use function strlen;
 
 class ItemStackRequestExecutor{
+	/** Sanity limit on anvil names, which the game keeps short. */
+	private const MAX_ANVIL_RENAME_BYTES = 256;
+
 	private TransactionBuilder $builder;
 
 	/** @var ItemStackRequestSlotInfo[] */
@@ -278,6 +282,9 @@ class ItemStackRequestExecutor{
 	 */
 	protected function beginAnvilTransaction(?string $rename) : void{
 		$this->assertFirstSpecialTransaction();
+		if($rename !== null && strlen($rename) > self::MAX_ANVIL_RENAME_BYTES){
+			throw new ItemStackRequestProcessException("Anvil rename is too long (" . strlen($rename) . " bytes)");
+		}
 
 		$currentWindow = $this->player->getCurrentWindow();
 		if(!$currentWindow instanceof AnvilInventory){

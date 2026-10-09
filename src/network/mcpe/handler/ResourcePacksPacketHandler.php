@@ -230,6 +230,9 @@ class ResourcePacksPacketHandler extends PacketHandler{
 				break;
 			case ResourcePackClientResponsePacket::STATUS_COMPLETED:
 				$this->session->getLogger()->debug("Resource packs sequence completed");
+				if($this->session->getHandler() === $this){
+					$this->session->setHandler(null); //a repeated completion must not create the player twice
+				}
 				($this->completionCallback)();
 				break;
 			default:

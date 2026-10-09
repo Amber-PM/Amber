@@ -146,8 +146,9 @@ ticks-per:
   autosave: 6000
 
 auto-report:
-  #Send crash reports for processing
-  enabled: true
+  #Send crash reports to the crash archive at "host". Crash reports include server settings and the plugin list.
+  #crash.pmmp.io is PocketMine-MP's archive, for official PocketMine-MP builds: only enable this with a host of your own.
+  enabled: false
   send-code: true
   send-settings: true
   send-phpinfo: false
@@ -160,7 +161,8 @@ anonymous-statistics:
   host: stats.pocketmine.net
 
 auto-updater:
-  enabled: true
+  #update.pmmp.io announces PocketMine-MP releases, not AmberPM ones: only enable this with a host of your own.
+  enabled: false
   on-update:
     warn-console: true
   #Can be development, alpha, beta or stable.
