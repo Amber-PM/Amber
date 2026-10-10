@@ -38,6 +38,7 @@ use pocketmine\data\bedrock\item\SavedItemData as Data;
 use pocketmine\data\bedrock\MedicineTypeIdMap;
 use pocketmine\data\bedrock\PotionTypeIdMap;
 use pocketmine\data\bedrock\SuspiciousStewTypeIdMap;
+use pocketmine\item\Arrow;
 use pocketmine\item\Banner;
 use pocketmine\item\Dye;
 use pocketmine\item\FireworkStar;
@@ -471,10 +472,16 @@ final class ItemSerializerDeserializerRegistrar{
 	 * indexed by their base type ID.
 	 */
 	private function register1ToNItemMappings() : void{
-		$this->map1ToNItem(Ids::ARROW, [
-			0 => Items::ARROW(),
-			//TODO: tipped arrows
-		]);
+		$this->map1to1ItemWithMeta(
+			Ids::ARROW,
+			Items::ARROW(),
+			function(Arrow $item, int $meta) : void{
+				if($meta > 0){
+					$item->setTipType(PotionTypeIdMap::getInstance()->fromId($meta - 1) ?? throw new ItemTypeDeserializeException("Unknown potion type ID $meta"));
+				}
+			},
+			fn(Arrow $item) => ($tipType = $item->getTipType()) === null ? 0 : PotionTypeIdMap::getInstance()->toId($tipType) + 1
+		);
 		$this->map1ToNItem(Ids::COMPOUND, [
 			CompoundTypeIds::SALT => Items::CHEMICAL_SALT(),
 			CompoundTypeIds::SODIUM_OXIDE => Items::CHEMICAL_SODIUM_OXIDE(),

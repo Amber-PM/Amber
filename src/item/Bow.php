@@ -28,6 +28,7 @@ use pocketmine\entity\projectile\Arrow as ArrowEntity;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\event\entity\EntityShootBowEvent;
 use pocketmine\event\entity\ProjectileLaunchEvent;
+use pocketmine\inventory\Inventory;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\player\Player;
 use pocketmine\world\sound\BowShootSound;
@@ -44,17 +45,37 @@ class Bow extends Tool implements Releasable{
 		return 385;
 	}
 
-	public function onReleaseUsing(Player $player, array &$returnedItems) : ItemUseResult{
-		$arrow = VanillaItems::ARROW();
-		$inventory = match(true){
-			$player->getOffHandInventory()->contains($arrow) => $player->getOffHandInventory(),
-			$player->getInventory()->contains($arrow) => $player->getInventory(),
-			default => null
-		};
+	/**
+	 * @return array{Arrow, Inventory}|null
+	 */
+	private function findArrow(Player $player) : ?array{
+		$offHand = $player->getOffHandInventory();
+		$offHandItem = $offHand->getItem(0);
+		if($offHandItem instanceof Arrow){
+			return [$offHandItem, $offHand];
+		}
 
-		if($player->hasFiniteResources() && $inventory === null){
+		$inventory = $player->getInventory();
+		foreach($inventory->getContents() as $item){
+			if($item instanceof Arrow){
+				return [$item, $inventory];
+			}
+		}
+
+		return null;
+	}
+
+	public function onReleaseUsing(Player $player, array &$returnedItems) : ItemUseResult{
+		$arrowInfo = $this->findArrow($player);
+
+		if($player->hasFiniteResources() && $arrowInfo === null){
 			return ItemUseResult::FAIL;
 		}
+
+		/** @var Arrow|null $arrowItem */
+		$arrowItem = $arrowInfo !== null ? $arrowInfo[0] : null;
+		/** @var Inventory|null $inventory */
+		$inventory = $arrowInfo !== null ? $arrowInfo[1] : null;
 
 		$location = $player->getLocation();
 
@@ -62,16 +83,17 @@ class Bow extends Tool implements Releasable{
 		$p = $diff / 20;
 		$baseForce = min((($p ** 2) + $p * 2) / 3, 1);
 
+		$potionType = $arrowItem?->getTipType();
 		$entity = new ArrowEntity(Location::fromObject(
 			$player->getEyePos(),
 			$player->getWorld(),
 			($location->yaw > 180 ? 360 : 0) - $location->yaw,
 			-$location->pitch
-		), $player, $baseForce >= 1);
+		), $player, $baseForce >= 1, $potionType);
 		$entity->setMotion($player->getDirectionVector());
 
 		$infinity = $this->hasEnchantment(VanillaEnchantments::INFINITY());
-		if($infinity){
+		if($infinity && $potionType === null){
 			$entity->setPickupMode(ArrowEntity::PICKUP_CREATIVE);
 		}
 		if(($punchLevel = $this->getEnchantmentLevel(VanillaEnchantments::PUNCH())) > 0){
@@ -115,8 +137,10 @@ class Bow extends Tool implements Releasable{
 		}
 
 		if($player->hasFiniteResources()){
-			if(!$infinity){ //TODO: tipped arrows are still consumed when Infinity is applied
-				$inventory?->removeItem($arrow);
+			if(!$infinity || $potionType !== null){
+				if($arrowItem !== null && $inventory !== null){
+					$inventory->removeItem((clone $arrowItem)->setCount(1));
+				}
 			}
 			$this->applyDamage(1);
 		}
@@ -125,6 +149,6 @@ class Bow extends Tool implements Releasable{
 	}
 
 	public function canStartUsingItem(Player $player) : bool{
-		return !$player->hasFiniteResources() || $player->getOffHandInventory()->contains($arrow = VanillaItems::ARROW()) || $player->getInventory()->contains($arrow);
+		return !$player->hasFiniteResources() || $this->findArrow($player) !== null;
 	}
 }

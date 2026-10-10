@@ -108,7 +108,12 @@ final class EntityFactory{
 		}, ['ChestBoat', 'minecraft:chest_boat']);
 
 		$this->register(Arrow::class, function(World $world, CompoundTag $nbt) : Arrow{
-			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $nbt);
+			$potionType = null;
+			$potionId = $nbt->getShort(Arrow::TAG_POTION_ID, -1);
+			if($potionId !== -1){
+				$potionType = PotionTypeIdMap::getInstance()->fromId($potionId);
+			}
+			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $potionType, $nbt);
 		}, ['Arrow', 'minecraft:arrow']);
 
 		$this->register(Egg::class, function(World $world, CompoundTag $nbt) : Egg{
