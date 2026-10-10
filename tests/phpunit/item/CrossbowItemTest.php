@@ -74,7 +74,7 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 	/** @var ArrowEntity[] */
 	public array $createdArrows = [];
 
-	protected function createArrow(Location $location, Player $player) : ArrowEntity{
+	protected function createArrow(Location $location, Player $player, ?PotionType $potionType = null) : ArrowEntity{
 		$arrow = (new ReflectionClass(ArrowEntity::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($arrow, false);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($arrow, 200 + count($this->createdArrows));
@@ -84,6 +84,8 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 		(new ReflectionProperty(ArrowEntity::class, "pickupMode"))->setValue($arrow, ArrowEntity::PICKUP_ANY);
 		(new ReflectionProperty(ArrowEntity::class, "pierceLevel"))->setValue($arrow, 0);
 		(new ReflectionProperty(ArrowEntity::class, "piercedEntityIds"))->setValue($arrow, []);
+		(new ReflectionProperty(ArrowEntity::class, "potionType"))->setValue($arrow, $potionType);
+		(new ReflectionProperty(ArrowEntity::class, "customPotionEffects"))->setValue($arrow, null);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, $location);
 		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($arrow, []);
 
@@ -592,5 +594,18 @@ final class CrossbowItemTest extends TestCase{
 		);
 		self::assertSame(ItemUseResult::NONE, $result);
 		self::assertEmpty($crossbow->shotProjectiles);
+	}
+
+	public function testCrossbowShootsTippedArrow() : void{
+		$crossbow = new CrossbowRealArrowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$tippedArrow = VanillaItems::ARROW()->setTipType(PotionType::POISON);
+		$crossbow->setChargedItem($tippedArrow);
+
+		$player = $this->createMockPlayer();
+		$returnedItems = [];
+		$result = $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems);
+		self::assertSame(ItemUseResult::SUCCESS, $result);
+		self::assertCount(1, $crossbow->createdArrows);
+		self::assertSame(PotionType::POISON, $crossbow->createdArrows[0]->getPotionType());
 	}
 }

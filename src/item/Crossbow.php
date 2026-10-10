@@ -30,8 +30,10 @@ use pocketmine\entity\projectile\Arrow as ArrowEntity;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\event\entity\EntityShootBowEvent;
 use pocketmine\event\entity\ProjectileLaunchEvent;
+use pocketmine\item\Arrow as ArrowItem;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\FireworkRocket as FireworkRocketItem;
+use pocketmine\item\PotionType;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
@@ -223,8 +225,8 @@ class Crossbow extends Tool implements Releasable{
 		return ItemUseResult::SUCCESS;
 	}
 
-	protected function createArrow(Location $location, Player $player) : ArrowEntity{
-		return new ArrowEntity($location, $player, true);
+	protected function createArrow(Location $location, Player $player, ?PotionType $potionType = null) : ArrowEntity{
+		return new ArrowEntity($location, $player, true, $potionType);
 	}
 
 	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset, bool $isExtra = false) : bool{
@@ -258,7 +260,8 @@ class Crossbow extends Tool implements Releasable{
 			$projectile = $rocket;
 			$force = 1.6;
 		}else{
-			$arrow = $this->createArrow($spawnLocation, $player);
+			$potionType = $ammo instanceof ArrowItem ? $ammo->getTipType() : null;
+			$arrow = $this->createArrow($spawnLocation, $player, $potionType);
 			$arrow->setMotion($dir);
 
 			if($isExtra || !$player->hasFiniteResources()){
