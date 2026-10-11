@@ -111,7 +111,7 @@ class Trident extends Projectile{
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
 		parent::onHitEntity($entityHit, $hitResult);
 
-		if($this->hitBlocked){
+		if($this->hitBlocked || ($this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled())){
 			return;
 		}
 

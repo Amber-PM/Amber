@@ -89,7 +89,7 @@ class Bow extends Tool implements Releasable{
 			$player->getWorld(),
 			($location->yaw > 180 ? 360 : 0) - $location->yaw,
 			-$location->pitch
-		), $player, $baseForce >= 1, $potionType);
+		), $player, $baseForce >= 1, null, $potionType);
 		$entity->setMotion($player->getDirectionVector());
 
 		$infinity = $this->hasEnchantment(VanillaEnchantments::INFINITY());

@@ -225,8 +225,8 @@ class Crossbow extends Tool implements Releasable{
 		return ItemUseResult::SUCCESS;
 	}
 
-	protected function createArrow(Location $location, Player $player, ?PotionType $potionType = null) : ArrowEntity{
-		return new ArrowEntity($location, $player, true, $potionType);
+	protected function createArrow(Location $location, Player $player) : ArrowEntity{
+		return new ArrowEntity($location, $player, true);
 	}
 
 	protected function shootProjectile(Player $player, Item $ammo, float $yawOffset, bool $isExtra = false) : bool{
@@ -261,7 +261,10 @@ class Crossbow extends Tool implements Releasable{
 			$force = 1.6;
 		}else{
 			$potionType = $ammo instanceof ArrowItem ? $ammo->getTipType() : null;
-			$arrow = $this->createArrow($spawnLocation, $player, $potionType);
+			$arrow = $this->createArrow($spawnLocation, $player);
+			if($potionType !== null){
+				$arrow->setPotionType($potionType);
+			}
 			$arrow->setMotion($dir);
 
 			if($isExtra || !$player->hasFiniteResources()){

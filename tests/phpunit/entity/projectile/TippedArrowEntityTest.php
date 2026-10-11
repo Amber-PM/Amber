@@ -25,15 +25,29 @@ namespace pocketmine\entity\projectile;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\data\bedrock\PotionTypeIdMap;
+use pocketmine\entity\Attribute;
+use pocketmine\entity\AttributeFactory;
+use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
+use pocketmine\entity\Human;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
+use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\event\EventPriority;
+use pocketmine\event\HandlerListManager;
+use pocketmine\event\RegisteredListener;
+use pocketmine\inventory\ArmorInventory;
+use pocketmine\inventory\PlayerEnderInventory;
+use pocketmine\inventory\PlayerInventory;
+use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\PotionType;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
+use pocketmine\math\Facing;
 use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -41,7 +55,11 @@ use pocketmine\nbt\tag\ShortTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\ShortMetadataProperty;
+use pocketmine\plugin\Plugin;
+use pocketmine\Server;
+use pocketmine\timings\TimingsHandler;
 use pocketmine\world\World;
+use pocketmine\world\WorldManager;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -52,18 +70,49 @@ class DummyTippedArrowTarget extends Living{
 	public static function getNetworkTypeId() : string{ return "minecraft:dummy"; }
 	protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(1.0, 1.0); }
 	public function getName() : string{ return "Dummy"; }
-	public function attack(\pocketmine\event\entity\EntityDamageEvent $source) : void{}
 }
 
 final class TippedArrowEntityTest extends TestCase{
 
+	/** @var array<int, Entity> */
+	private static array $entitiesById = [];
+	private World $testWorld;
+
+	protected function setUp() : void{
+		/** @var array<int, Entity> $empty */
+		$empty = [];
+		self::$entitiesById = $empty;
+
+		$worldManager = $this->createMock(WorldManager::class);
+		$worldManager->method("findEntity")->willReturnCallback(function(int $entityId) : ?Entity{
+			return self::$entitiesById[$entityId] ?? null;
+		});
+
+		$server = $this->createMock(Server::class);
+		$server->method("getWorldManager")->willReturn($worldManager);
+
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($server);
+		$world->updateEntities = [];
+		$this->testWorld = $world;
+	}
+
+	protected function tearDown() : void{
+		HandlerListManager::global()->unregisterAll();
+		self::$entitiesById = [];
+	}
+
 	private function createArrow(?World $world = null, ?PotionType $potionType = null) : Arrow{
+		static $arrowIdCounter = 100;
+		$id = $arrowIdCounter++;
 		$arrow = (new ReflectionClass(Arrow::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($arrow, false);
 		(new ReflectionProperty(Entity::class, "closeInFlight"))->setValue($arrow, false);
 		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($arrow, []);
 		(new ReflectionProperty(Entity::class, "attachedShapes"))->setValue($arrow, []);
-		(new ReflectionProperty(Entity::class, "id"))->setValue($arrow, 100);
+		(new ReflectionProperty(Entity::class, "id"))->setValue($arrow, $id);
+		self::$entitiesById[$id] = $arrow;
 		(new ReflectionProperty(Entity::class, "size"))->setValue($arrow, new EntitySizeInfo(0.25, 0.25));
 		(new ReflectionProperty(Entity::class, "motion"))->setValue($arrow, new Vector3(0.0, 0.0, 1.0));
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($arrow, new AxisAlignedBB(0, 0, 0, 0.25, 0.25, 0.25));
@@ -77,29 +126,51 @@ final class TippedArrowEntityTest extends TestCase{
 		(new ReflectionProperty(Arrow::class, "hitBlocked"))->setValue($arrow, false);
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($arrow, new EntityMetadataCollection());
 
-		if($world === null){
-			$world = $this->createMock(World::class);
-			$world->method("isLoaded")->willReturn(true);
-			$world->updateEntities = [];
-		}
-		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, new Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
+		$w = $world ?? $this->testWorld;
+		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, new Location(0.0, 0.0, 0.0, $w, 0.0, 0.0));
 		return $arrow;
 	}
 
 	private function createTarget(int $id) : DummyTippedArrowTarget{
 		$entity = (new ReflectionClass(DummyTippedArrowTarget::class))->newInstanceWithoutConstructor();
-		(new ReflectionProperty(Entity::class, "closed"))->setValue($entity, true);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($entity, false);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($entity, $id);
+		self::$entitiesById[$id] = $entity;
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($entity, new AxisAlignedBB(0, 0, 0, 1, 2, 1));
 		(new ReflectionProperty(Entity::class, "motion"))->setValue($entity, Vector3::zero());
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($entity, new EntityMetadataCollection());
 		(new ReflectionProperty(Living::class, "effectManager"))->setValue($entity, new EffectManager($entity));
-		$attributeMap = new \pocketmine\entity\AttributeMap();
-		$moveSpeed = \pocketmine\entity\AttributeFactory::getInstance()->mustGet(\pocketmine\entity\Attribute::MOVEMENT_SPEED);
-		$attributeMap->add($moveSpeed);
-		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($entity, $attributeMap);
-		(new ReflectionProperty(Living::class, "moveSpeedAttr"))->setValue($entity, $moveSpeed);
+		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($entity, new ArmorInventory($entity));
+		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($entity, new AttributeMap());
+		(new ReflectionClass(Living::class))->getMethod("addAttributes")->invoke($entity);
+		(new ReflectionProperty(Entity::class, "health"))->setValue($entity, 20.0);
+		(new ReflectionProperty(Entity::class, "maxHealth"))->setValue($entity, 20);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($entity, new Location(0.0, 0.0, 0.0, $this->testWorld, 0.0, 0.0));
 		return $entity;
+	}
+
+	private function createHuman(float $yaw = 0.0, ?Vector3 $pos = null) : Human{
+		static $humanIdCounter = 300;
+		$id = $humanIdCounter++;
+		$human = (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "id"))->setValue($human, $id);
+		self::$entitiesById[$id] = $human;
+		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($human, new EntityMetadataCollection());
+		(new ReflectionProperty(Entity::class, "size"))->setValue($human, new EntitySizeInfo(1.8, 0.6, 1.62));
+		(new ReflectionProperty(Entity::class, "scale"))->setValue($human, 1.0);
+		$pos = $pos ?? Vector3::zero();
+		(new ReflectionProperty(Entity::class, "location"))->setValue($human, new Location($pos->x, $pos->y, $pos->z, $this->testWorld, $yaw, 0.0));
+		(new ReflectionProperty(Entity::class, "attributeMap"))->setValue($human, new AttributeMap());
+		(new ReflectionClass(Human::class))->getMethod("addAttributes")->invoke($human);
+		(new ReflectionProperty(Living::class, "effectManager"))->setValue($human, new EffectManager($human));
+		(new ReflectionProperty(Living::class, "armorInventory"))->setValue($human, new ArmorInventory($human));
+		(new ReflectionProperty(Human::class, "inventory"))->setValue($human, new PlayerInventory($human));
+		(new ReflectionProperty(Human::class, "offHandInventory"))->setValue($human, new PlayerOffHandInventory($human));
+		(new ReflectionProperty(Human::class, "enderInventory"))->setValue($human, new PlayerEnderInventory($human));
+		(new ReflectionProperty(Living::class, "sneaking"))->setValue($human, false);
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($human, Vector3::zero());
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($human, false);
+		return $human;
 	}
 
 	public function testPotionTypeGetterSetter() : void{
@@ -174,12 +245,31 @@ final class TippedArrowEntityTest extends TestCase{
 		self::assertSame(PotionType::SLOWNESS, $restored->getPotionType());
 	}
 
+	public function testArrowConstructorBackwardCompatibility() : void{
+		$location = new Location(1.0, 2.0, 3.0, $this->testWorld, 0.0, 0.0);
+
+		$nbt = CompoundTag::create()
+			->setByte(Arrow::TAG_CRIT, 1)
+			->setByte("pickup", Arrow::PICKUP_CREATIVE);
+
+		// 4-parameter constructor call: ($location, $shootingEntity, $critical, $nbt)
+		$arrow = new Arrow($location, null, true, $nbt);
+		self::assertNull($arrow->getPotionType());
+		self::assertSame(Arrow::PICKUP_CREATIVE, $arrow->getPickupMode());
+
+		// 5-parameter constructor call: ($location, $shootingEntity, $critical, $nbt, $potionType)
+		$tippedArrow = new Arrow($location, null, true, null, PotionType::SWIFTNESS);
+		self::assertSame(PotionType::SWIFTNESS, $tippedArrow->getPotionType());
+	}
+
 	public function testNetworkMetadataSync() : void{
 		$normal = $this->createArrow();
 		$properties = new EntityMetadataCollection();
 		$sync = new ReflectionMethod(Arrow::class, "syncNetworkData");
 		$sync->invoke($normal, $properties);
-		self::assertArrayNotHasKey(EntityMetadataProperties::POTION_AUX_VALUE, $properties->getAll());
+		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
+		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
+		self::assertSame(0, $aux->getValue());
 
 		$tipped = $this->createArrow(null, PotionType::POISON);
 		$properties = new EntityMetadataCollection();
@@ -187,6 +277,25 @@ final class TippedArrowEntityTest extends TestCase{
 		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
 		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
 		self::assertSame(PotionTypeIdMap::getInstance()->toId(PotionType::POISON), $aux->getValue());
+	}
+
+	public function testNetworkMetadataReusedCollectionClearingPotionType() : void{
+		$arrow = $this->createArrow(null, PotionType::POISON);
+		$properties = new EntityMetadataCollection();
+		$sync = new ReflectionMethod(Arrow::class, "syncNetworkData");
+
+		// Initial sync with tipped arrow: aux value matches poison ID
+		$sync->invoke($arrow, $properties);
+		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
+		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
+		self::assertSame(PotionTypeIdMap::getInstance()->toId(PotionType::POISON), $aux->getValue());
+
+		// Clear potion type and sync into the same reused collection: aux value must reset to 0
+		$arrow->setPotionType(null);
+		$sync->invoke($arrow, $properties);
+		$auxAfter = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
+		self::assertInstanceOf(ShortMetadataProperty::class, $auxAfter);
+		self::assertSame(0, $auxAfter->getValue());
 	}
 
 	public function testPotionEffectAppliedOnHitLivingEntity() : void{
@@ -208,24 +317,69 @@ final class TippedArrowEntityTest extends TestCase{
 	public function testInstantEffectAppliedOnHitLivingEntity() : void{
 		$arrow = $this->createArrow(null, PotionType::STRONG_HARMING);
 		$target = $this->createTarget(205);
+		$initialHealth = $target->getHealth();
 
 		$hitResult = new RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0));
 		$onHitEntity = new ReflectionMethod(Arrow::class, "onHitEntity");
 		$onHitEntity->invoke($arrow, $target, $hitResult);
 
 		self::assertTrue($arrow->isFlaggedForDespawn());
+		self::assertLessThan($initialHealth, $target->getHealth());
 	}
 
 	public function testPotionEffectNotAppliedWhenShieldBlocked() : void{
-		$arrow = $this->createArrow(null, PotionType::SWIFTNESS);
-		(new ReflectionProperty(Arrow::class, "hitBlocked"))->setValue($arrow, true);
+		$defender = $this->createHuman(180.0, new Vector3(0, 0, 0)); // Facing North (toward -Z)
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+		self::assertTrue($defender->isBlocking());
 
-		$target = $this->createTarget(202);
+		$arrow = $this->createArrow(null, PotionType::POISON);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, new Location(0.0, 0.0, -5.0, $this->testWorld, 0.0, 0.0));
+		(new ReflectionProperty(Entity::class, "motion"))->setValue($arrow, new Vector3(0.0, 0.0, 2.0));
+
+		$hitResult = new RayTraceResult(new AxisAlignedBB(-0.5, 0, -0.5, 0.5, 1.8, 0.5), Facing::NORTH, new Vector3(0, 0, 0));
+		$onHitEntity = new ReflectionMethod(Arrow::class, "onHitEntity");
+		$onHitEntity->invoke($arrow, $defender, $hitResult);
+
+		self::assertTrue($arrow->isHitBlocked());
+		self::assertLessThan(0.0, $arrow->getMotion()->z);
+		self::assertSame(20.0, $defender->getHealth());
+		self::assertEmpty($defender->getEffects()->all());
+	}
+
+	public function testCancelledDamageEventSkipsPotionEffects() : void{
+		$target = $this->createTarget(204);
+		$initialHealth = $target->getHealth();
+
+		$plugin = $this->createMock(Plugin::class);
+		$listener = new RegisteredListener(
+			function(EntityDamageEvent $event) : void{
+				if($event->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
+					$event->cancel();
+				}
+			},
+			EventPriority::NORMAL,
+			$plugin,
+			false,
+			new TimingsHandler("cancelled damage test")
+		);
+		HandlerListManager::global()->getListFor(EntityDamageEvent::class)->register($listener);
+
+		$arrow = $this->createArrow(null, PotionType::POISON);
 		$hitResult = new RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0));
 		$onHitEntity = new ReflectionMethod(Arrow::class, "onHitEntity");
 		$onHitEntity->invoke($arrow, $target, $hitResult);
 
-		self::assertNull($target->getEffects()->get(VanillaEffects::SPEED()));
+		self::assertNotNull($arrow->getLastDamageEvent());
+		self::assertTrue($arrow->getLastDamageEvent()->isCancelled());
+		self::assertTrue($arrow->isHitCancelled());
+		self::assertSame($initialHealth, $target->getHealth());
+		self::assertEmpty($target->getEffects()->all());
+
+		// Tick effect manager to verify no latent damage or poisoning occurs
+		$target->getEffects()->tick(1);
+		self::assertSame($initialHealth, $target->getHealth());
 	}
 
 	public function testUntippedArrowDoesNotApplyPotionEffect() : void{

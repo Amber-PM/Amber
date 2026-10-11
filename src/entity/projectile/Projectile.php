@@ -60,9 +60,18 @@ abstract class Projectile extends Entity{
 	protected float $damage = 0.0;
 	protected ?Vector3 $blockHit = null;
 	protected bool $hitBlocked = false;
+	protected ?EntityDamageEvent $lastDamageEvent = null;
 
 	public function isHitBlocked() : bool{
 		return $this->hitBlocked;
+	}
+
+	public function getLastDamageEvent() : ?EntityDamageEvent{
+		return $this->lastDamageEvent;
+	}
+
+	public function isHitCancelled() : bool{
+		return $this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled();
 	}
 
 	public function __construct(Location $location, ?Entity $shootingEntity, ?CompoundTag $nbt = null){
@@ -166,6 +175,7 @@ abstract class Projectile extends Entity{
 	protected function move(float $dx, float $dy, float $dz) : void{
 		$this->blocksAround = null;
 		$this->hitBlocked = false;
+		$this->lastDamageEvent = null;
 
 		Timings::$projectileMove->startTiming();
 		Timings::$projectileMoveRayTrace->startTiming();
@@ -304,6 +314,7 @@ abstract class Projectile extends Entity{
 			}
 
 			$entityHit->attack($ev);
+			$this->lastDamageEvent = $ev;
 
 			if($ev->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
 				$this->hitBlocked = true;
@@ -311,11 +322,11 @@ abstract class Projectile extends Entity{
 				return;
 			}
 
-			if($this->isOnFire()){
-				$ev = new EntityCombustByEntityEvent($this, $entityHit, 5);
-				$ev->call();
-				if(!$ev->isCancelled()){
-					$entityHit->setOnFire($ev->getDuration());
+			if(!$ev->isCancelled() && $this->isOnFire()){
+				$evCombust = new EntityCombustByEntityEvent($this, $entityHit, 5);
+				$evCombust->call();
+				if(!$evCombust->isCancelled()){
+					$entityHit->setOnFire($evCombust->getDuration());
 				}
 			}
 		}

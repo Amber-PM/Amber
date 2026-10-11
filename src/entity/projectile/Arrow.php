@@ -81,9 +81,11 @@ class Arrow extends Projectile{
 	/** @var EffectInstance[]|null */
 	protected ?array $customPotionEffects = null;
 
-	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?PotionType $potionType = null, ?CompoundTag $nbt = null){
-		$this->potionType = $potionType;
+	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?CompoundTag $nbt = null, ?PotionType $potionType = null){
 		parent::__construct($location, $shootingEntity, $nbt);
+		if($potionType !== null){
+			$this->potionType = $potionType;
+		}
 		$this->setCritical($critical);
 	}
 
@@ -297,7 +299,7 @@ class Arrow extends Projectile{
 			$this->piercedEntityIds[$entityHit->getId()] = true;
 		}
 		parent::onHitEntity($entityHit, $hitResult);
-		if($this->hitBlocked){
+		if($this->hitBlocked || ($this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled())){
 			return;
 		}
 		if($this->punchKnockback > 0){
@@ -372,8 +374,9 @@ class Arrow extends Projectile{
 		parent::syncNetworkData($properties);
 
 		$properties->setGenericFlag(EntityMetadataFlags::CRITICAL, $this->critical);
-		if($this->potionType !== null){
-			$properties->setShort(EntityMetadataProperties::POTION_AUX_VALUE, PotionTypeIdMap::getInstance()->toId($this->potionType));
-		}
+		$properties->setShort(
+			EntityMetadataProperties::POTION_AUX_VALUE,
+			$this->potionType !== null ? PotionTypeIdMap::getInstance()->toId($this->potionType) : 0
+		);
 	}
 }

@@ -74,7 +74,7 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 	/** @var ArrowEntity[] */
 	public array $createdArrows = [];
 
-	protected function createArrow(Location $location, Player $player, ?PotionType $potionType = null) : ArrowEntity{
+	protected function createArrow(Location $location, Player $player) : ArrowEntity{
 		$arrow = (new ReflectionClass(ArrowEntity::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($arrow, false);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($arrow, 200 + count($this->createdArrows));
@@ -84,7 +84,7 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 		(new ReflectionProperty(ArrowEntity::class, "pickupMode"))->setValue($arrow, ArrowEntity::PICKUP_ANY);
 		(new ReflectionProperty(ArrowEntity::class, "pierceLevel"))->setValue($arrow, 0);
 		(new ReflectionProperty(ArrowEntity::class, "piercedEntityIds"))->setValue($arrow, []);
-		(new ReflectionProperty(ArrowEntity::class, "potionType"))->setValue($arrow, $potionType);
+		(new ReflectionProperty(ArrowEntity::class, "potionType"))->setValue($arrow, null);
 		(new ReflectionProperty(ArrowEntity::class, "customPotionEffects"))->setValue($arrow, null);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, $location);
 		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($arrow, []);
@@ -152,6 +152,7 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(300, $crossbow->getFuelTime());
 	}
 
+	/** @param Entity[] $entities */
 	private function createFireworkPlayer(array &$entities, bool $isSpectator = false) : Player{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
@@ -607,5 +608,20 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(ItemUseResult::SUCCESS, $result);
 		self::assertCount(1, $crossbow->createdArrows);
 		self::assertSame(PotionType::POISON, $crossbow->createdArrows[0]->getPotionType());
+	}
+
+	public function testCrossbowSubclassTwoArgumentCreateArrowCompatibility() : void{
+		$anonymousSubclass = new class(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow") extends Crossbow{
+			public bool $createArrowCalled = false;
+
+			protected function createArrow(Location $location, Player $player) : ArrowEntity{
+				$this->createArrowCalled = true;
+				return parent::createArrow($location, $player);
+			}
+		};
+
+		$refMethod = new \ReflectionMethod($anonymousSubclass, "createArrow");
+		self::assertSame(2, $refMethod->getNumberOfParameters());
+		self::assertSame(2, $refMethod->getNumberOfRequiredParameters());
 	}
 }

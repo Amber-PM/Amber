@@ -113,7 +113,7 @@ final class EntityFactory{
 			if($potionId !== -1){
 				$potionType = PotionTypeIdMap::getInstance()->fromId($potionId);
 			}
-			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $potionType, $nbt);
+			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $nbt, $potionType);
 		}, ['Arrow', 'minecraft:arrow']);
 
 		$this->register(Egg::class, function(World $world, CompoundTag $nbt) : Egg{
