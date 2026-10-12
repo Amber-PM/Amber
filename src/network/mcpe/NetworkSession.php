@@ -61,6 +61,7 @@ use pocketmine\network\mcpe\handler\PreSpawnPacketHandler;
 use pocketmine\network\mcpe\handler\ResourcePacksPacketHandler;
 use pocketmine\network\mcpe\handler\SessionStartPacketHandler;
 use pocketmine\network\mcpe\handler\SpawnResponsePacketHandler;
+use pocketmine\network\mcpe\protocol\ActorEventPacket;
 use pocketmine\network\mcpe\protocol\AvailableCommandsPacket;
 use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
@@ -90,6 +91,7 @@ use pocketmine\network\mcpe\protocol\TextPacket;
 use pocketmine\network\mcpe\protocol\ToastRequestPacket;
 use pocketmine\network\mcpe\protocol\PrimitiveShapesPacket;
 use pocketmine\network\mcpe\protocol\TransferPacket;
+use pocketmine\network\mcpe\protocol\types\ActorEvent;
 use pocketmine\network\mcpe\protocol\types\AbilitiesData;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
 use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
@@ -1555,6 +1557,14 @@ class NetworkSession{
 			GlobalItemDataHandlers::getSerializer()->serializeType($item)->getName(),
 			$ticks
 		));
+	}
+
+	public function onChargeItemComplete() : void{
+		if($this->player !== null){
+			$packet = ActorEventPacket::create($this->player->getId(), ActorEvent::CHARGED_ITEM, 0, null);
+			$this->sendDataPacket($packet);
+			$this->player->getWorld()->broadcastPacketToViewers($this->player->getLocation(), $packet);
+		}
 	}
 
 	/** Whether the client can display primitive shapes (1.21.90+). */

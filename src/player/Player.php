@@ -209,7 +209,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	private const MAX_CHAT_BYTE_LENGTH = self::MAX_CHAT_CHAR_LENGTH * 4;
 	private const MAX_REACH_DISTANCE_CREATIVE = 13;
 	private const MAX_REACH_DISTANCE_SURVIVAL = 7;
-	private const MAX_REACH_DISTANCE_ENTITY_INTERACTION = 8;
+	public const MAX_REACH_DISTANCE_ENTITY_INTERACTION = 8;
 
 	public const DEFAULT_FLIGHT_SPEED_MULTIPLIER = 0.05;
 
@@ -320,6 +320,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	private bool $processingGlideInput = false;
 	private bool $movementInputAccepted = false;
 	private array $glideBoosts = [];
+	private bool $heldItemUseInProgress = false;
 	protected int $glideFlightTicks = 0;
 	protected bool $sneakPressed = false;
 
@@ -855,9 +856,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->usedChunks = [];
 				$this->loadQueue = [];
 				$this->getNetworkSession()->onEnterWorld();
-				if($oldWorld !== null){
-					\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
-				}
 			}
 
 			return true;
@@ -1790,11 +1788,20 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->blockBreakHandler = null;
 			}
 
-			if($this->isUsingItem() && $this->getItemUseDuration() % 4 === 0 && ($item = $this->inventory->getItemInHand()) instanceof ConsumableItem){
-				$this->broadcastAnimation(new ConsumingItemAnimation($this, $item));
+			if($this->isUsingItem()){
+				$item = $this->inventory->getItemInHand();
+				if($this->getItemUseDuration() % 4 === 0 && $item instanceof ConsumableItem){
+					$this->broadcastAnimation(new ConsumingItemAnimation($this, $item));
+				}
+				if($item instanceof Releasable){
+					$oldItem = clone $item;
+					if($item->continueUsing($this, $this->getItemUseDuration())){
+						$this->getNetworkSession()->onChargeItemComplete();
+					}
+					$this->returnItemsFromAction($oldItem, $item, []);
+				}
 			}
 
-			\pocketmine\world\portal\PortalTeleporter::onPlayerUpdate($this);
 		}
 
 		$this->timings->stopTiming();
@@ -1943,34 +1950,48 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	 * @return bool if it did something
 	 */
 	public function useHeldItem() : bool{
-		$directionVector = $this->getDirectionVector();
-		$item = $this->inventory->getItemInHand();
-		$oldItem = clone $item;
-
-		$ev = new PlayerItemUseEvent($this, $item, $directionVector);
-		if($this->hasItemCooldown($item) || $this->isSpectator()){
-			$ev->cancel();
-		}
-
-		$ev->call();
-
-		if($ev->isCancelled()){
+		if($this->heldItemUseInProgress){
 			return false;
 		}
+		$this->heldItemUseInProgress = true;
+		try{
+			$heldSlot = $this->inventory->getHeldItemIndex();
+			$world = $this->getWorld();
+			$directionVector = $this->getDirectionVector();
+			$item = $this->inventory->getItemInHand();
+			$oldItem = clone $item;
 
-		$returnedItems = [];
-		$result = $item->onClickAir($this, $directionVector, $returnedItems);
-		if($result === ItemUseResult::FAIL){
-			return false;
+			$ev = new PlayerItemUseEvent($this, $item, $directionVector);
+			if($this->hasItemCooldown($item) || $this->isSpectator()){
+				$ev->cancel();
+			}
+
+			$ev->call();
+
+			if($ev->isCancelled() || $this->isClosed() || $this->isSpectator() || $this->getWorld() !== $world || $this->inventory->getHeldItemIndex() !== $heldSlot || !$this->inventory->getItemInHand()->equalsExact($oldItem)){
+				return false;
+			}
+
+			$returnedItems = [];
+			$result = $item->onClickAir($this, $directionVector, $returnedItems);
+			if($result === ItemUseResult::FAIL){
+				return false;
+			}
+
+			$this->resetItemCooldown($oldItem);
+			$this->returnItemsFromAction($oldItem, $item, $returnedItems);
+
+			$this->setUsingItem(
+				$item instanceof Releasable &&
+				($result === ItemUseResult::NONE && $item->canStartUsingItem($this))
+			);
+
+			return true;
+		}finally{
+			$this->heldItemUseInProgress = false;
 		}
-
-		$this->resetItemCooldown($oldItem);
-		$this->returnItemsFromAction($oldItem, $item, $returnedItems);
-
-		$this->setUsingItem($item instanceof Releasable && $item->canStartUsingItem($this));
-
-		return true;
 	}
+
 
 	/**
 	 * Consumes the currently-held item.
@@ -2013,7 +2034,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	public function releaseHeldItem() : bool{
 		try{
 			$item = $this->inventory->getItemInHand();
-			if(!$this->isUsingItem() || $this->hasItemCooldown($item)){
+			if($this->isSpectator() || !$this->isUsingItem() || $this->hasItemCooldown($item)){
 				return false;
 			}
 
@@ -2022,6 +2043,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$returnedItems = [];
 			$result = $item->onReleaseUsing($this, $returnedItems);
 			if($result === ItemUseResult::SUCCESS){
+				$this->setUsingItem(false);
 				$this->resetItemCooldown($oldItem);
 				$this->returnItemsFromAction($oldItem, $item, $returnedItems);
 				return true;
@@ -2358,9 +2380,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 		$this->setSneaking($sneak);
-		if($sneak){
-			\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
-		}
 		return true;
 	}
 
@@ -2394,8 +2413,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			!$this->flying &&
 			!$this->isTouchingWater() &&
 			!$this->isSwimming() &&
-			!$this->isSleeping() &&
-			\pocketmine\entity\object\Boat::getVehicleOf($this) === null;
+			!$this->isSleeping();
 	}
 
 	private function isTouchingWater() : bool{
@@ -2915,8 +2933,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
-		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
-		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
 		$this->cursorInventory->removeAllViewers();
@@ -2993,8 +3009,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
-		\pocketmine\entity\object\Boat::getVehicleOf($this)?->removeRider($this);
-		\pocketmine\world\portal\PortalTeleporter::resetPortalWait($this);
 		$this->discardGlideBoosts();
 		$this->setGliding(false);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the

@@ -42,6 +42,7 @@ use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
 use pocketmine\plugin\Plugin;
 use pocketmine\Server;
@@ -95,6 +96,31 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 }
 
 final class CrossbowItemTest extends TestCase{
+
+	public function testNetworkChargeIncludesClientLoadedState() : void{
+		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::ARROW());
+		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+			$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
+			$net = $converter->coreItemStackToNet($crossbow);
+			$tag = $converter->deserializeItemStackExtraData($net->getRawExtraData(), $net->getId())->getNbt();
+			self::assertSame(1, $tag?->getByte("Charged", 0));
+			self::assertSame("minecraft:arrow", $tag?->getCompoundTag("chargedItem")?->getString("Name"));
+		}
+		$crossbow->setChargedItem(null);
+		self::assertSame(0, $crossbow->getNamedTag()->getByte("Charged", 0));
+		self::assertNull($crossbow->getNamedTag()->getTag("chargedItem"));
+	}
+
+	public function testLegacyChargeNormalizesLoadedFlagAndPreservesAmmo() : void{
+		$crossbow = VanillaItems::CROSSBOW();
+		$crossbow->setNamedTag(CompoundTag::create()->setTag("chargedItem", VanillaItems::ARROW()->nbtSerialize()));
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(1, $crossbow->getNamedTag()->getByte("Charged"));
+		self::assertSame(ItemTypeIds::ARROW, $crossbow->getChargedItem()?->getTypeId());
+		$crossbow->setNamedTag(CompoundTag::create()->setByte("Charged", 1));
+		self::assertFalse($crossbow->isCharged());
+		self::assertSame(0, $crossbow->getNamedTag()->getByte("Charged"));
+	}
 
 	private function createMockPlayer(
 		bool $finiteResources = true,
@@ -623,5 +649,94 @@ final class CrossbowItemTest extends TestCase{
 		$refMethod = new \ReflectionMethod($anonymousSubclass, "createArrow");
 		self::assertSame(2, $refMethod->getNumberOfParameters());
 		self::assertSame(2, $refMethod->getNumberOfRequiredParameters());
+	}
+
+	public function testContinueUsingChargesAtThresholdAndStaysChargedWhileHeld() : void{
+		$crossbow = VanillaItems::CROSSBOW();
+		$player = $this->createMockPlayer(finiteResources: true);
+		$player->getInventory()->setItem(0, VanillaItems::ARROW()->setCount(5));
+
+		self::assertFalse($crossbow->continueUsing($player, 10));
+		self::assertFalse($crossbow->isCharged());
+		self::assertSame(5, $player->getInventory()->getItem(0)->getCount());
+
+		self::assertTrue($crossbow->continueUsing($player, 25));
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(4, $player->getInventory()->getItem(0)->getCount());
+
+		self::assertFalse($crossbow->continueUsing($player, 26));
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(4, $player->getInventory()->getItem(0)->getCount());
+	}
+
+	public function testOnReleaseUsingWhenChargedPreservesCharge() : void{
+		$crossbow = VanillaItems::CROSSBOW();
+		$crossbow->setChargedItem(VanillaItems::ARROW());
+
+		$player = $this->createMockPlayer(finiteResources: true, itemUseDuration: 40);
+		$returnedItems = [];
+		$result = $crossbow->onReleaseUsing($player, $returnedItems);
+		self::assertSame(ItemUseResult::SUCCESS, $result);
+		self::assertTrue($crossbow->isCharged());
+	}
+
+	public function testChargeFireRechargeCycle() : void{
+		$crossbow = new CrossbowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$player = $this->createMockPlayer(finiteResources: true);
+		$player->getInventory()->setItem(0, VanillaItems::ARROW()->setCount(5));
+
+		self::assertFalse($crossbow->isCharged());
+		$returnedItems = [];
+
+		self::assertSame(ItemUseResult::NONE, $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems));
+
+		self::assertTrue($crossbow->continueUsing($player, 25));
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(4, $player->getInventory()->getItem(0)->getCount());
+
+		self::assertSame(ItemUseResult::SUCCESS, $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems));
+		self::assertFalse($crossbow->isCharged());
+		self::assertCount(1, $crossbow->shotProjectiles);
+
+		self::assertSame(ItemUseResult::NONE, $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems));
+
+		self::assertTrue($crossbow->continueUsing($player, 25));
+		self::assertTrue($crossbow->isCharged());
+		self::assertSame(3, $player->getInventory()->getItem(0)->getCount());
+	}
+
+	public function testQuickChargeLevelsAndThresholds() : void{
+		$thresholds = [
+			0 => 25,
+			1 => 20,
+			2 => 15,
+			3 => 10,
+		];
+
+		foreach($thresholds as $level => $expectedThreshold){
+			$crossbow = VanillaItems::CROSSBOW();
+			if($level > 0){
+				$crossbow->addEnchantment(new \pocketmine\item\enchantment\EnchantmentInstance(VanillaEnchantments::QUICK_CHARGE(), $level));
+			}
+			self::assertSame($expectedThreshold, $crossbow->getChargeDuration());
+
+			$player = $this->createMockPlayer(finiteResources: true);
+			$player->getInventory()->setItem(0, VanillaItems::ARROW()->setCount(10));
+
+			// Just before threshold
+			self::assertFalse($crossbow->continueUsing($player, $expectedThreshold - 1));
+			self::assertFalse($crossbow->isCharged());
+			self::assertSame(10, $player->getInventory()->getItem(0)->getCount());
+
+			// Exactly at threshold
+			self::assertTrue($crossbow->continueUsing($player, $expectedThreshold));
+			self::assertTrue($crossbow->isCharged());
+			self::assertSame(9, $player->getInventory()->getItem(0)->getCount());
+
+			// After threshold: no additional ammo consumed, remains charged
+			self::assertFalse($crossbow->continueUsing($player, $expectedThreshold + 1));
+			self::assertTrue($crossbow->isCharged());
+			self::assertSame(9, $player->getInventory()->getItem(0)->getCount());
+		}
 	}
 }

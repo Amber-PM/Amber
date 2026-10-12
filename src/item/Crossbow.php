@@ -38,6 +38,7 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
 use pocketmine\world\sound\CrossbowLoadEndSound;
+use pocketmine\world\sound\CrossbowLoadMiddleSound;
 use pocketmine\world\sound\CrossbowLoadStartSound;
 use pocketmine\world\sound\CrossbowShootSound;
 use function cos;
@@ -45,7 +46,7 @@ use function deg2rad;
 use function max;
 use function sin;
 
-class Crossbow extends Tool implements Releasable{
+class Crossbow extends Tool implements Chargeable{
 
 	public const TAG_CHARGED_ITEM = "chargedItem";
 
@@ -72,10 +73,30 @@ class Crossbow extends Tool implements Releasable{
 	public function setChargedItem(?Item $item) : self{
 		if($item !== null && !$item->isNull()){
 			$this->getNamedTag()->setTag(self::TAG_CHARGED_ITEM, $item->nbtSerialize());
+			$this->getNamedTag()->setByte("Charged", 1);
 		}else{
 			$this->getNamedTag()->removeTag(self::TAG_CHARGED_ITEM);
+			$this->getNamedTag()->setByte("Charged", 0);
 		}
 		return $this;
+	}
+
+	public function setCharged(?Item $item) : void{
+		$this->setChargedItem($item);
+	}
+
+	protected function serializeCompoundTag(CompoundTag $tag) : void{
+		parent::serializeCompoundTag($tag);
+		$tag->setByte("Charged", $tag->getTag(self::TAG_CHARGED_ITEM) instanceof CompoundTag ? 1 : 0);
+	}
+
+	protected function deserializeCompoundTag(CompoundTag $tag) : void{
+		parent::deserializeCompoundTag($tag);
+		if($tag->getTag(self::TAG_CHARGED_ITEM) === null){
+			$tag->setByte("Charged", 0);
+		}else{
+			$tag->setByte("Charged", 1);
+		}
 	}
 
 	public function getChargeDuration() : int{
@@ -118,9 +139,7 @@ class Crossbow extends Tool implements Releasable{
 			return $this->fire($player, $directionVector, $returnedItems);
 		}
 
-		$quickCharge = $this->getEnchantmentLevel(VanillaEnchantments::QUICK_CHARGE()) > 0;
-		$player->getWorld()->addSound($player->getLocation(), new CrossbowLoadStartSound($quickCharge));
-		return ItemUseResult::SUCCESS;
+		return ItemUseResult::NONE;
 	}
 
 	/**
@@ -133,16 +152,9 @@ class Crossbow extends Tool implements Releasable{
 		return ItemUseResult::NONE;
 	}
 
-	/**
-	 * @param Item[] &$returnedItems
-	 */
-	public function onReleaseUsing(Player $player, array &$returnedItems) : ItemUseResult{
+	public function loadAmmo(Player $player) : bool{
 		if($this->isCharged()){
-			return ItemUseResult::FAIL;
-		}
-
-		if($player->getItemUseDuration() < $this->getChargeDuration()){
-			return ItemUseResult::FAIL;
+			return false;
 		}
 
 		$ammoInventory = null;
@@ -167,7 +179,7 @@ class Crossbow extends Tool implements Releasable{
 
 		if($ammoItem === null){
 			if($player->hasFiniteResources()){
-				return ItemUseResult::FAIL;
+				return false;
 			}
 			$ammoItem = VanillaItems::ARROW();
 		}
@@ -184,7 +196,44 @@ class Crossbow extends Tool implements Releasable{
 		$quickCharge = $this->getEnchantmentLevel(VanillaEnchantments::QUICK_CHARGE()) > 0;
 		$player->getWorld()->addSound($player->getLocation(), new CrossbowLoadEndSound($quickCharge));
 
-		return ItemUseResult::SUCCESS;
+		return true;
+	}
+
+	public function continueUsing(Player $player, int $useDuration) : bool{
+		$quickCharge = $this->getEnchantmentLevel(VanillaEnchantments::QUICK_CHARGE()) > 0;
+		if($useDuration <= 1){
+			$player->getWorld()->addSound($player->getLocation(), new CrossbowLoadStartSound($quickCharge));
+			return false;
+		}
+		$chargeDuration = $this->getChargeDuration();
+		if($useDuration >= $chargeDuration){
+			if(!$this->isCharged()){
+				return $this->loadAmmo($player);
+			}
+			return false;
+		}
+
+		$multiplier = 25.0 / $chargeDuration;
+		$adjustedTicks = (int) ($useDuration * $multiplier);
+		if($adjustedTicks % 16 === 0){
+			$player->getWorld()->addSound($player->getLocation(), new CrossbowLoadMiddleSound($quickCharge));
+		}
+		return false;
+	}
+
+	/**
+	 * @param Item[] &$returnedItems
+	 */
+	public function onReleaseUsing(Player $player, array &$returnedItems) : ItemUseResult{
+		if($this->isCharged()){
+			return ItemUseResult::SUCCESS;
+		}
+
+		if($player->getItemUseDuration() < $this->getChargeDuration()){
+			return ItemUseResult::FAIL;
+		}
+
+		return $this->loadAmmo($player) ? ItemUseResult::SUCCESS : ItemUseResult::FAIL;
 	}
 
 	/**
