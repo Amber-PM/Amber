@@ -84,6 +84,8 @@ final class CrossbowRealArrowTestDouble extends Crossbow{
 		(new ReflectionProperty(ArrowEntity::class, "pickupMode"))->setValue($arrow, ArrowEntity::PICKUP_ANY);
 		(new ReflectionProperty(ArrowEntity::class, "pierceLevel"))->setValue($arrow, 0);
 		(new ReflectionProperty(ArrowEntity::class, "piercedEntityIds"))->setValue($arrow, []);
+		(new ReflectionProperty(ArrowEntity::class, "potionType"))->setValue($arrow, null);
+		(new ReflectionProperty(ArrowEntity::class, "customPotionEffects"))->setValue($arrow, null);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($arrow, $location);
 		(new ReflectionProperty(Entity::class, "hasSpawned"))->setValue($arrow, []);
 
@@ -150,6 +152,7 @@ final class CrossbowItemTest extends TestCase{
 		self::assertSame(300, $crossbow->getFuelTime());
 	}
 
+	/** @param Entity[] $entities */
 	private function createFireworkPlayer(array &$entities, bool $isSpectator = false) : Player{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
@@ -592,5 +595,33 @@ final class CrossbowItemTest extends TestCase{
 		);
 		self::assertSame(ItemUseResult::NONE, $result);
 		self::assertEmpty($crossbow->shotProjectiles);
+	}
+
+	public function testCrossbowShootsTippedArrow() : void{
+		$crossbow = new CrossbowRealArrowTestDouble(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow");
+		$tippedArrow = VanillaItems::ARROW()->setTipType(PotionType::POISON);
+		$crossbow->setChargedItem($tippedArrow);
+
+		$player = $this->createMockPlayer();
+		$returnedItems = [];
+		$result = $crossbow->onClickAir($player, new Vector3(0, 0, 1), $returnedItems);
+		self::assertSame(ItemUseResult::SUCCESS, $result);
+		self::assertCount(1, $crossbow->createdArrows);
+		self::assertSame(PotionType::POISON, $crossbow->createdArrows[0]->getPotionType());
+	}
+
+	public function testCrossbowSubclassTwoArgumentCreateArrowCompatibility() : void{
+		$anonymousSubclass = new class(new ItemIdentifier(ItemTypeIds::CROSSBOW), "Crossbow") extends Crossbow{
+			public bool $createArrowCalled = false;
+
+			protected function createArrow(Location $location, Player $player) : ArrowEntity{
+				$this->createArrowCalled = true;
+				return parent::createArrow($location, $player);
+			}
+		};
+
+		$refMethod = new \ReflectionMethod($anonymousSubclass, "createArrow");
+		self::assertSame(2, $refMethod->getNumberOfParameters());
+		self::assertSame(2, $refMethod->getNumberOfRequiredParameters());
 	}
 }
