@@ -27,7 +27,6 @@ use pocketmine\block\Block;
 use pocketmine\block\EndPortalFrame;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
-use pocketmine\world\portal\EndPortalDetector;
 use pocketmine\world\sound\EndPortalFrameFillSound;
 
 class EnderEye extends Item{
@@ -45,7 +44,6 @@ class EnderEye extends Item{
 
 			$this->pop();
 
-			EndPortalDetector::tryActivate($world, $blockClicked->getPosition());
 
 			return ItemUseResult::SUCCESS;
 		}

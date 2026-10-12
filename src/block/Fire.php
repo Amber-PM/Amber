@@ -51,9 +51,6 @@ class Fire extends BaseFire implements Ageable{
 
 	public function onNearbyBlockChange() : void{
 		$world = $this->position->getWorld();
-		if(\pocketmine\world\portal\NetherPortalDetector::tryActivate($world, $this->position)){
-			return;
-		}
 		$down = $this->getSide(Facing::DOWN);
 		if(SoulFire::canBeSupportedBy($down)){
 			$world->setBlock($this->position, VanillaBlocks::SOUL_FIRE());

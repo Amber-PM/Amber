@@ -57,20 +57,6 @@ class MonsterSpawner extends Transparent{
 		return mt_rand(15, 43);
 	}
 
-	public function onPostPlace() : void{
-		$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, 1);
-	}
-
-	public function onScheduledUpdate() : void{
-		$tile = $this->position->getWorld()->getTile($this->position);
-		if($tile instanceof TileMonsterSpawner){
-			$delay = $tile->onUpdate();
-			if($delay > 0){
-				$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, $delay);
-			}
-		}
-	}
-
 	public function getSupportType(int $facing) : SupportType{
 		return SupportType::NONE;
 	}

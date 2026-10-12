@@ -25,7 +25,6 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
-use pocketmine\entity\Entity;
 use pocketmine\item\Item;
 use pocketmine\math\Axis;
 use pocketmine\math\Facing;
@@ -100,14 +99,5 @@ class NetherPortal extends Transparent{
 		return $checkNeighbor(Facing::NORTH) && $checkNeighbor(Facing::SOUTH);
 	}
 
-	public function hasEntityCollision() : bool{
-		return true;
-	}
 
-	public function onEntityInside(Entity $entity) : bool{
-		if($entity instanceof \pocketmine\player\Player){
-			\pocketmine\world\portal\PortalTeleporter::handlePlayerInNetherPortal($entity);
-		}
-		return true;
-	}
 }

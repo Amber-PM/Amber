@@ -40,7 +40,6 @@ class FireCharge extends Item{
 
 			$this->pop();
 
-			\pocketmine\world\portal\NetherPortalDetector::tryActivate($world, $blockReplace->getPosition());
 
 			return ItemUseResult::SUCCESS;
 		}

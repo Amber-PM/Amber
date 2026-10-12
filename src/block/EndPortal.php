@@ -24,7 +24,6 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\SupportType;
-use pocketmine\entity\Entity;
 use pocketmine\item\Item;
 
 class EndPortal extends Transparent{
@@ -49,14 +48,5 @@ class EndPortal extends Transparent{
 		return [];
 	}
 
-	public function hasEntityCollision() : bool{
-		return true;
-	}
 
-	public function onEntityInside(Entity $entity) : bool{
-		if($entity instanceof \pocketmine\player\Player){
-			\pocketmine\world\portal\PortalTeleporter::handlePlayerInEndPortal($entity);
-		}
-		return true;
-	}
 }

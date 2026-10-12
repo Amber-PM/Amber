@@ -344,16 +344,6 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("writable_book", fn(IID $id) => new WritableBook($id, "Book & Quill"));
 		self::register("written_book", fn(IID $id) => new WrittenBook($id, "Written Book"));
 
-		foreach(BoatType::cases() as $type){
-			//boat type is static, because different types of wood may have different properties
-			$boatKey = $type === BoatType::BAMBOO ? "bamboo_raft" : strtolower($type->name) . "_boat";
-			$boatName = $type === BoatType::BAMBOO ? "Bamboo Raft" : $type->getDisplayName() . " Boat";
-			self::register($boatKey, fn(IID $id) => new Boat($id, $boatName, $type));
-
-			$chestBoatKey = $type === BoatType::BAMBOO ? "bamboo_chest_raft" : strtolower($type->name) . "_chest_boat";
-			$chestBoatName = $type === BoatType::BAMBOO ? "Bamboo Chest Raft" : $type->getDisplayName() . " Boat with Chest";
-			self::register($chestBoatKey, fn(IID $id) => new ChestBoat($id, $chestBoatName, $type));
-		}
 	}
 
 	private function registerSpawnEggs() : void{

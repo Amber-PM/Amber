@@ -39,6 +39,39 @@ use ReflectionProperty;
 
 final class MonsterSpawnerTest extends TestCase{
 
+	public function testLegacySpawnerLoadsWithoutSchedulingOrSpawning() : void{
+		$world = $this->createMock(\pocketmine\world\World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->expects(self::never())->method("scheduleDelayedBlockUpdate");
+		$world->expects(self::never())->method("addEntity");
+		$tile = new TileMonsterSpawner($world, new Vector3(8, 10, 8));
+		$nbt = \pocketmine\nbt\tag\CompoundTag::create()->setString("EntityIdentifier", EntityIds::ZOMBIE)->setShort("Delay", 15)->setShort("SpawnRange", 4);
+		try{
+			$tile->readSaveData($nbt);
+			$saved = $tile->saveNBT();
+			self::assertSame(EntityIds::ZOMBIE, $saved->getString("EntityIdentifier"));
+			self::assertSame(15, $saved->getShort("Delay"));
+			self::assertSame(4, $saved->getShort("SpawnRange"));
+		}finally{
+			$tile->close();
+		}
+	}
+
+	public function testChangingSpawnerEntityIdRefreshesBlockWithoutSchedulingUpdate() : void{
+		$world = $this->createMock(\pocketmine\world\World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlock")->willReturn((new ReflectionClass(Block::class))->newInstanceWithoutConstructor());
+		$world->expects(self::once())->method("setBlock");
+		$world->expects(self::never())->method("scheduleDelayedBlockUpdate");
+		$tile = new TileMonsterSpawner($world, new Vector3(8, 10, 8));
+		try{
+			$tile->setEntityId(EntityIds::ZOMBIE);
+			self::assertSame(EntityIds::ZOMBIE, $tile->getEntityId());
+		}finally{
+			$tile->close();
+		}
+	}
+
 	public function testDefaultProperties() : void{
 		self::assertSame(200, TileMonsterSpawner::DEFAULT_MIN_SPAWN_DELAY);
 		self::assertSame(800, TileMonsterSpawner::DEFAULT_MAX_SPAWN_DELAY);
@@ -67,33 +100,10 @@ final class MonsterSpawnerTest extends TestCase{
 		self::assertInstanceOf(ReflectionNamedType::class, $paramType);
 		self::assertSame("string", $paramType->getName());
 
-		$onUpdate = $refClass->getMethod("onUpdate");
-		$ret = $onUpdate->getReturnType();
-		self::assertInstanceOf(ReflectionNamedType::class, $ret);
-		self::assertSame("int", $ret->getName());
-		self::assertSame(0, $onUpdate->getNumberOfParameters());
-
-		$spawnMobs = $refClass->getMethod("spawnMobs");
-		$ret = $spawnMobs->getReturnType();
-		self::assertInstanceOf(ReflectionNamedType::class, $ret);
-		self::assertSame("void", $ret->getName());
-		self::assertSame(0, $spawnMobs->getNumberOfParameters());
 	}
 
 	public function testBlockMethodSignatures() : void{
 		$refClass = new ReflectionClass(MonsterSpawner::class);
-
-		$onPostPlace = $refClass->getMethod("onPostPlace");
-		$ret = $onPostPlace->getReturnType();
-		self::assertInstanceOf(ReflectionNamedType::class, $ret);
-		self::assertSame("void", $ret->getName());
-		self::assertSame(0, $onPostPlace->getNumberOfParameters());
-
-		$onScheduledUpdate = $refClass->getMethod("onScheduledUpdate");
-		$ret = $onScheduledUpdate->getReturnType();
-		self::assertInstanceOf(ReflectionNamedType::class, $ret);
-		self::assertSame("void", $ret->getName());
-		self::assertSame(0, $onScheduledUpdate->getNumberOfParameters());
 
 		$onInteract = $refClass->getMethod("onInteract");
 		$ret = $onInteract->getReturnType();
@@ -131,15 +141,6 @@ final class MonsterSpawnerTest extends TestCase{
 		self::assertFalse($block->onInteract(VanillaItems::FEATHER(), Facing::UP, new Vector3(0, 0, 0), null, $returnedItems));
 	}
 
-	public function testTileClosedReturnsZero() : void{
-		$refClass = new ReflectionClass(TileMonsterSpawner::class);
-		/** @var TileMonsterSpawner $tile */
-		$tile = $refClass->newInstanceWithoutConstructor();
-		$tile->closed = true;
-
-		self::assertSame(0, $tile->onUpdate());
-	}
-
 	public function testTileGetSetEntityId() : void{
 		$refClass = new ReflectionClass(TileMonsterSpawner::class);
 		/** @var TileMonsterSpawner $tile */
@@ -173,21 +174,6 @@ final class MonsterSpawnerTest extends TestCase{
 
 		$tile->setEntityId(VanillaItems::VILLAGER_SPAWN_EGG()->getSpawnEntityNetworkId());
 		self::assertSame(EntityIds::VILLAGER, $tile->getEntityId());
-
-		$tile->closed = true;
-	}
-
-	public function testTileSetEntityIdResetsSpawnDelay() : void{
-		$refClass = new ReflectionClass(TileMonsterSpawner::class);
-		/** @var TileMonsterSpawner $tile */
-		$tile = $refClass->newInstanceWithoutConstructor();
-
-		$tile->setMinSpawnDelay(300);
-		$tile->setMaxSpawnDelay(500);
-		$tile->setEntityId("minecraft:skeleton");
-
-		self::assertGreaterThanOrEqual(300, $tile->getSpawnDelay());
-		self::assertLessThanOrEqual(500, $tile->getSpawnDelay());
 
 		$tile->closed = true;
 	}

@@ -34,8 +34,6 @@ use pocketmine\data\SavedDataLoadingException;
 use pocketmine\entity\EntityDataHelper as Helper;
 use pocketmine\entity\object\AreaEffectCloud;
 use pocketmine\entity\object\ArmorStand;
-use pocketmine\entity\object\Boat;
-use pocketmine\entity\object\ChestBoat;
 use pocketmine\entity\object\EndCrystal;
 use pocketmine\entity\object\ExperienceOrb;
 use pocketmine\entity\object\FallingBlock;
@@ -98,14 +96,6 @@ final class EntityFactory{
 		$this->register(ArmorStand::class, function(World $world, CompoundTag $nbt) : ArmorStand{
 			return new ArmorStand(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['ArmorStand', 'minecraft:armor_stand']);
-
-		$this->register(Boat::class, function(World $world, CompoundTag $nbt) : Boat{
-			return new Boat(Helper::parseLocation($nbt, $world), null, $nbt);
-		}, ['Boat', 'minecraft:boat']);
-
-		$this->register(ChestBoat::class, function(World $world, CompoundTag $nbt) : ChestBoat{
-			return new ChestBoat(Helper::parseLocation($nbt, $world), null, $nbt);
-		}, ['ChestBoat', 'minecraft:chest_boat']);
 
 		$this->register(Arrow::class, function(World $world, CompoundTag $nbt) : Arrow{
 			$potionType = null;
