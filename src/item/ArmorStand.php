@@ -39,7 +39,7 @@ use function round;
 class ArmorStand extends Item{
 
 	public function getMaxStackSize() : int{
-		return 16;
+		return 64;
 	}
 
 	public function onInteractBlock(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, array &$returnedItems) : ItemUseResult{

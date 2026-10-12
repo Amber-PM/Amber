@@ -55,6 +55,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
 use pocketmine\plugin\Plugin;
 use pocketmine\timings\TimingsHandler;
@@ -86,8 +87,11 @@ final class ArmorStandInteractionTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($entity, true);
 	}
 
-	private function createArmorStand(int $initialPose = 0, bool $locked = false) : ArmorStand{
-		$stand = (new ReflectionClass(ArmorStand::class))->newInstanceWithoutConstructor();
+	private function createArmorStand(int $initialPose = 0, bool $locked = false, bool $noHurtAnimation = false) : ArmorStand{
+		$stand = $noHurtAnimation ? $this->getMockBuilder(ArmorStand::class)->disableOriginalConstructor()->onlyMethods(["broadcastAnimation"])->getMock() : (new ReflectionClass(ArmorStand::class))->newInstanceWithoutConstructor();
+		if($noHurtAnimation){
+			$stand->expects($this->never())->method("broadcastAnimation");
+		}
 		$this->markClosed($stand);
 		(new ReflectionProperty(Entity::class, "id"))->setValue($stand, 1);
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($stand, new EntityMetadataCollection());
@@ -163,6 +167,89 @@ final class ArmorStandInteractionTest extends TestCase{
 			$calculated = round($yaw / 22.5) * 22.5;
 			self::assertEqualsWithDelta($expectedSnapped, $calculated, 0.0001, "Yaw $yaw should snap to $expectedSnapped");
 		}
+	}
+
+	public function testEquippingFromStackPreservesRemainder() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND()->setCount(13));
+		self::assertTrue($stand->onInteract($player, Vector3::zero()));
+		self::assertSame(1, $stand->getMainHandItem()->getCount());
+		self::assertSame(12, $player->getInventory()->getItemInHand()->getCount());
+	}
+
+	public function testEquipmentCallbackSlotMutationDoesNotOverwritePlayerItem() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND()->setCount(13));
+		$player->getInventory()->setItem(1, VanillaItems::GOLD_INGOT()->setCount(7));
+		$listener = new RegisteredListener(function(ArmorStandEquipEvent $event) use ($player) : void{
+			$player->getInventory()->setHeldItemIndex(1);
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), false, new TimingsHandler("equipment slot callback"));
+		HandlerListManager::global()->getListFor(ArmorStandEquipEvent::class)->register($listener);
+		self::assertFalse($stand->onInteract($player, Vector3::zero()));
+		self::assertSame(7, $player->getInventory()->getItemInHand()->getCount());
+		self::assertSame(13, $player->getInventory()->getItem(0)->getCount());
+		self::assertTrue($stand->getMainHandItem()->isNull());
+	}
+
+	public function testEquipmentDeathCallbackCannotReturnDroppedEquipment() : void{
+		$stand = $this->createArmorStand();
+		$stand->getArmorInventory()->setHelmet(VanillaItems::DIAMOND_HELMET());
+		$stand->getWorld()->expects($this->exactly(2))->method("dropItem");
+		$player = $this->createPlayer();
+		$listener = new RegisteredListener(function(ArmorStandEquipEvent $event) : void{
+			$event->getArmorStand()->kill();
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), false, new TimingsHandler("equipment death callback"));
+		HandlerListManager::global()->getListFor(ArmorStandEquipEvent::class)->register($listener);
+		self::assertFalse($player->interactEntity($stand, Vector3::zero()));
+		self::assertFalse($stand->isAlive());
+		self::assertTrue($player->getInventory()->getItemInHand()->isNull());
+	}
+
+	public function testEquipmentReentrantCallbackIsRejectedWithoutConsumingTwice() : void{
+		$stand = $this->createArmorStand();
+		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND()->setCount(13));
+		$entered = false;
+		$listener = new RegisteredListener(function(ArmorStandEquipEvent $event) use ($player, &$entered) : void{
+			if(!$entered){
+				$entered = true;
+				self::assertFalse($player->interactEntity($event->getArmorStand(), Vector3::zero()));
+			}
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), false, new TimingsHandler("equipment reentrant callback"));
+		HandlerListManager::global()->getListFor(ArmorStandEquipEvent::class)->register($listener);
+		self::assertTrue($player->interactEntity($stand, Vector3::zero()));
+		self::assertSame(1, $stand->getMainHandItem()->getCount());
+		self::assertSame(12, $player->getInventory()->getItemInHand()->getCount());
+	}
+
+	public function testPoseCallbackCannotChangeLockedStand() : void{
+		$stand = $this->createArmorStand();
+		$listener = new RegisteredListener(function(ArmorStandPoseChangeEvent $event) : void{
+			$event->getEntity()->setLocked(true);
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), false, new TimingsHandler("pose lock callback"));
+		HandlerListManager::global()->getListFor(ArmorStandPoseChangeEvent::class)->register($listener);
+		self::assertFalse($stand->onInteract($this->createPlayer(isSneaking: true), Vector3::zero()));
+		self::assertSame(0, $stand->getPose());
+	}
+
+	public function testDeadOrDespawningStandCannotBeStripped() : void{
+		$stand = $this->createArmorStand();
+		$stand->getArmorInventory()->setHelmet(VanillaItems::DIAMOND_HELMET());
+		$stand->flagForDespawn();
+		$player = $this->createPlayer();
+		self::assertFalse($stand->onInteract($player, Vector3::zero()));
+		self::assertTrue($player->getInventory()->getItemInHand()->isNull());
+	}
+
+	public function testSurvivalPunchUsesWobbleMetadataWithoutMobHurtAnimation() : void{
+		$stand = $this->createArmorStand(noHurtAnimation: true);
+		$player = $this->createPlayer();
+		$event = $this->getMockBuilder(EntityDamageByEntityEvent::class)->disableOriginalConstructor()->onlyMethods(["getDamager", "call"])->getMock();
+		$event->method("getDamager")->willReturn($player);
+		(new ReflectionProperty(EntityDamageEvent::class, "cause"))->setValue($event, EntityDamageEvent::CAUSE_ENTITY_ATTACK);
+		$stand->attack($event);
+		self::assertTrue($stand->isAlive());
+		self::assertSame(6.0, $stand->getHealth());
+		self::assertGreaterThan(0, $stand->getNetworkProperties()->getAll()[EntityMetadataProperties::HURT_TIME]->getValue());
 	}
 
 	public function testPoseCyclingProgression() : void{

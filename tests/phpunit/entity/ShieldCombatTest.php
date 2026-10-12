@@ -35,6 +35,10 @@ use ReflectionProperty;
 
 class ShieldCombatTest extends TestCase{
 
+	protected function tearDown() : void{
+		\pocketmine\event\HandlerListManager::global()->unregisterAll();
+	}
+
 	/** @var array<int, Entity> */
 	private static array $entitiesById = [];
 	private \pocketmine\world\World $testWorld;
@@ -56,10 +60,15 @@ class ShieldCombatTest extends TestCase{
 		$this->testWorld = $world;
 	}
 
-	private function createHuman(float $yaw = 0.0, Vector3 $pos = null) : Human{
+	private function createHuman(float $yaw = 0.0, Vector3 $pos = null, bool $expectBlockedFeedback = false) : Human{
 		static $idCounter = 1;
 		$id = $idCounter++;
-		$human = (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
+		$human = $expectBlockedFeedback ? $this->getMockBuilder(Human::class)->disableOriginalConstructor()->onlyMethods(["knockBack", "doHitAnimation", "broadcastSound"])->getMock() : (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
+		if($expectBlockedFeedback){
+			$human->expects(self::never())->method("knockBack");
+			$human->expects(self::never())->method("doHitAnimation");
+			$human->expects(self::once())->method("broadcastSound")->with(self::isInstanceOf(\pocketmine\world\sound\ShieldBlockSound::class));
+		}
 		(new ReflectionProperty(Entity::class, "id"))->setValue($human, $id);
 		self::$entitiesById[$id] = $human;
 		(new ReflectionProperty(Entity::class, "networkProperties"))->setValue($human, new EntityMetadataCollection());
@@ -97,6 +106,34 @@ class ShieldCombatTest extends TestCase{
 
 		// Target facing North (yaw = 180), attacker at (0, 0, -5) is in front -> true
 		self::assertTrue($human->isFacingAttack(new Vector3(0, 0, -5), new Vector3(0, 0, 0), 180.0));
+	}
+
+	public function testBlockedMeleeDoesNotHurtDefenderOrKnockItBack() : void{
+		$defender = $this->createHuman(0.0, Vector3::zero(), true);
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+		$attacker = $this->createHuman(180.0, new Vector3(0, 0, 3));
+		$health = $defender->getHealth();
+		$defender->attack($this->createDamageByEntityEvent($attacker, $defender, 8.0));
+		self::assertSame($health, $defender->getHealth());
+		self::assertEquals(Vector3::zero(), $defender->getMotion());
+		self::assertSame(8, $defender->getOffHandInventory()->getItem(0)->getDamage());
+	}
+
+	public function testShieldChangedInsideDamageCallbackIsNotDamaged() : void{
+		$defender = $this->createHuman(0.0, Vector3::zero(), true);
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+		$replacement = VanillaItems::SHIELD()->setCustomName("Replacement");
+		$listener = new \pocketmine\event\RegisteredListener(function(EntityDamageEvent $event) use ($defender, $replacement) : void{
+			$defender->getOffHandInventory()->setItem(0, $replacement);
+		}, \pocketmine\event\EventPriority::NORMAL, $this->createMock(\pocketmine\plugin\Plugin::class), false, new \pocketmine\timings\TimingsHandler("shield callback"));
+		\pocketmine\event\HandlerListManager::global()->getListFor(EntityDamageEvent::class)->register($listener);
+		$attacker = $this->createHuman(180.0, new Vector3(0, 0, 3));
+		$defender->attack($this->createDamageByEntityEvent($attacker, $defender, 8.0));
+		self::assertTrue($replacement->equalsExact($defender->getOffHandInventory()->getItem(0)));
 	}
 
 	private function createDamageByEntityEvent(Entity $damager, Entity $victim, float $damage = 2.0, int $cause = EntityDamageEvent::CAUSE_ENTITY_ATTACK) : EntityDamageByEntityEvent{

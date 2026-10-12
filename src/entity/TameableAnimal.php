@@ -30,11 +30,8 @@ use pocketmine\block\Lava;
 use pocketmine\block\Magma;
 use pocketmine\block\utils\DyeColor;
 use pocketmine\data\bedrock\DyeColorIdMap;
-use pocketmine\entity\effect\EffectManager;
-use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\Dye;
 use pocketmine\item\Item;
-use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
@@ -176,6 +173,10 @@ abstract class TameableAnimal extends Living implements Ageable{
 
 	public function setAge(int $age) : void{
 		$this->age = $age;
+		$scale = $age < 0 ? 0.5 : 1.0;
+		if($this->getScale() !== $scale){
+			$this->setScale($scale);
+		}
 		if($age <= 0){
 			$this->breedingCooldownTicks = 0;
 		}else{
@@ -501,10 +502,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 			$baby->setHealth(20.0);
 		}
 
-		try{
-			$baby->spawnToAll();
-		}catch(\Throwable){
-		}
+		$baby->spawnToAll();
 
 		$this->setInLoveTicks(0);
 		$partner->setInLoveTicks(0);
@@ -522,39 +520,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 	}
 
 	protected function createBabyEntity(Location $location) : static{
-		try{
-			return new static($location);
-		}catch(\Throwable){
-			$baby = (new \ReflectionClass(static::class))->newInstanceWithoutConstructor();
-			(new \ReflectionProperty(Entity::class, "closed"))->setValue($baby, false);
-			(new \ReflectionProperty(Entity::class, "id"))->setValue($baby, Entity::nextRuntimeId());
-			(new \ReflectionProperty(Entity::class, "size"))->setValue($baby, $this->getInitialSizeInfo());
-			(new \ReflectionProperty(Entity::class, "scale"))->setValue($baby, 1.0);
-			(new \ReflectionProperty(Entity::class, "networkProperties"))->setValue($baby, new EntityMetadataCollection());
-			(new \ReflectionProperty(Entity::class, "attributeMap"))->setValue($baby, new AttributeMap());
-			(new \ReflectionProperty(Living::class, "effectManager"))->setValue($baby, new EffectManager($baby));
-			(new \ReflectionProperty(Living::class, "armorInventory"))->setValue($baby, new ArmorInventory($baby));
-			(new \ReflectionProperty(Entity::class, "location"))->setValue($baby, $location);
-			(new \ReflectionProperty(Entity::class, "motion"))->setValue($baby, Vector3::zero());
-			(new \ReflectionProperty(Entity::class, "lastLocation"))->setValue($baby, clone $location);
-			(new \ReflectionProperty(Entity::class, "lastMotion"))->setValue($baby, Vector3::zero());
-			$width = $baby->size->getWidth();
-			$height = $baby->size->getHeight();
-			(new \ReflectionProperty(Entity::class, "boundingBox"))->setValue($baby, new AxisAlignedBB(
-				$location->x - $width / 2,
-				$location->y,
-				$location->z - $width / 2,
-				$location->x + $width / 2,
-				$location->y + $height,
-				$location->z + $width / 2
-			));
-			$baby->addAttributes();
-			try{
-				$location->getWorld()->addEntity($baby);
-			}catch(\Throwable){
-			}
-			return $baby;
-		}
+		return new static($location);
 	}
 
 	protected function emitParticle(Particle $particle) : void{

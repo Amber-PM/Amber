@@ -118,6 +118,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 	protected PlayerOffHandInventory $offHandInventory;
 	protected PlayerEnderInventory $enderInventory;
 	protected bool $blocking = false;
+	private ?array $blockingShieldSnapshot = null;
 
 	protected UuidInterface $uuid;
 
@@ -366,6 +367,16 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		if($durabilityLoss <= 0){
 			return;
 		}
+		if($this->blockingShieldSnapshot !== null){
+			if($this->blockingShieldSnapshot === []){
+				return;
+			}
+			[$inventory, $slot, $shield] = $this->blockingShieldSnapshot;
+			if($inventory->getItem($slot)->equalsExact($shield) && $shield->applyDamage($durabilityLoss)){
+				$inventory->setItem($slot, $shield->isBroken() ? VanillaItems::AIR() : $shield);
+			}
+			return;
+		}
 		$hand = $this->inventory->getItemInHand();
 		if($hand instanceof Shield){
 			if($hand->applyDamage($durabilityLoss)){
@@ -385,6 +396,18 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		$this->setBlocking(false);
 		if($this instanceof Player){
 			$this->resetItemCooldown(VanillaItems::SHIELD(), $ticks);
+		}
+	}
+
+	public function attack(EntityDamageEvent $source) : void{
+		$previous = $this->blockingShieldSnapshot;
+		$mainHand = $this->inventory->getItemInHand();
+		$offHand = $this->offHandInventory->getItem(0);
+		$this->blockingShieldSnapshot = $mainHand instanceof Shield ? [$this->inventory, $this->inventory->getHeldItemIndex(), $mainHand] : ($offHand instanceof Shield ? [$this->offHandInventory, 0, $offHand] : []);
+		try{
+			parent::attack($source);
+		}finally{
+			$this->blockingShieldSnapshot = $previous;
 		}
 	}
 

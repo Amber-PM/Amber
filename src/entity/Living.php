@@ -579,6 +579,22 @@ abstract class Living extends Entity{
 			return;
 		}
 
+		if($source->getModifier(EntityDamageEvent::MODIFIER_SHIELD) < 0 && $source->getFinalDamage() <= 0){
+			if($this->isAlive()){
+				$this->applyPostDamageEffects($source);
+			}
+			return;
+		}
+		if($source instanceof EntityDamageByEntityEvent && $source->getFinalDamage() > 0){
+			$damager = $source->getDamager();
+			if($damager instanceof Player){
+				Wolf::notifyOwnerCombat($damager, $this);
+			}
+			if($this instanceof Player && $damager !== null){
+				Wolf::notifyOwnerCombat($this, $damager);
+			}
+		}
+
 		if($this->attackTime <= 0){
 			//this logic only applies if the entity was cold attacked
 

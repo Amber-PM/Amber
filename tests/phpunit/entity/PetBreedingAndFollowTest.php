@@ -57,6 +57,19 @@ if(!class_exists(PetBreedingAndFollowTestTargetEntity::class)){
 	}
 }
 
+if(!class_exists(PetBreedingAndFollowTestNonAttackableEntity::class)){
+	class PetBreedingAndFollowTestNonAttackableEntity extends Entity{
+		public static function getNetworkTypeId() : string{ return "minecraft:test_non_attackable"; }
+		protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(1.0, 1.0); }
+		protected function getInitialDragMultiplier() : float{ return 0.0; }
+		protected function getInitialGravity() : float{ return 0.0; }
+
+		public function attack(EntityDamageEvent $source) : void{
+			// This entity intentionally ignores normal damage, like a primed TNT entity.
+		}
+	}
+}
+
 final class PetBreedingAndFollowTest extends TestCase{
 
 	/** @var Entity[] */
@@ -64,6 +77,68 @@ final class PetBreedingAndFollowTest extends TestCase{
 
 	/** @var array<int, Player[]> */
 	private array $worldPlayers = [];
+
+	protected function setUp() : void{
+		\pocketmine\timings\Timings::init();
+	}
+
+	public function testOwnerCombatAssignsOnlyEligibleOwnedWolf() : void{
+		$world = $this->createMockWorld();
+		$owner = $this->createPlayer(world: $world);
+		$target = $this->createTargetEntity($world, new Vector3(3, 0, 0));
+		$owned = $this->createWolf($world);
+		$sitting = $this->createWolf($world);
+		$foreign = $this->createWolf($world);
+		foreach([$owned, $sitting, $foreign] as $wolf){
+			$wolf->setTamed(true);
+			$wolf->setOwnerUUID($owner->getUniqueId()->toString());
+		}
+		$sitting->setSitting(true);
+		$foreign->setOwnerUUID(Uuid::uuid4()->toString());
+		$world->method("getNearbyEntities")->willReturn([$owned, $sitting, $foreign]);
+		Wolf::notifyOwnerCombat($owner, $target);
+		self::assertSame($target, $owned->getTargetEntity());
+		self::assertNull($sitting->getTargetEntity());
+		self::assertNull($foreign->getTargetEntity());
+	}
+
+	public function testOwnerCombatIgnoresEntitiesThatCannotBeAttacked() : void{
+		$world = $this->createMockWorld();
+		$owner = $this->createPlayer(world: $world);
+		$target = (new ReflectionClass(PetBreedingAndFollowTestNonAttackableEntity::class))->newInstanceWithoutConstructor();
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($target, false);
+		(new ReflectionProperty(Entity::class, "id"))->setValue($target, Entity::nextRuntimeId());
+		(new ReflectionProperty(Entity::class, "health"))->setValue($target, 1.0);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($target, new Location(3, 0, 0, $world, 0, 0));
+		$this->createdEntities[] = $target;
+		$wolf = $this->createWolf($world);
+		$wolf->setTamed(true);
+		$wolf->setOwnerUUID($owner->getUniqueId()->toString());
+		$world->method("getNearbyEntities")->willReturn([$wolf]);
+
+		Wolf::notifyOwnerCombat($owner, $target);
+
+		self::assertNull($wolf->getTargetEntity());
+	}
+
+	public function testSuccessfulOwnerAttackAssignsTargetAndCancelledAttackDoesNot() : void{
+		$world = $this->createMockWorld();
+		$owner = $this->createPlayer(world: $world);
+		$wolf = $this->createWolf($world);
+		$wolf->setTamed(true);
+		$wolf->setOwnerUUID($owner->getUniqueId()->toString());
+		$target = $this->createTargetEntity($world, new Vector3(3, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$wolf]);
+		$event = $this->getMockBuilder(\pocketmine\event\entity\EntityDamageByEntityEvent::class)->setConstructorArgs([$owner, $target, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 2.0, [], 0.0])->onlyMethods(["getDamager"])->getMock();
+		$event->method("getDamager")->willReturn($owner);
+		$event->cancel();
+		$attack = (new ReflectionClass(Living::class))->getMethod("attack");
+		$attack->invoke($target, $event);
+		self::assertNull($wolf->getTargetEntity());
+		$event->uncancel();
+		$attack->invoke($target, $event);
+		self::assertSame($target, $wolf->getTargetEntity());
+	}
 
 	protected function tearDown() : void{
 		foreach($this->createdEntities as $entity){

@@ -25,7 +25,6 @@ namespace pocketmine\entity\object;
 
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\VanillaBlocks;
-use pocketmine\entity\animation\HurtAnimation;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Living;
 use pocketmine\event\entity\ArmorStandEquipEvent;
@@ -56,6 +55,7 @@ use pocketmine\world\sound\ArmorEquipGenericSound;
 use pocketmine\world\sound\BlockBreakSound;
 use pocketmine\world\sound\BlockPunchSound;
 use pocketmine\world\sound\ClickSound;
+use function intdiv;
 use function max;
 
 class ArmorStand extends Living{
@@ -71,6 +71,7 @@ class ArmorStand extends Living{
 	protected bool $locked = false;
 	protected bool $showBasePlate = true;
 	protected Item $heldItem;
+	private bool $actionInProgress = false;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::ARMOR_STAND;
@@ -124,6 +125,8 @@ class ArmorStand extends Living{
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 		if($this->punchTicks > 0){
 			$this->punchTicks = max(0, $this->punchTicks - $tickDiff);
+			$this->networkProperties->setInt(EntityMetadataProperties::HURT_TIME, intdiv($this->punchTicks + 1, 2));
+			$hasUpdate = true;
 		}
 		return $hasUpdate;
 	}
@@ -194,6 +197,22 @@ class ArmorStand extends Living{
 	}
 
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
+		if(!$this->canBeModified() || $this->actionInProgress || $player->isSpectator()){
+			return false;
+		}
+		$this->actionInProgress = true;
+		try{
+			return $this->doInteract($player, $clickPos);
+		}finally{
+			$this->actionInProgress = false;
+		}
+	}
+
+	private function canBeModified() : bool{
+		return !$this->isClosed() && $this->isAlive() && !$this->isFlaggedForDespawn() && !$this->isLocked();
+	}
+
+	private function doInteract(Player $player, Vector3 $clickPos) : bool{
 		if($this->isLocked() || $player->isSpectator()){
 			return false;
 		}
@@ -208,7 +227,7 @@ class ArmorStand extends Living{
 			$newPose = ($oldPose + 1) % self::POSE_COUNT;
 			$ev = new ArmorStandPoseChangeEvent($this, $player, $oldPose, $newPose);
 			$ev->call();
-			if($ev->isCancelled()){
+			if($ev->isCancelled() || !$this->canBeModified() || $player->isSpectator() || $this->poseIndex !== $oldPose){
 				return false;
 			}
 			$this->setPose($ev->getNewPose());
@@ -230,36 +249,11 @@ class ArmorStand extends Living{
 		}
 
 		if($armorSlot !== null){
-			$oldItem = $this->armorInventory->getItem($armorSlot);
-			$newItem = $playerItem;
-			$ev = new ArmorStandEquipEvent($this, $player, $armorSlot, $oldItem, $newItem);
-			$ev->call();
-			if($ev->isCancelled()){
-				return false;
-			}
-			$this->armorInventory->setItem($armorSlot, $ev->getNewItem());
-			$player->getInventory()->setItemInHand($oldItem);
-			if(isset($this->location)){
-				$this->broadcastSound(new ArmorEquipGenericSound());
-			}
-			return true;
+			return $this->exchangeEquipment($player, $armorSlot, $playerItem);
 		}
 
 		if(!$playerItem->isNull()){
-			$slot = ArmorStandEquipEvent::SLOT_MAIN_HAND;
-			$oldItem = $this->getMainHandItem();
-			$newItem = $playerItem;
-			$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, $newItem);
-			$ev->call();
-			if($ev->isCancelled()){
-				return false;
-			}
-			$this->setMainHandItem($ev->getNewItem());
-			$player->getInventory()->setItemInHand($oldItem);
-			if(isset($this->location)){
-				$this->broadcastSound(new ArmorEquipGenericSound());
-			}
-			return true;
+			return $this->exchangeEquipment($player, ArmorStandEquipEvent::SLOT_MAIN_HAND, $playerItem);
 		}
 
 		// Empty hand: Strip highest priority equipped item
@@ -300,18 +294,41 @@ class ArmorStand extends Living{
 			return false;
 		}
 
-		$ev = new ArmorStandEquipEvent($this, $player, $slot, $oldItem, VanillaItems::AIR());
+		return $this->exchangeEquipment($player, $slot, $playerItem);
+	}
+
+	private function exchangeEquipment(Player $player, int $slot, Item $playerItem) : bool{
+		$inventory = $player->getInventory();
+		$heldSlot = $inventory->getHeldItemIndex();
+		$oldItem = $slot === ArmorStandEquipEvent::SLOT_MAIN_HAND ? $this->getMainHandItem() : $this->armorInventory->getItem($slot);
+		$ev = new ArmorStandEquipEvent($this, $player, $slot, clone $oldItem, $playerItem->isNull() ? VanillaItems::AIR() : (clone $playerItem)->setCount(1));
 		$ev->call();
-		if($ev->isCancelled()){
+		$currentEquipment = $slot === ArmorStandEquipEvent::SLOT_MAIN_HAND ? $this->getMainHandItem() : $this->armorInventory->getItem($slot);
+		if($ev->isCancelled() || !$this->canBeModified() || $player->isSpectator() || $inventory->getHeldItemIndex() !== $heldSlot || !$inventory->getItemInHand()->equalsExact($playerItem) || !$currentEquipment->equalsExact($oldItem)){
 			return false;
 		}
 
-		if($slot === ArmorStandEquipEvent::SLOT_MAIN_HAND){
-			$this->setMainHandItem($ev->getNewItem());
-		}else{
-			$this->armorInventory->setItem($slot, $ev->getNewItem());
+		$newItem = clone $ev->getNewItem();
+		if(!$newItem->isNull()){
+			$newItem->setCount(1);
 		}
-		$player->getInventory()->setItemInHand($oldItem);
+		if($slot === ArmorStandEquipEvent::SLOT_MAIN_HAND){
+			$this->setMainHandItem($newItem);
+		}else{
+			$this->armorInventory->setItem($slot, $newItem);
+		}
+		$remainder = clone $playerItem;
+		if(!$remainder->isNull()){
+			$remainder->pop();
+		}
+		if($remainder->isNull()){
+			$inventory->setItemInHand($oldItem);
+		}else{
+			$inventory->setItemInHand($remainder);
+			foreach($inventory->addItem($oldItem) as $overflow){
+				$player->getWorld()->dropItem($player->getPosition(), $overflow);
+			}
+		}
 		if(isset($this->location)){
 			$this->broadcastSound(new ArmorEquipGenericSound());
 		}
@@ -319,6 +336,28 @@ class ArmorStand extends Living{
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
+		if(!$this->canBeModified() || $this->actionInProgress){
+			$source->cancel();
+			return;
+		}
+		$this->actionInProgress = true;
+		try{
+			$this->doAttack($source);
+		}finally{
+			$this->actionInProgress = false;
+		}
+	}
+
+	private function callDamageEvent(EntityDamageEvent $source) : bool{
+		$source->call();
+		if($source->isCancelled() || !$this->canBeModified()){
+			$source->cancel();
+			return false;
+		}
+		return true;
+	}
+
+	private function doAttack(EntityDamageEvent $source) : void{
 		if($this->isLocked()){
 			$source->cancel();
 			return;
@@ -329,8 +368,7 @@ class ArmorStand extends Living{
 		}
 
 		if($source->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
-			$source->call();
-			if($source->isCancelled()){
+			if(!$this->callDamageEvent($source)){
 				return;
 			}
 			$this->setLastDamageCause($source);
@@ -341,11 +379,11 @@ class ArmorStand extends Living{
 		if($source instanceof EntityDamageByEntityEvent && $source->getCause() === EntityDamageEvent::CAUSE_ENTITY_ATTACK){
 			$damager = $source->getDamager();
 			if($damager instanceof Player){
+				if($damager->isSpectator() || !$this->callDamageEvent($source) || $damager->isSpectator()){
+					$source->cancel();
+					return;
+				}
 				if($damager->isCreative(true)){
-					$source->call();
-					if($source->isCancelled()){
-						return;
-					}
 					$source->cancel();
 					$this->setLastDamageCause($source);
 					$this->flagForDespawn();
@@ -356,11 +394,6 @@ class ArmorStand extends Living{
 				}
 
 				// Survival / Adventure player attack
-				$source->call();
-				if($source->isCancelled()){
-					return;
-				}
-
 				$this->setLastDamageCause($source);
 				$heldItem = $damager->getInventory()->getItemInHand();
 				$isToolOrWeapon = $heldItem instanceof Tool || $heldItem->getAttackPoints() > 1;
@@ -369,7 +402,8 @@ class ArmorStand extends Living{
 					$this->kill();
 				}else{
 					$this->punchTicks = 20;
-					$this->broadcastAnimation(new HurtAnimation($this));
+					$this->networkProperties->setInt(EntityMetadataProperties::HURT_TIME, 10);
+					$this->scheduleUpdate();
 					if(isset($this->location)){
 						$this->broadcastSound(new BlockPunchSound(VanillaBlocks::OAK_PLANKS()));
 					}
@@ -379,8 +413,7 @@ class ArmorStand extends Living{
 		}
 
 		if($source->getCause() === EntityDamageEvent::CAUSE_BLOCK_EXPLOSION || $source->getCause() === EntityDamageEvent::CAUSE_ENTITY_EXPLOSION){
-			$source->call();
-			if($source->isCancelled()){
+			if(!$this->callDamageEvent($source)){
 				return;
 			}
 			$this->setLastDamageCause($source);
@@ -389,8 +422,7 @@ class ArmorStand extends Living{
 		}
 
 		if($source->getCause() === EntityDamageEvent::CAUSE_VOID || $source->getCause() === EntityDamageEvent::CAUSE_SUICIDE){
-			$source->call();
-			if($source->isCancelled()){
+			if(!$this->callDamageEvent($source)){
 				return;
 			}
 			$this->setLastDamageCause($source);
@@ -408,8 +440,7 @@ class ArmorStand extends Living{
 			$source->cancel();
 		}
 
-		$source->call();
-		if($source->isCancelled()){
+		if(!$this->callDamageEvent($source)){
 			return;
 		}
 
@@ -554,6 +585,7 @@ class ArmorStand extends Living{
 
 		$properties->setGenericFlag(EntityMetadataFlags::SHOWBASE, $this->showBasePlate);
 		$properties->setInt(EntityMetadataProperties::ARMOR_STAND_POSE_INDEX, $this->poseIndex);
+		$properties->setInt(EntityMetadataProperties::HURT_TIME, intdiv($this->punchTicks + 1, 2));
 	}
 
 	protected function sendSpawnPacket(Player $player) : void{

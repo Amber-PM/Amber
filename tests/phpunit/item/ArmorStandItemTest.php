@@ -47,7 +47,7 @@ final class ArmorStandItemTest extends TestCase{
 	}
 
 	public function testArmorStandMaxStackSize() : void{
-		self::assertSame(16, $this->item?->getMaxStackSize());
+		self::assertSame(64, $this->item?->getMaxStackSize());
 	}
 
 	public function testArmorStandTypeId() : void{
