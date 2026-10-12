@@ -183,11 +183,8 @@ class InGamePacketHandler extends PacketHandler{
 		$rawYaw = $packet->getYaw();
 		$rawPitch = $packet->getPitch();
 		$inputFlags = $packet->getInputFlags();
-		$isPredictedVehicle = $inputFlags->get(PlayerAuthInputFlags::IN_CLIENT_PREDICTED_VEHICLE);
 		$vehicleInfo = $packet->getVehicleInfo();
-		$boat = \pocketmine\entity\object\Boat::getVehicleOf($this->player);
-		$isPredictedBoat = $boat !== null && $isPredictedVehicle && $vehicleInfo !== null && $vehicleInfo->getPredictedVehicleActorUniqueId() === $boat->getId();
-		foreach([$rawPos->x, $rawPos->y, $rawPos->z, $rawYaw, $packet->getHeadYaw(), $rawPitch, $packet->getDelta()->x, $packet->getDelta()->y, $packet->getDelta()->z] as $float){
+		foreach([$rawPos->x, $rawPos->y, $rawPos->z, $rawYaw, $packet->getHeadYaw(), $rawPitch, $packet->getDelta()->x, $packet->getDelta()->y, $packet->getDelta()->z, $packet->getMoveVecX(), $packet->getMoveVecZ(), $vehicleInfo?->getVehicleRotation()?->x ?? 0.0, $vehicleInfo?->getVehicleRotation()?->y ?? 0.0] as $float){
 			if(is_infinite($float) || is_nan($float)){
 				$this->session->getLogger()->debug("Invalid movement received, contains NAN/INF components");
 				return false;
@@ -210,7 +207,7 @@ class InGamePacketHandler extends PacketHandler{
 		$hasMoved = $this->lastPlayerAuthInputPosition === null || !$this->lastPlayerAuthInputPosition->equals($rawPos);
 		$newPos = $rawPos->subtract(0, 1.62, 0)->round(4);
 
-		if($this->forceMoveSync && $hasMoved && !$isPredictedBoat){
+		if($this->forceMoveSync && $hasMoved){
 			$curPos = $this->player->getLocation();
 
 			if($newPos->distanceSquared($curPos) > 1){  //Tolerate up to 1 block to avoid problems with client-sided physics when spawning in blocks
@@ -224,20 +221,6 @@ class InGamePacketHandler extends PacketHandler{
 		}
 
 		$this->player->setLastPlayerInputTick($packet->getTick());
-		if($boat !== null){
-			if($vehicleInfo !== null ? $vehicleInfo->getPredictedVehicleActorUniqueId() === $boat->getId() : !$isPredictedVehicle){
-				$vehicleRotation = $vehicleInfo?->getVehicleRotation();
-				$vehicleYaw = $vehicleRotation?->y ?? (!$isPredictedVehicle ? $packet->getYaw() : null);
-				\pocketmine\entity\object\Boat::setRiderInput(
-					$this->player,
-					$packet->getMoveVecX(),
-					$packet->getMoveVecZ(),
-					$inputFlags->get(PlayerAuthInputFlags::PADDLING_LEFT),
-					$inputFlags->get(PlayerAuthInputFlags::PADDLING_RIGHT),
-					$vehicleYaw
-				);
-			}
-		}
 		if($this->lastPlayerAuthInputFlags === null || !$inputFlags->equals($this->lastPlayerAuthInputFlags)){
 			$this->lastPlayerAuthInputFlags = $inputFlags;
 
@@ -269,7 +252,7 @@ class InGamePacketHandler extends PacketHandler{
 			$this->player->missSwing();
 		}
 
-		if(!$this->forceMoveSync && !$isPredictedBoat && ($hasMoved || $this->player->isGliding())){
+		if(!$this->forceMoveSync && ($hasMoved || $this->player->isGliding())){
 			$this->lastPlayerAuthInputPosition = $rawPos;
 			//TODO: this packet has WAYYYYY more useful information that we're not using
 			$this->player->handleMovementInput($newPos, $packet->getTick(), $packet->getDelta());
@@ -285,13 +268,15 @@ class InGamePacketHandler extends PacketHandler{
 
 			$this->inventoryManager->setCurrentItemStackRequestId($useItemTransaction->getRequestId());
 			$this->inventoryManager->addRawPredictedSlotChanges($useItemTransaction->getTransactionData()->getActions());
-			if(!$this->handleUseItemTransaction($useItemTransaction->getTransactionData())){
-				$packetHandled = false;
-				$this->session->getLogger()->debug("Unhandled transaction in PlayerAuthInputPacket (type " . $useItemTransaction->getTransactionData()->getActionType() . ")");
-			}else{
+			try{
+				if(!$this->handleUseItemTransaction($useItemTransaction->getTransactionData())){
+					$packetHandled = false;
+					$this->session->getLogger()->debug("Unhandled transaction in PlayerAuthInputPacket (type " . $useItemTransaction->getTransactionData()->getActionType() . ")");
+				}
+			}finally{
 				$this->inventoryManager->syncMismatchedPredictedSlotChanges();
+				$this->inventoryManager->setCurrentItemStackRequestId(null);
 			}
-			$this->inventoryManager->setCurrentItemStackRequestId(null);
 		}
 
 		$itemStackRequest = $packet->getItemStackRequest();
@@ -476,10 +461,19 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	private function handleUseItemTransaction(UseItemTransactionData $data) : bool{
+		if($data->getHandSlot() !== 0){
+			return false;
+		}
+
 		$this->player->selectHotbarSlot($data->getHotbarSlot());
 
 		switch($data->getActionType()){
 			case UseItemTransactionData::ACTION_CLICK_BLOCK:
+				$heldItem = $this->player->getInventory()->getItemInHand();
+				if($heldItem instanceof \pocketmine\item\Crossbow && $this->player->isUsingItem()){
+					return true;
+				}
+
 				//TODO: start hack for client spam bug
 				$clickPos = $data->getClickPosition();
 				$spamBug = ($this->lastRightClickData !== null &&
@@ -501,7 +495,11 @@ class InGamePacketHandler extends PacketHandler{
 
 				$blockPos = $data->getBlockPosition();
 				$vBlockPos = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
-				$this->player->interactBlock($vBlockPos, $data->getFace(), $clickPos);
+				if(!$this->player->interactBlock($vBlockPos, $data->getFace(), $clickPos)){
+					if($heldItem instanceof \pocketmine\item\Crossbow){
+						$this->player->useHeldItem();
+					}
+				}
 				if($this->player->getNetworkSession()->getProtocolId() < ProtocolInfo::PROTOCOL_1_21_20 || $data->getClientInteractPrediction() === PredictedResult::SUCCESS){
 					//If the item has an associated blockstate ID, this means it will only place one block.
 					//We can avoid syncing the adjacent blocks of the place position in this case, since that's only
@@ -520,6 +518,10 @@ class InGamePacketHandler extends PacketHandler{
 				return true;
 			case UseItemTransactionData::ACTION_CLICK_AIR:
 				if($this->player->isUsingItem()){
+					$heldItem = $this->player->getInventory()->getItemInHand();
+					if($heldItem instanceof \pocketmine\item\Crossbow){
+						return true;
+					}
 					if(!$this->player->consumeHeldItem()){
 						$hungerAttr = $this->player->getAttributeMap()->get(Attribute::HUNGER) ?? throw new AssumptionFailedError();
 						$hungerAttr->markSynchronized(false);
@@ -669,28 +671,12 @@ class InGamePacketHandler extends PacketHandler{
 			//TODO: implement handling for this where it matters
 			return true;
 		}
-		if($packet->action === InteractPacket::ACTION_LEAVE_VEHICLE){
-			\pocketmine\entity\object\Boat::getVehicleOf($this->player)?->removeRider($this->player);
-			return true;
-		}
 		$target = $this->player->getWorld()->getEntity($packet->targetActorRuntimeId);
 		if($target === null){
 			return false;
 		}
 		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target === $this->player){
-			$vehicle = \pocketmine\entity\object\Boat::getVehicleOf($this->player);
-			if($vehicle instanceof \pocketmine\entity\object\ChestBoat && $vehicle->getWorld() === $this->player->getWorld() && $vehicle->isRider($this->player) && !$this->player->isSpectator()){
-				$this->player->setCurrentWindow($vehicle->getInventory());
-				return true;
-			}
 			$this->inventoryManager->onClientOpenMainInventory();
-			return true;
-		}
-		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target instanceof \pocketmine\entity\object\ChestBoat){
-			if($this->player->isSpectator() || !$this->player->canInteract($target->getLocation(), 8)){
-				return false;
-			}
-			$this->player->setCurrentWindow($target->getInventory());
 			return true;
 		}
 		return false; //TODO
@@ -760,8 +746,7 @@ class InGamePacketHandler extends PacketHandler{
 				break;
 			case PlayerAction::START_ITEM_USE_ON:
 			case PlayerAction::STOP_ITEM_USE_ON:
-				//TODO: this has no obvious use and seems only used for analytics in vanilla - ignore it
-				break;
+				return true;
 			default:
 				$this->session->getLogger()->debug("Unhandled/unknown player action type " . $action);
 				return false;
