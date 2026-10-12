@@ -249,6 +249,11 @@ abstract class Projectile extends Entity{
 			if($this->hitBlocked){
 				$this->isCollided = $this->onGround = false;
 				$this->blockHit = null;
+				$offset = $this->motion->normalize()->multiply(0.001);
+				$this->location->x += $offset->x;
+				$this->location->y += $offset->y;
+				$this->location->z += $offset->z;
+				$this->recalculateBoundingBox();
 
 				//recompute angles...
 				$f = sqrt(($this->motion->x ** 2) + ($this->motion->z ** 2));

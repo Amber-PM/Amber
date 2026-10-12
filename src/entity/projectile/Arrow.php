@@ -374,9 +374,9 @@ class Arrow extends Projectile{
 		parent::syncNetworkData($properties);
 
 		$properties->setGenericFlag(EntityMetadataFlags::CRITICAL, $this->critical);
-		$properties->setShort(
-			EntityMetadataProperties::POTION_AUX_VALUE,
-			$this->potionType !== null ? PotionTypeIdMap::getInstance()->toId($this->potionType) : 0
+		$properties->setByte(
+			EntityMetadataProperties::MINECART_HAS_DISPLAY,
+			$this->potionType !== null ? PotionTypeIdMap::getInstance()->toId($this->potionType) + 1 : 0
 		);
 	}
 }

@@ -52,9 +52,9 @@ use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ShortTag;
+use pocketmine\network\mcpe\protocol\types\entity\ByteMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
-use pocketmine\network\mcpe\protocol\types\entity\ShortMetadataProperty;
 use pocketmine\plugin\Plugin;
 use pocketmine\Server;
 use pocketmine\timings\TimingsHandler;
@@ -267,16 +267,16 @@ final class TippedArrowEntityTest extends TestCase{
 		$properties = new EntityMetadataCollection();
 		$sync = new ReflectionMethod(Arrow::class, "syncNetworkData");
 		$sync->invoke($normal, $properties);
-		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
-		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
+		$aux = $properties->getAll()[EntityMetadataProperties::MINECART_HAS_DISPLAY] ?? null;
+		self::assertInstanceOf(ByteMetadataProperty::class, $aux);
 		self::assertSame(0, $aux->getValue());
 
 		$tipped = $this->createArrow(null, PotionType::POISON);
 		$properties = new EntityMetadataCollection();
 		$sync->invoke($tipped, $properties);
-		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
-		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
-		self::assertSame(PotionTypeIdMap::getInstance()->toId(PotionType::POISON), $aux->getValue());
+		$aux = $properties->getAll()[EntityMetadataProperties::MINECART_HAS_DISPLAY] ?? null;
+		self::assertInstanceOf(ByteMetadataProperty::class, $aux);
+		self::assertSame(26, $aux->getValue());
 	}
 
 	public function testNetworkMetadataReusedCollectionClearingPotionType() : void{
@@ -284,17 +284,16 @@ final class TippedArrowEntityTest extends TestCase{
 		$properties = new EntityMetadataCollection();
 		$sync = new ReflectionMethod(Arrow::class, "syncNetworkData");
 
-		// Initial sync with tipped arrow: aux value matches poison ID
 		$sync->invoke($arrow, $properties);
-		$aux = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
-		self::assertInstanceOf(ShortMetadataProperty::class, $aux);
-		self::assertSame(PotionTypeIdMap::getInstance()->toId(PotionType::POISON), $aux->getValue());
+		$aux = $properties->getAll()[EntityMetadataProperties::MINECART_HAS_DISPLAY] ?? null;
+		self::assertInstanceOf(ByteMetadataProperty::class, $aux);
+		self::assertSame(26, $aux->getValue());
+		$properties->clearDirtyProperties();
 
-		// Clear potion type and sync into the same reused collection: aux value must reset to 0
 		$arrow->setPotionType(null);
 		$sync->invoke($arrow, $properties);
-		$auxAfter = $properties->getAll()[EntityMetadataProperties::POTION_AUX_VALUE] ?? null;
-		self::assertInstanceOf(ShortMetadataProperty::class, $auxAfter);
+		$auxAfter = $properties->getDirty()[EntityMetadataProperties::MINECART_HAS_DISPLAY] ?? null;
+		self::assertInstanceOf(ByteMetadataProperty::class, $auxAfter);
 		self::assertSame(0, $auxAfter->getValue());
 	}
 

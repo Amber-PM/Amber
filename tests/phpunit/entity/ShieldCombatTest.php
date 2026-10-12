@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace pocketmine\entity;
 
 use PHPUnit\Framework\TestCase;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\projectile\Arrow;
 use pocketmine\entity\projectile\Projectile;
@@ -21,9 +22,14 @@ use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Shield;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
+use pocketmine\timings\Timings;
+use pocketmine\world\World;
+use pocketmine\world\sound\ShieldBlockSound;
+use pocketmine\world\sound\Sound;
 use ReflectionClass;
 use ReflectionProperty;
 
@@ -34,6 +40,7 @@ class ShieldCombatTest extends TestCase{
 	private \pocketmine\world\World $testWorld;
 
 	protected function setUp() : void{
+		Timings::init();
 		/** @var array<int, Entity> $empty */
 		$empty = [];
 		self::$entitiesById = $empty;
@@ -315,6 +322,90 @@ class ShieldCombatTest extends TestCase{
 		self::assertTrue($arrow->isHitBlocked());
 		self::assertSame(1.0, $arrow->getMotion()->z); // -2 * -0.5 = 1.0 (reversed)
 		self::assertFalse($arrow->isFlaggedForDespawn());
+	}
+
+	public function testDeflectedArrowHitsStationaryShieldOnlyOnce() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($this->testWorld->getServer());
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		$defender = $this->createHuman(180.0);
+		(new ReflectionProperty(Entity::class, "location"))->setValue($defender, new Location(0.5, 0.0, 0.5, $world, 180.0, 0.0));
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($defender, new AxisAlignedBB(0, 0, 0, 1, 2, 1));
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+		$world->method("getCollidingEntities")->willReturnCallback(function(AxisAlignedBB $bb, ?Entity $entity = null) use ($defender){
+			return $entity !== null && $entity->canCollideWith($defender) ? [$defender] : [];
+		});
+		$blocks = 0;
+		$world->method("addSound")->willReturnCallback(function(Vector3 $position, Sound $sound) use (&$blocks) : void{
+			if($sound instanceof ShieldBlockSound){
+				++$blocks;
+			}
+		});
+		$arrow = new Arrow(new Location(0.5, 1.0, -5.0, $world, 0.0, 0.0), null, false);
+		self::$entitiesById[$arrow->getId()] = $arrow;
+		$arrow->setMotion(new Vector3(0.0, 0.0, 6.0));
+
+		try{
+			$arrow->onUpdate(1);
+			self::assertTrue($arrow->isHitBlocked());
+			self::assertSame(1, $blocks);
+			$shield = $defender->getOffHandInventory()->getItem(0);
+			self::assertInstanceOf(Shield::class, $shield);
+			$damage = $shield->getDamage();
+			self::assertGreaterThan(0, $damage);
+			for($tick = 2; $tick <= 10; ++$tick){
+				$arrow->onUpdate($tick);
+			}
+			self::assertSame(1, $blocks);
+			$shield = $defender->getOffHandInventory()->getItem(0);
+			self::assertInstanceOf(Shield::class, $shield);
+			self::assertSame($damage, $shield->getDamage());
+			self::assertSame(20.0, $defender->getHealth());
+			self::assertLessThan(-0.3, $arrow->getPosition()->z);
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($arrow, true);
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($defender, true);
+		}
+	}
+
+	public function testCancelledTridentHitContinuesMovingUntilBlockImpact() : void{
+		$target = $this->createHuman();
+		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($target, new AxisAlignedBB(0, 0, 0, 1, 2, 1));
+		(new ReflectionProperty(Living::class, "noDamageTicks"))->setValue($target, 20);
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($this->testWorld->getServer());
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use ($world){
+			$block = $y < 0 ? VanillaBlocks::STONE() : VanillaBlocks::AIR();
+			$block->position($world, $x, $y, $z);
+			return $block;
+		});
+		$world->method("getCollidingEntities")->willReturnCallback(function(AxisAlignedBB $bb, ?Entity $entity = null) use ($target){
+			return $entity !== null && $entity->canCollideWith($target) ? [$target] : [];
+		});
+		$trident = new Trident(new Location(0.5, 1.0, -5.0, $world, 0.0, 0.0), VanillaItems::TRIDENT(), null);
+		$trident->setMotion(new Vector3(0.0, 0.0, 6.0));
+
+		try{
+			$trident->onUpdate(1);
+			self::assertTrue($trident->isHitCancelled());
+			self::assertSame(20.0, $target->getHealth());
+			self::assertTrue($trident->hasMovementUpdate());
+			$position = $trident->getPosition()->asVector3();
+			$blockHit = new ReflectionProperty(Projectile::class, "blockHit");
+			for($tick = 2; $tick <= 30 && $blockHit->getValue($trident) === null; ++$tick){
+				$trident->onUpdate($tick);
+			}
+			self::assertFalse($trident->getPosition()->asVector3()->equals($position));
+			self::assertNotNull($blockHit->getValue($trident));
+			self::assertFalse($trident->isFlaggedForDespawn());
+		}finally{
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($trident, true);
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($target, true);
+		}
 	}
 
 	public function testTridentDeflectedOnBlockedHit() : void{
