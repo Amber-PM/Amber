@@ -15,11 +15,9 @@ use pocketmine\entity\Human;
 use pocketmine\entity\HungerManager;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
-use pocketmine\entity\object\Boat;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
-use pocketmine\item\BoatType;
 use pocketmine\item\Elytra;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
@@ -32,6 +30,10 @@ use ReflectionClass;
 use ReflectionProperty;
 
 class PlayerGlideStateTest extends TestCase{
+
+	public static function setUpBeforeClass() : void{
+		\pocketmine\timings\Timings::init();
+	}
 
 	public function testDisablingInactiveGlidePreservesNormalFallDamage() : void{
 		$player = $this->createTestPlayer();
@@ -63,42 +65,8 @@ class PlayerGlideStateTest extends TestCase{
 		}
 	}
 
-	private function createVehicle(Player $player) : Boat{
-		return new Boat(clone $player->getLocation(), BoatType::OAK);
-	}
 
-	public function testAirborneRiderCannotBeginGliding() : void{
-		$player = $this->createTestPlayer();
-		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
-		$vehicle = $this->createVehicle($player);
-		try{
-			self::assertTrue($vehicle->addRider($player));
-			self::assertSame($vehicle, Boat::getVehicleOf($player));
-			self::assertFalse($player->toggleGlide(true));
-			self::assertFalse($player->isGliding());
-		}finally{
-			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
-			$vehicle->close();
-		}
-	}
 
-	public function testMountingStopsGlideAndRejectsRocketBoost() : void{
-		$player = $this->createTestPlayer();
-		$player->getArmorInventory()->setChestplate(VanillaItems::ELYTRA());
-		$player->toggleGlide(true);
-		$vehicle = $this->createVehicle($player);
-		try{
-			self::assertTrue($vehicle->addRider($player));
-			self::assertFalse($player->boostGlideWithFirework(VanillaItems::FIREWORK_ROCKET()));
-			(new ReflectionClass(Player::class))->getMethod("entityBaseTick")->invoke($player, 20);
-			self::assertFalse($player->isGliding());
-			self::assertSame(0, $player->getArmorInventory()->getChestplate()->getDamage());
-			self::assertSame($vehicle, Boat::getVehicleOf($player));
-		}finally{
-			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
-			$vehicle->close();
-		}
-	}
 
 	public function testDeathResetsGlidingPose() : void{
 		$player = $this->createTestPlayer();

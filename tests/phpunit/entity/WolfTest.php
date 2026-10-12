@@ -88,6 +88,10 @@ class TestNonLivingEntity extends Entity{
 
 final class WolfTest extends TestCase{
 
+	public static function setUpBeforeClass() : void{
+		\pocketmine\timings\Timings::init();
+	}
+
 	/** @var Entity[] */
 	private array $createdEntities = [];
 	private ?World $defaultWorld = null;
@@ -107,6 +111,12 @@ final class WolfTest extends TestCase{
 			$this->defaultWorld = $this->createMock(World::class);
 			$this->defaultWorld->method("isLoaded")->willReturn(true);
 			$this->defaultWorld->method("getPlayers")->willReturn([]);
+			$properties = $this->createMock(\pocketmine\utils\Config::class);
+			$properties->method("exists")->willReturn(true);
+			$properties->method("get")->willReturn(true);
+			$server = $this->createMock(\pocketmine\Server::class);
+			$server->method("getConfigGroup")->willReturn(new \pocketmine\ServerConfigGroup($this->createMock(\pocketmine\utils\Config::class), $properties));
+			$this->defaultWorld->method("getServer")->willReturn($server);
 		}
 		return $this->defaultWorld;
 	}
@@ -711,7 +721,7 @@ final class WolfTest extends TestCase{
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($nonLiving, false);
 		$world = $wolf->getWorld();
 		(new ReflectionProperty(Entity::class, "location"))->setValue($nonLiving, new Location(0.0, 0.0, 0.0, $world, 0.0, 0.0));
-		self::assertTrue($wolf->isValidTarget($nonLiving));
+		self::assertFalse($wolf->isValidTarget($nonLiving));
 
 		// Reject target whose world differs
 		$otherWorld = $this->createMock(World::class);

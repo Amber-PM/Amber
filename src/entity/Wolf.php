@@ -43,6 +43,7 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
+use pocketmine\ServerProperties;
 use pocketmine\world\particle\HeartParticle;
 use pocketmine\world\particle\SmokeParticle;
 use function max;
@@ -137,6 +138,18 @@ class Wolf extends TameableAnimal{
 		$this->networkPropertiesDirty = true;
 	}
 
+	public static function notifyOwnerCombat(Player $owner, Entity $target) : void{
+		if($owner->isClosed() || !$owner->isAlive() || $owner->isSpectator() || $target->getWorld() !== $owner->getWorld()){
+			return;
+		}
+		$uuid = $owner->getUniqueId()->toString();
+		foreach($owner->getWorld()->getNearbyEntities($owner->getBoundingBox()->expandedCopy(16, 16, 16), $owner) as $nearby){
+			if($nearby instanceof self && !$nearby->isClosed() && $nearby->isAlive() && $nearby->isTamed() && !$nearby->isSitting() && !$nearby->isBaby() && $nearby->getOwnerUUID() === $uuid){
+				$nearby->setTargetEntity($target);
+			}
+		}
+	}
+
 	public function getTargetEntity() : ?Entity{
 		if($this->combatTarget !== null){
 			if(!$this->isValidTarget($this->combatTarget)){
@@ -153,10 +166,13 @@ class Wolf extends TameableAnimal{
 	}
 
 	public function isValidTarget(?Entity $target) : bool{
-		if($target === null || $target->isClosed() || !$target->isAlive() || $target === $this){
+		if(!$target instanceof Living || $target->isClosed() || !$target->isAlive() || $target === $this){
 			return false;
 		}
 		if($target->getWorld() !== $this->getWorld()){
+			return false;
+		}
+		if($target instanceof Player && ($target->isSpectator() || $target->isCreative() || ($this->isTamed() && !$this->getWorld()->getServer()->getConfigGroup()->getConfigBool(ServerProperties::PVP)))){
 			return false;
 		}
 		$typeId = $target::getNetworkTypeId();

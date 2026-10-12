@@ -46,10 +46,14 @@ use ReflectionProperty;
 
 class PlayerKineticDamageTest extends TestCase{
 
-	#[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
-	#[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
+	public static function setUpBeforeClass() : void{
+		\pocketmine\timings\Timings::init();
+	}
+
 	public function testLegacyMovementOverrideRemainsCompatible() : void{
-		eval('class LegacyMovementPlayer extends \\pocketmine\\player\\Player{ public bool $movementHandled = false; public function handleMovement(\\pocketmine\\math\\Vector3 $newPos) : void{ $this->movementHandled = true; } }');
+		if(!class_exists("LegacyMovementPlayer", false)){
+			eval('class LegacyMovementPlayer extends \\pocketmine\\player\\Player{ public bool $movementHandled = false; public function handleMovement(\\pocketmine\\math\\Vector3 $newPos) : void{ $this->movementHandled = true; } }');
+		}
 		self::assertTrue(is_subclass_of("LegacyMovementPlayer", Player::class));
 		self::assertSame(1, (new \ReflectionMethod(Player::class, "handleMovement"))->getNumberOfParameters());
 		$player = (new ReflectionClass("LegacyMovementPlayer"))->newInstanceWithoutConstructor();
