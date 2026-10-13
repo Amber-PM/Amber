@@ -42,13 +42,18 @@ use pocketmine\world\generator\object\OreType;
 use pocketmine\world\generator\populator\GroundCover;
 use pocketmine\world\generator\populator\Ore;
 use pocketmine\world\generator\populator\Populator;
+use pocketmine\world\generator\structure\StructurePopulator;
 use pocketmine\world\World;
 use function ceil;
+use function explode;
 use function floor;
 use function fmod;
 use function is_int;
 use function max;
 use function min;
+use function preg_split;
+use function strtolower;
+use function trim;
 
 class Normal extends Generator{
 
@@ -130,6 +135,31 @@ class Normal extends Generator{
 			new OreType(VanillaBlocks::GRAVEL(), $stone, 10, 16, 0, 128)
 		]);
 		$this->populators[] = $ores;
+
+		if(self::parseStructuresOption($preset)){
+			$this->populators[] = StructurePopulator::createDefault($this->seed);
+		}
+	}
+
+	/**
+	 * Reads the "structures" option (true by default) from generator settings such as "structures=false". Other
+	 * settings are ignored.
+	 *
+	 * @throws InvalidGeneratorOptionsException
+	 */
+	public static function parseStructuresOption(string $preset) : bool{
+		foreach(preg_split('/[;,&]/', $preset) ?: [] as $pair){
+			$parts = explode("=", $pair, 2);
+			if(strtolower(trim($parts[0])) !== "structures"){
+				continue;
+			}
+			return match(strtolower(trim($parts[1] ?? ""))){
+				"true", "1", "yes", "on" => true,
+				"false", "0", "no", "off" => false,
+				default => throw new InvalidGeneratorOptionsException("Invalid value for \"structures\": expected true or false"),
+			};
+		}
+		return true;
 	}
 
 	private function pickBiome(int $x, int $z) : Biome{

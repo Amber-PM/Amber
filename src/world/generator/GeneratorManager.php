@@ -51,7 +51,14 @@ final class GeneratorManager{
 				return $e;
 			}
 		}, fast: true);
-		$this->addGenerator(Normal::class, "normal", fn() => null);
+		$this->addGenerator(Normal::class, "normal", function(string $preset) : ?InvalidGeneratorOptionsException{
+			try{
+				Normal::parseStructuresOption($preset);
+			}catch(InvalidGeneratorOptionsException $e){
+				return $e;
+			}
+			return null;
+		});
 		$this->addAlias("normal", "default");
 		$this->addGenerator(Nether::class, "nether", fn() => null);
 		$this->addAlias("nether", "hell");
