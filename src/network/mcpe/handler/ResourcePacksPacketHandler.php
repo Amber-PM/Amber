@@ -92,6 +92,17 @@ class ResourcePacksPacketHandler extends PacketHandler{
 	private \SplQueue $requestQueue;
 
 	private int $activeRequests = 0;
+	private const MAX_LOCAL_QUEUED_REQUESTS = 16;
+	private const MAX_LOCAL_TOTAL_REQUESTS = 4096;
+	private bool $localCompletion;
+	private float $localDeadline;
+	private bool $localStopped = false;
+	private bool $localPumping = false;
+	private int $localTotalRequests = 0;
+	/** @var array<string, int> */
+	private array $localExpectedChunks = [];
+	/** @var array<string, int> */
+	private array $localSubmittedChunks = [];
 
 	/**
 	 * @param ResourcePack[] $resourcePackStack
@@ -110,6 +121,8 @@ class ResourcePacksPacketHandler extends PacketHandler{
 		private bool $educationContentEnabled,
 		private \Closure $completionCallback
 	){
+		$this->localCompletion = $session->usesLocalResourcePackSendCompletion();
+		$this->localDeadline = hrtime(true) / 1_000_000_000 + 120.0;
 		$this->requestQueue = new \SplQueue();
 		foreach($resourcePackStack as $pack){
 			$this->resourcePacksById[$pack->getPackId()] = $pack;
@@ -151,6 +164,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 	}
 
 	private function disconnectWithError(string $error) : void{
+		$this->cancelPendingLocalTransfers();
 		$this->session->disconnectWithError(
 			reason: "Error downloading resource packs: " . $error,
 			disconnectScreenMessage: KnownTranslationFactory::disconnectionScreen_resourcePack()
@@ -158,6 +172,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 	}
 
 	public function handleResourcePackClientResponse(ResourcePackClientResponsePacket $packet) : bool{
+		if($this->localCompletion && $this->localStopped){ return false; }
 		switch($packet->status){
 			case ResourcePackClientResponsePacket::STATUS_REFUSED:
 				//TODO: add lang strings for this
@@ -206,10 +221,23 @@ class ResourcePacksPacketHandler extends PacketHandler{
 						ResourcePackType::RESOURCES //TODO: this might be an addon (not behaviour pack), needed to properly support client-side custom items
 					));
 					$seen[$pack->getPackId()] = true;
+					if($this->localCompletion){
+						$this->localExpectedChunks[$pack->getPackId()] = (int) ceil($pack->getPackSize() / self::PACK_CHUNK_SIZE);
+					}
 				}
 				$this->session->getLogger()->debug("Player requested download of " . count($packet->packIds) . " resource packs");
 				break;
 			case ResourcePackClientResponsePacket::STATUS_HAVE_ALL_PACKS:
+				if($this->localCompletion){
+					if($this->activeRequests !== 0 || !$this->requestQueue->isEmpty()){
+						throw new PacketHandlingException("Resource pack download response before local chunk submission completed");
+					}
+					foreach($this->localExpectedChunks as $id => $expected){
+						if(($this->localSubmittedChunks[$id] ?? 0) !== $expected){
+							throw new PacketHandlingException("Resource pack download response before all requested chunks were submitted");
+						}
+					}
+				}
 				if($this->requestedStack){
 					throw new PacketHandlingException("Cannot request resource pack stack multiple times");
 				}
@@ -229,6 +257,10 @@ class ResourcePacksPacketHandler extends PacketHandler{
 				$this->session->getLogger()->debug("Applying resource pack stack");
 				break;
 			case ResourcePackClientResponsePacket::STATUS_COMPLETED:
+				if($this->localCompletion){
+					if(!$this->requestedStack){ throw new PacketHandlingException("Resource pack completion before stack response"); }
+					$this->cancelPendingLocalTransfers();
+				}
 				$this->session->getLogger()->debug("Resource packs sequence completed");
 				($this->completionCallback)();
 				break;
@@ -240,6 +272,19 @@ class ResourcePacksPacketHandler extends PacketHandler{
 	}
 
 	public function handleResourcePackChunkRequest(ResourcePackChunkRequestPacket $packet) : bool{
+		if($this->localCompletion){
+			if($this->localStopped || !$this->session->isConnected()){ return false; }
+			if(!$this->requestedMetadata || $this->requestedStack){
+				throw new PacketHandlingException("Resource pack chunk request outside download stage");
+			}
+			if($this->requestQueue->count() >= self::MAX_LOCAL_QUEUED_REQUESTS || $this->localTotalRequests >= self::MAX_LOCAL_TOTAL_REQUESTS){
+				$this->disconnectWithError("Resource pack request limit exceeded");
+				return false;
+			}
+			if(!isset($this->localExpectedChunks[strtolower($packet->packId)])){
+				throw new PacketHandlingException("Chunk requested for a pack without requested metadata");
+			}
+		}
 		$pack = $this->getPackById($packet->packId);
 		if(!($pack instanceof ResourcePack)){
 			$this->disconnectWithError("Invalid request for chunk $packet->chunkIndex of unknown pack $packet->packId, available packs: " . implode(", ", array_keys($this->resourcePacksById)));
@@ -266,12 +311,17 @@ class ResourcePacksPacketHandler extends PacketHandler{
 		}
 
 		$this->requestQueue->enqueue([$pack, $packet->chunkIndex]);
+		if($this->localCompletion){ ++$this->localTotalRequests; }
 		$this->processChunkRequestQueue();
 
 		return true;
 	}
 
 	private function processChunkRequestQueue() : void{
+		if($this->localCompletion){
+			$this->processLocalChunkRequestQueue();
+			return;
+		}
 		if($this->activeRequests >= self::MAX_CONCURRENT_CHUNK_REQUESTS || $this->requestQueue->isEmpty()){
 			return;
 		}
@@ -286,7 +336,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 		$chunkData = $pack->getPackChunk($offset, self::PACK_CHUNK_SIZE);
 		$this->activeRequests++;
 		$this->session
-			->sendDataPacketWithReceipt(ResourcePackChunkDataPacket::create($packId, $chunkIndex, $offset, $chunkData))
+			->sendResourcePackChunk(ResourcePackChunkDataPacket::create($packId, $chunkIndex, $offset, $chunkData))
 			->onCompletion(
 				function() : void{
 					$this->activeRequests--;
@@ -297,5 +347,57 @@ class ResourcePacksPacketHandler extends PacketHandler{
 					$this->disconnectWithError("Plugin interrupted sending of resource packs");
 				}
 			);
+	}
+
+	private function processLocalChunkRequestQueue() : void{
+		if($this->localPumping || $this->localStopped || !$this->session->isConnected()){ return; }
+		$this->localPumping = true;
+		try{
+			// reentrant synchronous completions cannot grow the stack or run unbounded work
+			for($work = 0; $work < self::MAX_LOCAL_QUEUED_REQUESTS && !$this->localStopped && $this->activeRequests < self::MAX_CONCURRENT_CHUNK_REQUESTS && !$this->requestQueue->isEmpty(); ++$work){
+				[$pack, $chunkIndex] = $this->requestQueue->dequeue();
+				$packId = $pack->getPackId();
+				$offset = $chunkIndex * self::PACK_CHUNK_SIZE;
+				$this->activeRequests++;
+				$reference = \WeakReference::create($this);
+				try{
+					$promise = $this->session->sendResourcePackChunk(ResourcePackChunkDataPacket::create($packId, $chunkIndex, $offset, $pack->getPackChunk($offset, self::PACK_CHUNK_SIZE)));
+				}catch(\Throwable){
+					$this->disconnectWithError("Failed to prepare resource pack chunk");
+					return;
+				}
+				$promise->onCompletion(
+					static function() use ($reference, $packId) : void{
+						$handler = $reference->get();
+						if($handler === null || $handler->localStopped){ return; }
+						$handler->activeRequests--;
+						$handler->localSubmittedChunks[$packId] = ($handler->localSubmittedChunks[$packId] ?? 0) + 1;
+						$handler->processChunkRequestQueue();
+					},
+					static function() use ($reference) : void{
+						$handler = $reference->get();
+						if($handler !== null && !$handler->localStopped){ $handler->disconnectWithError("Local reliable resource pack send failed or timed out"); }
+					}
+				);
+			}
+		}finally{
+			$this->localPumping = false;
+		}
+	}
+
+	/** Called by the session on handler replacement or close, before cancellation callbacks run */
+	public function cancelPendingLocalTransfers() : void{
+		if(!$this->localCompletion){ return; }
+		$this->localStopped = true;
+		$this->activeRequests = 0;
+		$this->requestQueue = new \SplQueue();
+		$this->downloadedChunks = [];
+		$this->localExpectedChunks = $this->localSubmittedChunks = [];
+	}
+
+	public function checkLocalTimeout(float $now) : void{
+		if($this->localCompletion && !$this->localStopped && $now >= $this->localDeadline){
+			$this->disconnectWithError("Resource pack negotiation timed out");
+		}
 	}
 }
