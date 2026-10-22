@@ -391,4 +391,32 @@ final class TippedArrowEntityTest extends TestCase{
 
 		self::assertEmpty($target->getEffects()->all());
 	}
+
+	public function testLethalInstantHealthArrowDoesNotHealOrResurrect() : void{
+		$arrow = $this->createArrow(null, PotionType::HEALING);
+		$target = $this->createTarget(206);
+		(new ReflectionProperty(Entity::class, "health"))->setValue($target, 1.0);
+
+		$hitResult = new RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0));
+		$onHitEntity = new ReflectionMethod(Arrow::class, "onHitEntity");
+		$onHitEntity->invoke($arrow, $target, $hitResult);
+
+		self::assertFalse($target->isAlive());
+		self::assertSame(0.0, $target->getHealth());
+		self::assertEmpty($target->getEffects()->all());
+	}
+
+	public function testDeadEntityCannotBeHealedDirectly() : void{
+		$target = $this->createTarget(207);
+		(new ReflectionProperty(Entity::class, "health"))->setValue($target, 0.0);
+		self::assertFalse($target->isAlive());
+
+		$target->heal(new \pocketmine\event\entity\EntityRegainHealthEvent($target, 10.0, \pocketmine\event\entity\EntityRegainHealthEvent::CAUSE_MAGIC));
+		self::assertSame(0.0, $target->getHealth());
+		self::assertFalse($target->isAlive());
+
+		$added = $target->getEffects()->add(new EffectInstance(VanillaEffects::REGENERATION(), 100));
+		self::assertFalse($added);
+		self::assertEmpty($target->getEffects()->all());
+	}
 }

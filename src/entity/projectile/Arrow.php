@@ -302,6 +302,9 @@ class Arrow extends Projectile{
 		if($this->hitBlocked || ($this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled())){
 			return;
 		}
+		if(!$entityHit->isAlive()){
+			return;
+		}
 		if($this->punchKnockback > 0){
 			$horizontalSpeed = sqrt($this->motion->x ** 2 + $this->motion->z ** 2);
 			if($horizontalSpeed > 0){
@@ -316,6 +319,9 @@ class Arrow extends Projectile{
 	}
 
 	protected function applyPotionEffects(Living $entityHit) : void{
+		if(!$entityHit->isAlive()){
+			return;
+		}
 		foreach($this->getPotionEffects() as $effect){
 			$effect = clone $effect;
 			if($effect->getType() instanceof InstantEffect){

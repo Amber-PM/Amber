@@ -561,6 +561,9 @@ abstract class Entity{
 	}
 
 	public function heal(EntityRegainHealthEvent $source) : void{
+		if(!$this->isAlive()){
+			return;
+		}
 		$source->call();
 		if($source->isCancelled()){
 			return;
