@@ -30,6 +30,7 @@ use pocketmine\entity\projectile\ExperienceBottle;
 use pocketmine\entity\projectile\Projectile;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
+use pocketmine\item\Arrow as ItemArrow;
 use pocketmine\item\Item;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\item\SplashPotion as ItemSplashPotion;
@@ -64,7 +65,7 @@ class ProjectileDispenseBehavior implements DispenseBehavior{
 	}
 
 	protected function createProjectile(Location $loc, Item $item) : ?Projectile{
-		return match($item->getTypeId()){
+		$projectile = match($item->getTypeId()){
 			ItemTypeIds::ARROW => new Arrow($loc, null, false),
 			ItemTypeIds::SNOWBALL => new Snowball($loc, null),
 			ItemTypeIds::EGG => new Egg($loc, null),
@@ -72,5 +73,9 @@ class ProjectileDispenseBehavior implements DispenseBehavior{
 			ItemTypeIds::EXPERIENCE_BOTTLE => new ExperienceBottle($loc, null),
 			default => null,
 		};
+		if($projectile instanceof Arrow && $item instanceof ItemArrow){
+			$projectile->setPotionType($item->getTipType());
+		}
+		return $projectile;
 	}
 }

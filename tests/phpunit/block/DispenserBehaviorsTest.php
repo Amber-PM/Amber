@@ -42,6 +42,44 @@ use pocketmine\math\Vector3;
 use pocketmine\world\World;
 
 final class DispenserBehaviorsTest extends TestCase{
+	public static function arrowPotionTypes() : \Generator{
+		yield "normal arrow" => [null];
+		foreach(\pocketmine\item\PotionType::cases() as $type){
+			yield $type->name => [$type];
+		}
+	}
+
+	/** @dataProvider arrowPotionTypes */
+	public function testDispensedArrowPreservesPotionType(?\pocketmine\item\PotionType $type) : void{
+		\pocketmine\timings\Timings::init();
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("isChunkLoaded")->willReturn(true);
+		$world->method("getServer")->willReturn($this->createMock(\pocketmine\Server::class));
+		$entities = [];
+		$world->method("addEntity")->willReturnCallback(function(\pocketmine\entity\Entity $entity) use (&$entities) : void{
+			$entities[] = $entity;
+		});
+		$world->expects(self::never())->method("dropItem");
+		$item = VanillaItems::ARROW()->setTipType($type)->setCount(2);
+		$source = new BlockSource($world, new Vector3(10, 64, 10), Facing::NORTH);
+		try{
+			$result = DispenseBehaviorRegistry::getInstance()->get($item)->dispense($source, $item);
+			self::assertCount(1, $entities);
+			$arrow = $entities[0];
+			self::assertInstanceOf(\pocketmine\entity\projectile\Arrow::class, $arrow);
+			self::assertSame($type, $arrow->getPotionType());
+			self::assertEquals($type?->getEffects() ?? [], $arrow->getPotionEffects());
+			self::assertSame(1, $result->getCount());
+			self::assertSame($type, $result->getTipType());
+			self::assertLessThan(0.0, $arrow->getMotion()->z);
+		}finally{
+			foreach($entities as $entity){
+				$entity->close();
+			}
+		}
+	}
 
 	public function testRegistryMappings() : void{
 		$registry = DispenseBehaviorRegistry::getInstance();
