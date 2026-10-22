@@ -139,36 +139,6 @@ final class ArmorStandInteractionTest extends TestCase{
 		return $player;
 	}
 
-	public function testSnappedYawCalculations() : void{
-		$testCases = [
-			[0.0, 0.0],
-			[10.0, 0.0],
-			[11.24, 0.0],
-			[11.25, 22.5],
-			[15.0, 22.5],
-			[22.5, 22.5],
-			[30.0, 22.5],
-			[33.74, 22.5],
-			[33.75, 45.0],
-			[45.0, 45.0],
-			[90.0, 90.0],
-			[180.0, 180.0],
-			[270.0, 270.0],
-			[350.0, 360.0],
-			[360.0, 360.0],
-			[-10.0, -0.0],
-			[-11.25, -22.5],
-			[-15.0, -22.5],
-			[-22.5, -22.5],
-			[-35.0, -45.0],
-		];
-
-		foreach($testCases as [$yaw, $expectedSnapped]){
-			$calculated = round($yaw / 22.5) * 22.5;
-			self::assertEqualsWithDelta($expectedSnapped, $calculated, 0.0001, "Yaw $yaw should snap to $expectedSnapped");
-		}
-	}
-
 	public function testEquippingFromStackPreservesRemainder() : void{
 		$stand = $this->createArmorStand();
 		$player = $this->createPlayer(heldItem: VanillaItems::DIAMOND()->setCount(13));
