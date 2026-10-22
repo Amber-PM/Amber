@@ -473,6 +473,15 @@ class TypeConverter{
 			new ParameterType('typeConverter', TypeConverter::class),
 		), $closure);
 
+		self::broadcastByTypeConverterUnchecked($players, $closure);
+	}
+
+	/**
+	 * @internal
+	 * @param Player[] $players
+	 * @phpstan-param \Closure(TypeConverter) : ClientboundPacket[] $closure
+	 */
+	public static function broadcastByTypeConverterUnchecked(array $players, \Closure $closure) : void{
 		[$typeConverters, $converterRecipients] = self::sortByConverter($players);
 
 		foreach($typeConverters as $key => $typeConverter){
