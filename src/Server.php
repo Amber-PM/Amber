@@ -337,12 +337,16 @@ class Server{
 		return VersionInfo::VERSION()->getFullVersion(true);
 	}
 
+	public function getAmberVersion() : string{
+		return VersionInfo::VERSION()->getFullVersion(true);
+	}
+
 	public function getVersion() : string{
 		return ProtocolInfo::MINECRAFT_VERSION;
 	}
 
 	public function getApiVersion() : string{
-		return VersionInfo::BASE_VERSION;
+		return VersionInfo::COMPATIBLE_API_VERSION;
 	}
 
 	public function isProtocolAllowed(int $protocolId) : bool{
@@ -890,7 +894,7 @@ class Server{
 			$pocketmineYmlPath = Path::join($this->dataPath, "pocketmine.yml");
 			if(!file_exists($pocketmineYmlPath)){
 				$content = Filesystem::fileGetContents(Path::join(\pocketmine\RESOURCE_PATH, "pocketmine.yml"));
-				if(VersionInfo::IS_DEVELOPMENT_BUILD){
+				if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 					$content = str_replace("preferred-channel: stable", "preferred-channel: beta", $content);
 				}
 				@file_put_contents($pocketmineYmlPath, $content);
@@ -951,7 +955,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::language_selected($this->language->getName(), $this->language->getLang())));
 
-			if(VersionInfo::IS_DEVELOPMENT_BUILD){
+			if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 				if(!$this->configGroup->getPropertyBool(Yml::SETTINGS_ENABLE_DEV_BUILDS, false)){
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error1(VersionInfo::NAME)));
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error2()));
@@ -1087,7 +1091,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_info(
 				$this->getName(),
-				(VersionInfo::IS_DEVELOPMENT_BUILD ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
+				(VersionInfo::IS_DEVELOPMENT_BUILD() ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
 			)));
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_license($this->getName())));
 
@@ -1193,18 +1197,17 @@ class Server{
 			$highlight = TextFormat::AQUA;
 			$reset = TextFormat::RESET;
 			$github = VersionInfo::GITHUB_URL;
-			$splash = "\n\n";
-			foreach([
-				KnownTranslationFactory::pocketmine_server_url_discord("{$highlight}https://discord.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_docs("{$highlight}https://doc.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_sourceCode("{$highlight}{$github}{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_freePlugins("{$highlight}https://poggit.pmmp.io/plugins{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_donations("{$highlight}https://patreon.com/pocketminemp{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_translations("{$highlight}https://translate.pocketmine.net{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_bugReporting("{$highlight}{$github}/issues{$reset}")
-			] as $link){
-				$splash .= "- " . $this->language->translate($link) . "\n";
-			}
+
+			$channel = VersionInfo::BUILD_CHANNEL();
+			$version = VersionInfo::VERSION();
+			$stateName = $version->isDev() ? "development" : ($channel !== "stable" ? $channel : "release");
+			$compat = "PocketMine API " . $this->getApiVersion() . " | Bedrock " . ProtocolInfo::MINECRAFT_VERSION;
+
+			$splash = "\n" .
+				"  " . TextFormat::GOLD . VersionInfo::NAME . " " . $version->getFullVersion(true) . TextFormat::GRAY . " (" . $stateName . ")" . $reset . "\n" .
+				"  " . TextFormat::GRAY . "Compatibility: " . $reset . $compat . "\n" .
+				"  " . $this->language->translate(KnownTranslationFactory::pocketmine_server_url_sourceCode("{$highlight}{$github}{$reset}")) . "\n" .
+				"  " . $this->language->translate(KnownTranslationFactory::pocketmine_server_url_bugReporting("{$highlight}{$github}/issues{$reset}")) . "\n";
 			$this->logger->info($splash);
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_startFinished(strval(round(microtime(true) - $this->startTime, 3)))));

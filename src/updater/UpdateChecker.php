@@ -64,9 +64,9 @@ class UpdateChecker{
 				$this->showConsoleUpdate();
 			}
 		}else{
-			if(!VersionInfo::IS_DEVELOPMENT_BUILD && $this->getChannel() !== "stable"){
+			if(!VersionInfo::IS_DEVELOPMENT_BUILD() && $this->getChannel() !== "stable"){
 				$this->showChannelSuggestionStable();
-			}elseif(VersionInfo::IS_DEVELOPMENT_BUILD && $this->getChannel() === "stable"){
+			}elseif(VersionInfo::IS_DEVELOPMENT_BUILD() && $this->getChannel() === "stable"){
 				$this->showChannelSuggestionBeta();
 			}
 		}

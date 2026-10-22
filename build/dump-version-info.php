@@ -21,10 +21,12 @@
 
 declare(strict_types=1);
 
+use pocketmine\build\server_phar\BuildMetadataResolver;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\VersionInfo;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+require_once __DIR__ . '/BuildMetadataResolver.php';
 
 /*
  * Dumps version info in a machine-readable format for use in GitHub Actions workflows
@@ -35,11 +37,12 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * @phpstan-var array<string, string|Closure() : string> $options
  */
 $options = [
-	"base_version" => VersionInfo::BASE_VERSION,
-	"major_version" => fn() => explode(".", VersionInfo::BASE_VERSION, limit: 2)[0],
+	"base_version" => fn() : string => VersionInfo::BASE_VERSION(),
+	"api_version" => fn() : string => VersionInfo::COMPATIBLE_API_VERSION,
+	"major_version" => fn() : string => explode(".", VersionInfo::BASE_VERSION(), limit: 2)[0],
 	"mcpe_version" => ProtocolInfo::MINECRAFT_VERSION_NETWORK,
 	"mcpe_display_version" => ProtocolInfo::MINECRAFT_VERSION,
-	"is_dev" => VersionInfo::IS_DEVELOPMENT_BUILD,
+	"is_dev" => fn() : bool => VersionInfo::IS_DEVELOPMENT_BUILD(),
 	"changelog_file_name" => function() : string{
 		$version = VersionInfo::VERSION();
 		$result = $version->getMajor() . "." . $version->getMinor();
@@ -54,30 +57,77 @@ $options = [
 		}
 		return $result . ".md";
 	},
-	"changelog_md_header" => fn() : string => str_replace(".", "", VersionInfo::BASE_VERSION),
+	"changelog_md_header" => fn() : string => str_replace(".", "", VersionInfo::BASE_VERSION()),
 	"prerelease" => fn() : bool => VersionInfo::VERSION()->getSuffix() !== "",
-	"channel" => VersionInfo::BUILD_CHANNEL,
+	"channel" => fn() : string => VersionInfo::BUILD_CHANNEL(),
 	"suffix_valid" => function() : bool{
 		//TODO: maybe this should be put into its own script?
 		$suffix = VersionInfo::VERSION()->getSuffix();
-		if(VersionInfo::BUILD_CHANNEL === "stable"){
+		$channel = VersionInfo::BUILD_CHANNEL();
+		if($channel === "stable"){
 			//stable builds may not have suffixes
 			return $suffix === "";
 		}
-		if(VersionInfo::BUILD_CHANNEL === "alpha" || VersionInfo::BUILD_CHANNEL === "beta"){
-			$upperChannel = strtoupper(VersionInfo::BUILD_CHANNEL);
+		if($channel === "alpha" || $channel === "beta"){
+			$upperChannel = strtoupper($channel);
 			$upperSuffix = strtoupper($suffix);
 			return str_starts_with($upperSuffix, $upperChannel) && is_numeric(substr($upperSuffix, strlen($upperChannel)));
 		}
 		return true;
 	}
 ];
-if(!isset($argv) || count($argv) !== 2 || !isset($options[$argv[1]])){
-	fwrite(STDERR, "Please provide an option (one of: " . implode(", ", array_keys($options)) . PHP_EOL);
+
+$args = array_slice($argv ?? [], 1);
+$requestedKey = array_shift($args);
+
+$env = [
+	"GITHUB_REF_TYPE" => (string) (getenv("GITHUB_REF_TYPE") ?: ""),
+	"GITHUB_REF_NAME" => (string) (getenv("GITHUB_REF_NAME") ?: ""),
+	"GITHUB_RUN_NUMBER" => (string) (getenv("GITHUB_RUN_NUMBER") ?: ""),
+	"GITHUB_SHA" => (string) (getenv("GITHUB_SHA") ?: ""),
+];
+
+try{
+	if(!is_string($requestedKey) || !isset($options[$requestedKey])){
+		throw new \InvalidArgumentException("Please provide an option (one of: " . implode(", ", array_keys($options)) . ")");
+	}
+	$cliOpts = BuildMetadataResolver::parseOptions($args, ["phar", "tag", "git", "build", "channel", "is-dev"]);
+	$requestedPhar = $cliOpts["phar"] ?? null;
+	if($requestedPhar !== null && (!is_string($requestedPhar) || $requestedPhar === "")){
+		throw new \InvalidArgumentException("--phar requires a file path");
+	}
+	unset($cliOpts["phar"]);
+
+	$hasTag = isset($cliOpts["tag"]) ||
+		($env["GITHUB_REF_TYPE"] === "tag");
+	if($requestedPhar !== null && !$hasTag && $cliOpts === []){
+		$metadata = BuildMetadataResolver::readPharMetadata($requestedPhar);
+	}else{
+		$metadata = BuildMetadataResolver::resolve(VersionInfo::BASE_VERSION, $cliOpts, $env);
+		if($requestedPhar !== null){
+			BuildMetadataResolver::assertPharMetadataMatches(
+				BuildMetadataResolver::readPharMetadata($requestedPhar),
+				$metadata,
+				true
+			);
+		}
+	}
+	if($requestedPhar !== null){
+		BuildMetadataResolver::assertPharConstantsMatch($requestedPhar, $metadata, VersionInfo::NAME, VersionInfo::COMPATIBLE_API_VERSION);
+	}
+}catch(\InvalidArgumentException $e){
+	fwrite(STDERR, "Version metadata error: " . $e->getMessage() . PHP_EOL);
 	exit(1);
 }
 
-$result = $options[$argv[1]];
+VersionInfo::setPharMetadataForTesting($metadata);
+
+if($requestedKey === null){
+	fwrite(STDERR, "Please provide an option (one of: " . implode(", ", array_keys($options)) . ")" . PHP_EOL);
+	exit(1);
+}
+
+$result = $options[$requestedKey];
 if($result instanceof Closure){
 	$result = $result();
 }

@@ -216,9 +216,19 @@ jobs:
           restore-keys: composer-${{ runner.os }}-php-8.3-
 
       - name: Build production PHAR
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
         run: composer make-server
 
       - name: Verify PHAR artifact
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           test -s PocketMine-MP.phar
-          php -r '$phar = new Phar("PocketMine-MP.phar"); $phar->getStub();'
+          php build/verify-phar.php --phar=PocketMine-MP.phar
