@@ -63,11 +63,15 @@ class ShieldCombatTest extends TestCase{
 	private function createHuman(float $yaw = 0.0, Vector3 $pos = null, bool $expectBlockedFeedback = false) : Human{
 		static $idCounter = 1;
 		$id = $idCounter++;
-		$human = $expectBlockedFeedback ? $this->getMockBuilder(Human::class)->disableOriginalConstructor()->onlyMethods(["knockBack", "doHitAnimation", "broadcastSound"])->getMock() : (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
 		if($expectBlockedFeedback){
-			$human->expects(self::never())->method("knockBack");
-			$human->expects(self::never())->method("doHitAnimation");
-			$human->expects(self::once())->method("broadcastSound")->with(self::isInstanceOf(\pocketmine\world\sound\ShieldBlockSound::class));
+			/** @var Human&\PHPUnit\Framework\MockObject\MockObject $mock */
+			$mock = $this->getMockBuilder(Human::class)->disableOriginalConstructor()->onlyMethods(["knockBack", "doHitAnimation", "broadcastSound"])->getMock();
+			$mock->expects(self::never())->method("knockBack");
+			$mock->expects(self::never())->method("doHitAnimation");
+			$mock->expects(self::once())->method("broadcastSound")->with(self::isInstanceOf(\pocketmine\world\sound\ShieldBlockSound::class));
+			$human = $mock;
+		}else{
+			$human = (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
 		}
 		(new ReflectionProperty(Entity::class, "id"))->setValue($human, $id);
 		self::$entitiesById[$id] = $human;
@@ -118,7 +122,41 @@ class ShieldCombatTest extends TestCase{
 		$defender->attack($this->createDamageByEntityEvent($attacker, $defender, 8.0));
 		self::assertSame($health, $defender->getHealth());
 		self::assertEquals(Vector3::zero(), $defender->getMotion());
-		self::assertSame(8, $defender->getOffHandInventory()->getItem(0)->getDamage());
+		$shield = $defender->getOffHandInventory()->getItem(0);
+		self::assertInstanceOf(Shield::class, $shield);
+		self::assertSame(8, $shield->getDamage());
+		self::assertGreaterThan(0.0, $attacker->getMotion()->z);
+	}
+
+	public function testBlockedMeleeKnocksBackAttackerAwayFromDefender() : void{
+		$defender = $this->createHuman(0.0, Vector3::zero(), true);
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+
+		$attacker = $this->createHuman(180.0, new Vector3(0, 0, 2));
+		self::assertEquals(Vector3::zero(), $attacker->getMotion());
+
+		$defender->attack($this->createDamageByEntityEvent($attacker, $defender, 6.0));
+
+		self::assertEquals(Vector3::zero(), $defender->getMotion());
+		self::assertGreaterThan(0.0, $attacker->getMotion()->z);
+		self::assertSame(0.0, $attacker->getMotion()->x);
+	}
+
+	public function testBlockedMeleeAtSameCoordinatesKnocksBackAttackerUsingFacingDirection() : void{
+		$defender = $this->createHuman(0.0, Vector3::zero(), true);
+		$defender->getOffHandInventory()->setItem(0, VanillaItems::SHIELD());
+		$defender->setSneaking(true);
+		$defender->updateBlockingState();
+
+		$attacker = $this->createHuman(180.0, Vector3::zero());
+		self::assertEquals(Vector3::zero(), $attacker->getMotion());
+
+		$defender->attack($this->createDamageByEntityEvent($attacker, $defender, 6.0));
+
+		self::assertEquals(Vector3::zero(), $defender->getMotion());
+		self::assertGreaterThan(0.0, $attacker->getMotion()->z);
 	}
 
 	public function testShieldChangedInsideDamageCallbackIsNotDamaged() : void{

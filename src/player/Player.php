@@ -2278,7 +2278,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			}
 			return false;
 		}
-		$this->getWorld()->addSound($soundPos, new EntityAttackSound());
+		if(!$ev->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
+			$this->getWorld()->addSound($soundPos, new EntityAttackSound());
+		}
 
 		if($ev->getModifier(EntityDamageEvent::MODIFIER_CRITICAL) > 0 && $entity instanceof Living){
 			$entity->broadcastAnimation(new CriticalHitAnimation($entity));
@@ -2287,10 +2289,12 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$entity->broadcastAnimation(new MagicHitAnimation($entity));
 		}
 
-		foreach($meleeEnchantments as $enchantment){
-			$type = $enchantment->getType();
-			assert($type instanceof MeleeWeaponEnchantment);
-			$type->onPostAttack($this, $entity, $enchantment->getLevel());
+		if(!$ev->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
+			foreach($meleeEnchantments as $enchantment){
+				$type = $enchantment->getType();
+				assert($type instanceof MeleeWeaponEnchantment);
+				$type->onPostAttack($this, $entity, $enchantment->getLevel());
+			}
 		}
 
 		if($this->isAlive()){

@@ -578,6 +578,16 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 			if($source instanceof EntityDamageByEntityEvent && !$source instanceof EntityDamageByChildEntityEvent){
 				$damager = $source->getDamager();
+				if($damager instanceof Living && $damager->isAlive() && !$damager->isClosed()){
+					$deltaX = $damager->getLocation()->x - $this->location->x;
+					$deltaZ = $damager->getLocation()->z - $this->location->z;
+					if($deltaX === 0.0 && $deltaZ === 0.0){
+						$dir = $this->getDirectionVector();
+						$deltaX = $dir->x;
+						$deltaZ = $dir->z;
+					}
+					$damager->knockBack($deltaX, $deltaZ, $source->getKnockBack(), $source->getVerticalKnockBackLimit());
+				}
 				if($damager instanceof Human && $damager->getInventory()->getItemInHand() instanceof Axe){
 					$this->disableShield(100);
 				}
