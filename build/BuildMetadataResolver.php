@@ -30,9 +30,12 @@ use function is_string;
 use function preg_match;
 use function preg_replace;
 use function sprintf;
+use function strcmp;
+use function strlen;
 use function str_repeat;
 use function strtolower;
 use function trim;
+use const PHP_INT_MAX;
 
 final class BuildMetadataResolver{
 
@@ -246,8 +249,14 @@ final class BuildMetadataResolver{
 		if($value === ""){
 			return 0;
 		}
-		if((!is_string($value) && !is_int($value)) ||
-			preg_match('/^(0|[1-9]\d*)$/D', (string) $value) !== 1 || (string) (int) $value !== (string) $value){
+		if(!is_string($value) && !is_int($value)){
+			throw new InvalidArgumentException("Invalid build number; expected a non-negative integer within platform range");
+		}
+		$valueString = (string) $value;
+		$maxIntString = (string) PHP_INT_MAX;
+		if(preg_match('/^(0|[1-9]\d*)$/D', $valueString) !== 1 ||
+			strlen($valueString) > strlen($maxIntString) ||
+			(strlen($valueString) === strlen($maxIntString) && strcmp($valueString, $maxIntString) > 0)){
 			throw new InvalidArgumentException("Invalid build number; expected a non-negative integer within platform range");
 		}
 		return (int) $value;
