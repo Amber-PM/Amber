@@ -94,6 +94,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 		$this->networkPropertiesDirty = true;
 		if(isset($this->networkProperties)){
 			$this->networkProperties->setGenericFlag(EntityMetadataFlags::TAMED, $tamed);
+			$this->networkProperties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($tamed ? $this->collarColor : DyeColor::WHITE));
 		}
 	}
 
@@ -163,7 +164,7 @@ abstract class TameableAnimal extends Living implements Ageable{
 		$this->collarColor = $color;
 		$this->networkPropertiesDirty = true;
 		if(isset($this->networkProperties)){
-			$this->networkProperties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($color));
+			$this->networkProperties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($this->tamed ? $color : DyeColor::WHITE));
 		}
 	}
 
@@ -233,7 +234,8 @@ abstract class TameableAnimal extends Living implements Ageable{
 		$properties->setGenericFlag(EntityMetadataFlags::TAMED, $this->tamed);
 		$properties->setGenericFlag(EntityMetadataFlags::SITTING, $this->sitting);
 		$properties->setGenericFlag(EntityMetadataFlags::BABY, $this->isBaby());
-		$properties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($this->collarColor));
+		// Wild cats use COLOR as a body tint; the stored collar colour only applies once tamed.
+		$properties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($this->tamed ? $this->collarColor : DyeColor::WHITE));
 
 		$owner = $this->getOwner();
 		if($owner !== null){

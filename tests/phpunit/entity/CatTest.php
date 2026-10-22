@@ -84,6 +84,37 @@ if(!class_exists(CatTestTargetEntity::class)){
 }
 
 final class CatTest extends TestCase{
+	public function testUntamedCatsSendNeutralTintForEveryVariantAndProtocol() : void{
+		$cat = $this->createCat();
+		foreach(range(Cat::TYPE_TABBY, Cat::TYPE_ALL_BLACK) as $variant){
+			$cat->setCatType($variant);
+			$metadata = (new \ReflectionMethod(Entity::class, "getAllNetworkData"))->invoke($cat);
+			foreach(\pocketmine\network\mcpe\protocol\ProtocolInfo::ACCEPTED_PROTOCOL as $protocol){
+				$writer = new \pmmp\encoding\ByteBufferWriter();
+				\pocketmine\network\mcpe\protocol\serializer\CommonTypes::putEntityMetadata($writer, $protocol, $metadata);
+				$decoded = \pocketmine\network\mcpe\protocol\serializer\CommonTypes::getEntityMetadata(new \pmmp\encoding\ByteBufferReader($writer->getData()), $protocol);
+				self::assertSame(0, $decoded[EntityMetadataProperties::COLOR]->getValue(), "Wild cat body must not be tinted by its stored collar colour");
+				self::assertSame($variant, $decoded[EntityMetadataProperties::VARIANT]->getValue());
+			}
+		}
+		self::assertSame(DyeColor::RED, $cat->getCollarColor());
+	}
+
+	public function testCollarColourOnlyAppliesWhileTamed() : void{
+		$cat = $this->createCat();
+		$cat->setCollarColor(DyeColor::BLUE);
+		self::assertSame(0, $cat->getNetworkProperties()->getAll()[EntityMetadataProperties::COLOR]->getValue());
+		$cat->setTamed(true);
+		self::assertSame(11, $cat->getNetworkProperties()->getAll()[EntityMetadataProperties::COLOR]->getValue());
+		$cat->setCollarColor(DyeColor::CYAN);
+		self::assertSame(9, $cat->getNetworkProperties()->getAll()[EntityMetadataProperties::COLOR]->getValue());
+		$cat->setTamed(false);
+		self::assertSame(0, $cat->getNetworkProperties()->getAll()[EntityMetadataProperties::COLOR]->getValue());
+		$cat->setCatType(Cat::TYPE_WHITE);
+		$metadata = (new \ReflectionMethod(Entity::class, "getAllNetworkData"))->invoke($cat);
+		self::assertSame(0, $metadata[EntityMetadataProperties::COLOR]->getValue());
+		self::assertSame(DyeColor::CYAN, $cat->getCollarColor());
+	}
 
 	/** @var Entity[] */
 	private array $createdEntities = [];
