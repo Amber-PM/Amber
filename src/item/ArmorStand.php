@@ -34,7 +34,8 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\player\Player;
 use pocketmine\world\sound\BlockPlaceSound;
 use function count;
-use function round;
+use function floor;
+use function fmod;
 
 class ArmorStand extends Item{
 
@@ -67,7 +68,10 @@ class ArmorStand extends Item{
 		}
 
 		$playerYaw = $player->getLocation()->getYaw();
-		$snappedYaw = round($playerYaw / 22.5) * 22.5;
+		$snappedYaw = fmod(floor(($playerYaw + 180.0 + 22.5) / 45.0) * 45.0, 360.0);
+		if($snappedYaw < 0){
+			$snappedYaw += 360.0;
+		}
 
 		$location = new Location($pos->x + 0.5, $pos->y, $pos->z + 0.5, $world, $snappedYaw, 0.0);
 
