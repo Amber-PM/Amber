@@ -2469,6 +2469,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		}
 		$duration = ($firework->getFlightTimeMultiplier() + 1) * 10 + mt_rand(0, 12);
 		$rocket = new FireworkEntity(clone $this->location, $duration, $firework->getExplosions());
+		$rocket->setFlightTimeMultiplier($firework->getFlightTimeMultiplier());
 		$rocket->attachTo($this);
 		$rocket->spawnToAll();
 		return true;

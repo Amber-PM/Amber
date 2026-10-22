@@ -230,7 +230,7 @@ final class CrossbowItemTest extends TestCase{
 		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::FIREWORK_ROCKET());
 		$list = HandlerListManager::global()->getListFor(EntityShootBowEvent::class);
 		$listener = new RegisteredListener(function(EntityShootBowEvent $event) : void{
-			self::assertSame(1.6, $event->getForce());
+			self::assertSame(3.15, $event->getForce());
 			$event->setForce(2.0);
 		}, EventPriority::NORMAL, $this->createMock(Plugin::class), true, new TimingsHandler("crossbow firework force"));
 		$list->register($listener);
@@ -247,6 +247,57 @@ final class CrossbowItemTest extends TestCase{
 			self::assertFalse($entities[0]->isFlaggedForDespawn());
 		}finally{
 			$list->unregister($listener);
+			foreach($entities as $entity){
+				$entity->close();
+			}
+			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);
+		}
+	}
+
+	public function testMultishotTransfersFireworkStarsAndFlightToAllRockets() : void{
+		$entities = [];
+		$player = $this->createFireworkPlayer($entities);
+		$explosions = [
+			new FireworkRocketExplosion(FireworkRocketType::BURST, [\pocketmine\block\utils\DyeColor::RED], [], true, true),
+			new FireworkRocketExplosion(FireworkRocketType::STAR, [\pocketmine\block\utils\DyeColor::BLUE])
+		];
+		$ammo = VanillaItems::FIREWORK_ROCKET()->setFlightTimeMultiplier(3)->setExplosions($explosions);
+		$crossbow = VanillaItems::CROSSBOW()->setChargedItem($ammo);
+		$crossbow->addEnchantment(new EnchantmentInstance(VanillaEnchantments::MULTISHOT(), 1));
+		try{
+			$returnedItems = [];
+			self::assertSame(ItemUseResult::SUCCESS, $crossbow->fire($player, new Vector3(0, 0, 1), $returnedItems));
+			self::assertCount(3, $entities);
+			$ids = [];
+			foreach($entities as $entity){
+				self::assertInstanceOf(FireworkRocketEntity::class, $entity);
+				$ids[] = $entity->getId();
+				self::assertTrue($entity->isShotFromCrossbow());
+				self::assertSame($player->getId(), $entity->getOwningEntityId());
+				self::assertFalse($entity->isFlaggedForDespawn());
+				self::assertEquals($explosions, $entity->getExplosions());
+				self::assertSame(3, $entity->getFlightTimeMultiplier());
+				self::assertGreaterThanOrEqual(40, $entity->getMaxFlightTimeTicks());
+				self::assertLessThanOrEqual(45, $entity->getMaxFlightTimeTicks());
+				self::assertEqualsWithDelta(3.15, $entity->getMotion()->length(), 0.00001);
+				$metadata = (new \ReflectionMethod(Entity::class, "getAllNetworkData"))->invoke($entity);
+				$fireworks = $metadata[\pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties::FIREWORK_ITEM]
+					->getValue()->getRoot()->getCompoundTag("Fireworks");
+				self::assertNotNull($fireworks);
+				self::assertSame(3, $fireworks->getByte("Flight"));
+				$stars = $fireworks->getListTag("Explosions");
+				self::assertNotNull($stars);
+				self::assertCount(2, $stars);
+				self::assertEquals($explosions[0]->toCompoundTag(), $stars->get(0));
+				self::assertEquals($explosions[1]->toCompoundTag(), $stars->get(1));
+			}
+			self::assertCount(3, array_unique($ids));
+			self::assertGreaterThan(0.0, $entities[0]->getMotion()->x);
+			self::assertEqualsWithDelta(0.0, $entities[1]->getMotion()->x, 0.00001);
+			self::assertLessThan(0.0, $entities[2]->getMotion()->x);
+			self::assertFalse($crossbow->isCharged());
+			self::assertSame(3, $crossbow->getDamage());
+		}finally{
 			foreach($entities as $entity){
 				$entity->close();
 			}

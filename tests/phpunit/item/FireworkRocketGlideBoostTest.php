@@ -233,6 +233,9 @@ class FireworkRocketGlideBoostTest extends TestCase{
 			self::assertSame(20.0, $player->getHealth());
 			$tick->invoke($entity, 1);
 			self::assertSame(13.0, $player->getHealth());
+			self::assertTrue($entity->hasExploded());
+			self::assertFalse($entity->isFlaggedForDespawn());
+			$tick->invoke($entity, 1);
 			self::assertTrue($entity->isFlaggedForDespawn());
 		}finally{
 			(new ReflectionProperty(Entity::class, "closed"))->setValue($player, true);

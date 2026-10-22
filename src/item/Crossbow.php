@@ -44,6 +44,7 @@ use pocketmine\world\sound\CrossbowShootSound;
 use function cos;
 use function deg2rad;
 use function max;
+use function mt_rand;
 use function sin;
 
 class Crossbow extends Tool implements Chargeable{
@@ -299,15 +300,19 @@ class Crossbow extends Tool implements Chargeable{
 
 		if($ammo->getTypeId() === ItemTypeIds::FIREWORK_ROCKET){
 			$explosions = [];
+			$flightMultiplier = 1;
 			if($ammo instanceof FireworkRocketItem){
 				$explosions = $ammo->getExplosions();
+				$flightMultiplier = $ammo->getFlightTimeMultiplier();
 			}
-			$rocket = new FireworkRocketEntity($spawnLocation, 60, $explosions);
+			$flightDuration = (($flightMultiplier + 1) * 10) + mt_rand(0, 5);
+			$rocket = new FireworkRocketEntity($spawnLocation, $flightDuration, $explosions);
+			$rocket->setFlightTimeMultiplier($flightMultiplier);
 			$rocket->setOwningEntity($player);
 			$rocket->setMotion($dir);
 			$rocket->setShotFromCrossbow(true);
 			$projectile = $rocket;
-			$force = 1.6;
+			$force = 3.15;
 		}else{
 			$potionType = $ammo instanceof ArrowItem ? $ammo->getTipType() : null;
 			$arrow = $this->createArrow($spawnLocation, $player);
