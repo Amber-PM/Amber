@@ -219,7 +219,11 @@ class ResourcePacksPacketHandler extends PacketHandler{
 					return new ResourcePackStackEntry($pack->getPackId(), $pack->getPackVersion(), ""); //TODO: subpacks
 				}, $this->resourcePackStack);
 
-				if($this->session->getProtocolId() < ProtocolInfo::PROTOCOL_1_26_0 && $this->educationContentEnabled){
+				if($this->educationContentEnabled){
+					//chemistry resources are still separate from vanilla in 1.26.x clients.
+					if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_40){
+						$stack[] = new ResourcePackStackEntry("d34cfa4b-2ad1-453d-a0db-668b429a3ea0", "1.26.40", "");
+					}
 					foreach(self::CHEMISTRY_RESOURCE_PACKS as [$uuid, $version]){
 						$stack[] = new ResourcePackStackEntry($uuid, $version, "");
 					}
