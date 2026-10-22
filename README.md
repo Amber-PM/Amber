@@ -8,7 +8,7 @@
 <p align="center">
 	<a href="https://github.com/Amber-PM/Amber/releases/latest"><img alt="GitHub release (latest SemVer)" src="https://img.shields.io/github/v/release/Amber-PM/Amber?label=release&sort=semver"></a>
 	<a href="https://github.com/Amber-PM/Amber/releases"><img alt="Total GitHub release downloads" src="https://img.shields.io/github/downloads/Amber-PM/Amber/total?label=downloads"></a>
-	<a href="https://discord.gg/k55gScjTs3"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+	<a href="https://discord.gg/w2nHHADWvF"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 	<a href="LICENSE"><img src="https://img.shields.io/badge/License-LGPL--3.0-blue.svg" alt="License" /></a>
 </p>
 
@@ -106,8 +106,8 @@ AmberPM maintains compatibility with the PocketMine-MP v5 API. Refer to the foll
 * [DevTools](https://github.com/pmmp/DevTools/) - Development tools plugin for packaging plugins.
 
 ## Need Help?
-Contact this fork developers on [Discord](https://discord.gg/k55gScjTs3).
-We will provide full support for this fork on that server!
+Contact this fork developers on the official Amber [Discord](https://discord.gg/w2nHHADWvF).
+We will provide full support for Amber and related projects in that server!
 
 ## Licensing
 This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0). Please see the [LICENSE](/LICENSE) file for complete details.
