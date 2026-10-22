@@ -54,7 +54,7 @@ final class VersionInfoTest extends TestCase{
 	}
 
 	public function testOfficialStableBuildMetadata() : void{
-		VersionInfo::setPharMetadataForTesting([
+		VersionInfo::setPharMetadataOverride([
 			"git" => "1122334455667788990011223344556677889900",
 			"build" => 55,
 			"isDev" => false,
@@ -72,7 +72,7 @@ final class VersionInfoTest extends TestCase{
 	}
 
 	public function testBetaBuildMetadata() : void{
-		VersionInfo::setPharMetadataForTesting([
+		VersionInfo::setPharMetadataOverride([
 			"git" => "aabbccddeeff00112233445566778899aabbccdd",
 			"build" => 56,
 			"isDev" => false,
@@ -88,7 +88,7 @@ final class VersionInfoTest extends TestCase{
 	}
 
 	public function testCiBranchBuildWithRunNumber() : void{
-		VersionInfo::setPharMetadataForTesting([
+		VersionInfo::setPharMetadataOverride([
 			"git" => "00112233445566778899aabbccddeeff00112233",
 			"build" => 77,
 			"isDev" => true,

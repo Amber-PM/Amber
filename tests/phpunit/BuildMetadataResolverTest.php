@@ -150,7 +150,6 @@ PHP;
 	}
 
 	public function testGenerateBuildInfoJsonReleaseAndBetaMetadata() : void{
-		$script = dirname(__DIR__, 2) . '/build/generate-build-info-json.php';
 		$parseJson = function(string $raw) : array{
 			$lines = array_filter(explode("\n", str_replace("\r", "", $raw)), fn($l) => !str_starts_with(trim($l), "PHP Warning"));
 			$clean = implode("\n", $lines);
@@ -159,31 +158,21 @@ PHP;
 			return $data;
 		};
 
-		$outputStable = (string) shell_exec(sprintf(
-			'php %s "%s" "%s" "%s" %d %d "%s"',
-			escapeshellarg($script),
-			"abc12345",
-			"v1.6.0",
-			"Amber-PM/Amber",
-			10,
-			100,
-			"https://example.com"
-		));
+		[$stableExit, $outputStable] = $this->runPhp([
+			"build/generate-build-info-json.php", "abc12345", "v1.6.0",
+			"Amber-PM/Amber", "10", "100", "https://example.com",
+		]);
+		self::assertSame(0, $stableExit, $outputStable);
 		$jsonStable = $parseJson($outputStable);
 		self::assertFalse($jsonStable["is_dev"]);
 		self::assertSame("stable", $jsonStable["channel"]);
 		self::assertSame("1.6.0", $jsonStable["base_version"]);
 
-		$outputBeta = (string) shell_exec(sprintf(
-			'php %s "%s" "%s" "%s" %d %d "%s"',
-			escapeshellarg($script),
-			"abc12345",
-			"v1.6.0-beta1",
-			"Amber-PM/Amber",
-			11,
-			101,
-			"https://example.com"
-		));
+		[$betaExit, $outputBeta] = $this->runPhp([
+			"build/generate-build-info-json.php", "abc12345", "v1.6.0-beta1",
+			"Amber-PM/Amber", "11", "101", "https://example.com",
+		]);
+		self::assertSame(0, $betaExit, $outputBeta);
 		$jsonBeta = $parseJson($outputBeta);
 		self::assertFalse($jsonBeta["is_dev"]);
 		self::assertSame("beta", $jsonBeta["channel"]);
@@ -191,22 +180,29 @@ PHP;
 	}
 
 	public function testDumpVersionInfoReleaseAndBetaMetadata() : void{
-		$script = dirname(__DIR__, 2) . '/build/dump-version-info.php';
 		$cleanOutput = function(string $raw) : string{
 			$lines = array_filter(explode("\n", str_replace("\r", "", $raw)), fn($l) => !str_starts_with(trim($l), "PHP Warning") && trim($l) !== "");
 			return trim(end($lines) ?: "");
 		};
 
-		$devOutput = $cleanOutput((string) shell_exec(sprintf('php %s is_dev', escapeshellarg($script))));
+		[$exit, $raw] = $this->runPhp(["build/dump-version-info.php", "is_dev"]);
+		self::assertSame(0, $exit, $raw);
+		$devOutput = $cleanOutput($raw);
 		self::assertSame("true", $devOutput);
 
-		$stableDevOutput = $cleanOutput((string) shell_exec(sprintf('php %s is_dev --tag=v1.6.0', escapeshellarg($script))));
+		[$exit, $raw] = $this->runPhp(["build/dump-version-info.php", "is_dev", "--tag=v1.6.0"]);
+		self::assertSame(0, $exit, $raw);
+		$stableDevOutput = $cleanOutput($raw);
 		self::assertSame("false", $stableDevOutput);
 
-		$betaChannelOutput = $cleanOutput((string) shell_exec(sprintf('php %s channel --tag=v1.6.0-beta1', escapeshellarg($script))));
+		[$exit, $raw] = $this->runPhp(["build/dump-version-info.php", "channel", "--tag=v1.6.0-beta1"]);
+		self::assertSame(0, $exit, $raw);
+		$betaChannelOutput = $cleanOutput($raw);
 		self::assertSame("beta", $betaChannelOutput);
 
-		$betaBaseVersionOutput = $cleanOutput((string) shell_exec(sprintf('php %s base_version --tag=v1.6.0-beta1', escapeshellarg($script))));
+		[$exit, $raw] = $this->runPhp(["build/dump-version-info.php", "base_version", "--tag=v1.6.0-beta1"]);
+		self::assertSame(0, $exit, $raw);
+		$betaBaseVersionOutput = $cleanOutput($raw);
 		self::assertSame("1.6.0-beta1", $betaBaseVersionOutput);
 	}
 

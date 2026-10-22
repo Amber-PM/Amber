@@ -76,10 +76,11 @@ final class VersionInfo{
 	}
 
 	/**
+	 * Overrides artifact metadata for build tools and tests.
 	 * @internal
 	 * @param array<string, mixed>|null $metadata
 	 */
-	public static function setPharMetadataForTesting(?array $metadata) : void{
+	public static function setPharMetadataOverride(?array $metadata) : void{
 		self::reset();
 		self::$pharMetadata = $metadata;
 	}

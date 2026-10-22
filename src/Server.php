@@ -337,6 +337,9 @@ class Server{
 		return VersionInfo::VERSION()->getFullVersion(true);
 	}
 
+	/**
+	 * Amber-named alias for getPocketMineVersion().
+	 */
 	public function getAmberVersion() : string{
 		return VersionInfo::VERSION()->getFullVersion(true);
 	}

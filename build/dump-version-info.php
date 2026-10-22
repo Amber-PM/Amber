@@ -120,7 +120,7 @@ try{
 	exit(1);
 }
 
-VersionInfo::setPharMetadataForTesting($metadata);
+VersionInfo::setPharMetadataOverride($metadata);
 
 if($requestedKey === null){
 	fwrite(STDERR, "Please provide an option (one of: " . implode(", ", array_keys($options)) . ")" . PHP_EOL);

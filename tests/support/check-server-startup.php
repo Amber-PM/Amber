@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 // Integration regression: use a built PHAR and a NEW isolated data directory.
-// Usage: php check-phase-a-startup.php <phar> <data-dir> <enable-dev-builds:true|false> <expect-dev:true|false>
+// Usage: php check-server-startup.php <phar> <data-dir> <enable-dev-builds:true|false> <expect-dev:true|false>
 if(count($argv) !== 5 || !in_array($argv[3], ["true", "false"], true) || !in_array($argv[4], ["true", "false"], true)){
 	fwrite(STDERR, "Required: <phar> <new-data-dir> <enable-dev-builds:true|false> <expect-dev:true|false>\n");
 	exit(1);
