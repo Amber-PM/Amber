@@ -47,6 +47,8 @@ use pocketmine\item\Durable;
 use pocketmine\item\enchantment\Enchantment;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
+use pocketmine\loot\LootContext;
+use pocketmine\loot\LootTableRegistry;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\math\VoxelRayTrace;
@@ -875,10 +877,39 @@ abstract class Living extends Entity{
 		$this->attack($ev);
 	}
 
+	public function getLootTableId() : ?string{
+		return null;
+	}
+
 	/**
 	 * @return Item[]
 	 */
 	public function getDrops() : array{
+		$tableId = $this->getLootTableId();
+		if($tableId !== null){
+			$table = LootTableRegistry::getInstance()->get($tableId);
+			if($table !== null){
+				$lastDamageCause = $this->getLastDamageCause();
+				$killer = null;
+				if($lastDamageCause instanceof EntityDamageByEntityEvent){
+					$killer = $lastDamageCause->getDamager();
+				}
+				$context = new LootContext(
+					position: $this->getPosition(),
+					killer: $killer,
+					victim: $this
+				);
+				return $table->roll($context);
+			}
+		}
+
+		return $this->getLegacyDrops();
+	}
+
+	/**
+	 * @return Item[]
+	 */
+	protected function getLegacyDrops() : array{
 		return [];
 	}
 

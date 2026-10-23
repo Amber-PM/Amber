@@ -40,7 +40,11 @@ class Zombie extends Living{
 		return "Zombie";
 	}
 
-	public function getDrops() : array{
+	public function getLootTableId() : ?string{
+		return "entities/zombie";
+	}
+
+	protected function getLegacyDrops() : array{
 		$drops = [
 			VanillaItems::ROTTEN_FLESH()->setCount(mt_rand(0, 2))
 		];
