@@ -22,12 +22,16 @@
 declare(strict_types=1);
 
 use PHPUnit\Framework\Assert;
+use pocketmine\data\bedrock\item\SavedItemData;
+use pocketmine\data\bedrock\item\SavedItemStackData;
 use pocketmine\data\bedrock\ItemTagToIdMap;
 use pocketmine\data\bedrock\WorldDataVersions;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\convert\BlockStateDictionary;
 use pocketmine\network\mcpe\convert\BlockTranslator;
 use pocketmine\network\mcpe\convert\ItemTypeDictionaryFromDataHelper;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\world\format\io\GlobalItemDataHandlers;
 
 set_error_handler(static function(int $severity, string $message, string $file, int $line) : never{
 	throw new ErrorException($message, 0, $severity, $file, $line);
@@ -65,4 +69,11 @@ foreach($rows as [$protocol, $blocks, $items, $tags]){
 }
 Assert::assertSame(BlockTranslator::loadFromProtocolId(2192), BlockTranslator::loadFromProtocolId(2193));
 Assert::assertNotSame(BlockTranslator::loadFromProtocolId(2169), BlockTranslator::loadFromProtocolId(2192));
+//legacy saved blockitems resolve their state through the world format palette, 26.50 added states the world format rejects
+foreach(['minecraft:acacia_fence', 'minecraft:black_stained_glass_pane', 'minecraft:oak_stairs', 'minecraft:stone'] as $name){
+	$saved = CompoundTag::create()->setString(SavedItemData::TAG_NAME, $name)->setByte(SavedItemStackData::TAG_COUNT, 3)->setShort(SavedItemData::TAG_DAMAGE, 0);
+	$item = GlobalItemDataHandlers::getDeserializer()->deserializeStack(GlobalItemDataHandlers::getUpgrader()->upgradeItemStackNbt($saved));
+	Assert::assertSame(3, $item->getCount(), "World item $name");
+	Assert::assertSame($name, GlobalItemDataHandlers::getSerializer()->serializeType($item)->getName(), "World item $name");
+}
 echo "Validated 32 protocols\n";

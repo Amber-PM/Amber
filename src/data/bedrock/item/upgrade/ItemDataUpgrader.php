@@ -28,13 +28,14 @@ use pocketmine\data\bedrock\block\upgrade\BlockDataUpgrader;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\data\bedrock\item\SavedItemStackData;
+use pocketmine\data\bedrock\WorldDataVersions;
 use pocketmine\data\SavedDataLoadingException;
 use pocketmine\nbt\NbtException;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ShortTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\network\mcpe\convert\BlockTranslator;
 use pocketmine\utils\Binary;
 use function array_map;
 
@@ -151,7 +152,8 @@ final class ItemDataUpgrader{
 
 		//TODO: Dirty hack to load old skulls from disk: Put this into item upgrade schema's before Mojang makes something with a non 0 default state
 		if($blockStateData === null && ($blockId = $this->blockItemIdMap->lookupBlockId($newNameId)) !== null){
-			$blockStateDictionary = TypeConverter::getInstance()->getBlockTranslator()->getBlockStateDictionary();
+			//saved data uses the world format palette, not the default network protocol one
+			$blockStateDictionary = BlockTranslator::loadFromProtocolId(WorldDataVersions::NETWORK)->getBlockStateDictionary();
 			$networkRuntimeId = $blockStateDictionary->lookupStateIdFromIdMeta($blockId, 0);
 
 			if($networkRuntimeId === null){
