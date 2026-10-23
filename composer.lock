@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "66cfafc2a83013fc6d33edf740a12e33",
+    "content-hash": "32c43039d4668e061ecf2419176fe1c9",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -873,28 +873,42 @@
         {
             "name": "vapebw/bedrock-data",
             "version": "dev-main",
-            "dist": {
-                "type": "path",
-                "url": "../BedrockData",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Amber-PM/BedrockData.git",
                 "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b"
             },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockData/zipball/436cbbefe62a1cf8eae3d940a339c431d7ba969b",
+                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b",
+                "shasum": ""
+            },
+            "default-branch": true,
             "type": "library",
             "license": [
                 "CC0-1.0"
             ],
             "description": "Blobs of data generated from Minecraft: Bedrock Edition, used by PocketMine-MP",
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/Amber-PM/BedrockData/tree/main",
+                "issues": "https://github.com/Amber-PM/BedrockData/issues"
+            },
+            "time": "2026-09-16T19:58:02+00:00"
         },
         {
             "name": "vapebw/bedrock-protocol",
             "version": "dev-main",
-            "dist": {
-                "type": "path",
-                "url": "../BedrockProtocol",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Amber-PM/BedrockProtocol.git",
                 "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockProtocol/zipball/cbd3997144cfdc454dec7b163d412212dd8899ab",
+                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab",
+                "shasum": ""
             },
             "require": {
                 "ext-encoding": "~1.0.0",
@@ -916,6 +930,7 @@
                 "phpstan/phpstan-strict-rules": "^2.0.0",
                 "phpunit/phpunit": "^9.5 || ^10.0 || ^11.0"
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -936,10 +951,11 @@
                 "LGPL-3.0"
             ],
             "description": "An implementation of the Minecraft: Bedrock Edition protocol in PHP",
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/Amber-PM/BedrockProtocol/tree/main",
+                "issues": "https://github.com/Amber-PM/BedrockProtocol/issues"
+            },
+            "time": "2026-10-22T22:15:19+00:00"
         }
     ],
     "packages-dev": [
