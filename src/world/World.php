@@ -734,6 +734,7 @@ class World implements ChunkManager{
 	 * @param Player[]|null $players
 	 */
 	public function addSound(Vector3 $pos, Sound $sound, ?array $players = null) : void{
+		$defaultViewers = $players === null;
 		$players ??= $this->getViewersForPosition($pos);
 
 		if(WorldSoundEvent::hasHandlers()){
@@ -745,6 +746,7 @@ class World implements ChunkManager{
 
 			$sound = $ev->getSound();
 			$players = $ev->getRecipients();
+			$defaultViewers = false;
 		}
 
 		if(($blockSound = ($sound instanceof BlockSound)) || $sound instanceof ProtocolSound){
@@ -761,7 +763,7 @@ class World implements ChunkManager{
 				};
 			}
 
-			if($players === $this->getViewersForPosition($pos)){
+			if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 				$this->broadcastPacketToPlayersByTypeConverterUsingChunk($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE, $closure);
 			}else{
 				TypeConverter::broadcastByTypeConverterUnchecked($this->filterViewersForPosition($pos, $players), $closure);
@@ -769,7 +771,7 @@ class World implements ChunkManager{
 		}else{
 			$pk = $sound->encode($pos);
 			if(count($pk) > 0){
-				if($players === $this->getViewersForPosition($pos)){
+				if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 					foreach($pk as $e){
 						$this->broadcastPacketToViewers($pos, $e);
 					}
@@ -784,6 +786,7 @@ class World implements ChunkManager{
 	 * @param Player[]|null $players
 	 */
 	public function addParticle(Vector3 $pos, Particle $particle, ?array $players = null) : void{
+		$defaultViewers = $players === null;
 		$players ??= $this->getViewersForPosition($pos);
 
 		if(WorldParticleEvent::hasHandlers()){
@@ -795,6 +798,7 @@ class World implements ChunkManager{
 
 			$particle = $ev->getParticle();
 			$players = $ev->getRecipients();
+			$defaultViewers = false;
 		}
 
 		if($particle instanceof BlockParticle || $particle instanceof ItemParticle || $particle instanceof ProtocolParticle){
@@ -810,7 +814,7 @@ class World implements ChunkManager{
 				return $particle->encode($pos);
 			};
 
-			if($players === $this->getViewersForPosition($pos)){
+			if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 				$this->broadcastPacketToPlayersByTypeConverterUsingChunk($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE, $closure);
 			}else{
 				TypeConverter::broadcastByTypeConverterUnchecked($this->filterViewersForPosition($pos, $players), $closure);
@@ -818,7 +822,7 @@ class World implements ChunkManager{
 		}else{
 			$pk = $particle->encode($pos);
 			if(count($pk) > 0){
-				if($players === $this->getViewersForPosition($pos)){
+				if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 					foreach($pk as $e){
 						$this->broadcastPacketToViewers($pos, $e);
 					}
