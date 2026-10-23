@@ -890,11 +890,11 @@
         },
         {
             "name": "vapebw/bedrock-protocol",
-            "version": "26.60.x-dev",
+            "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "../BedrockProtocol",
-                "reference": "74074658cef76b0259322b7b341aa2b0fa7f1a69"
+                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab"
             },
             "require": {
                 "ext-encoding": "~1.0.0",
