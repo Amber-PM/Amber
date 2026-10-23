@@ -57,3 +57,7 @@ Documentation/*
 
 # install-local-protocol.sh
 /composer-local-protocol.*
+
+# BDS cache
+bds-cache/
+resources/vanilla/
