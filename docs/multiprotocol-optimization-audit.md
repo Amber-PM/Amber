@@ -75,7 +75,7 @@ Findings come from reading the code. Nothing about load time or memory is measur
 | ALREADY APPLIED | `BlockTranslator::$loaded`, `ItemTypeDictionaryFromDataHelper::$loaded`, `ChunkCache::request` | 32 protocols map to 23 block datasets and 27 item lists; chunk preparation is grouped by `getChunkProtocolId()` | None | `ChunkProtocolGroupTest`, `TypeConverterInstanceSharingTest` |
 | CONFIRMED BY READING | `ChunkRequestTask::onRun` | Builds a full `TypeConverter` per chunk group in each worker, but `ChunkSerializer::serializeFullChunk` only uses `getBlockTranslator()` and tiles arrive pre-serialized | Needs a `ChunkSerializer` signature decision | None yet |
 | CONFIRMED BY READING | Worker-side state | Data files and `Global*Handlers` statics are rebuilt per thread; the only main-thread-only state is `nativeSpectator`, set by the creation listener in `Server.php`, which only affects `coreGameModeToProtocol` | None | None |
-| HYPOTHESIS | Worker memory | A block dataset is about 2 MB of NBT on disk; its in-memory size is unknown and may approach the 256 MB worker hard limit if a worker serves many chunk groups | Measure first | `TypeConverterLoadBenchmark.php` |
+| MEASURED (benchmark, one machine) | Worker memory | Loading all 32 protocols retains about 167 MB (sum of per-protocol deltas) with a 210 MB peak; `php -dmemory_limit=256M` completed. A dataset costs 4 to 10 MB. A worker serving every protocol would sit at about 82% of the 256 MB limit; not measured inside a real worker | Do not add worker memory | `TypeConverterLoadBenchmark.php` |
 | PRE-EXISTING FAILURE | `ProtocolResourceIndependenceTest`, datasets 2193 and 9999 | `check-protocol-resources.php` l. 43 asserts a fixed `ACCEPTED_PROTOCOL` after replacing `CURRENT_PROTOCOL`, but `ProtocolInfo::ACCEPTED_PROTOCOL` contains `self::CURRENT_PROTOCOL` (l. 66 of the vendored file). Fails identically with the Phase 4 files stashed | Out of scope; not changed | The test itself |
 
 Admission (`isProtocolAllowed`, `SessionStartPacketHandler`) and protocol selection are not touched.
@@ -94,5 +94,22 @@ Admission (`isProtocolAllowed`, `SessionStartPacketHandler`) and protocol select
 | `tests/phpunit/network/mcpe/cache` | PASSED: 1 test, 97 assertions |
 | `tests/phpunit/network/mcpe/convert` | 17 of 19 passed; the 2 failures are `ProtocolResourceIndependenceTest` (see PRE-EXISTING FAILURE) |
 | `phpstan analyse` | `[OK] No errors` |
-| `TypeConverterLoadBenchmark.php` | NOT EXECUTED yet |
-| Worker RAM against the 256 MB limit | NOT MEASURED |
+| `TypeConverterLoadBenchmark.php` | MEASURED on the owner machine, PHP 8.2.29: see Phase 4 measurements |
+| Worker RAM against the 256 MB limit | Benchmark process completed under `-dmemory_limit=256M` with a 210 MB peak; NOT measured inside a real async worker |
+## Phase 4 measurements
+
+One machine, PHP 8.2.29 ZTS, one run per mode (`tests/bench/TypeConverterLoadBenchmark.php`, `tests/bench/BlockStateLoadProfile.php`). The three benchmark runs agree on shape; absolute numbers vary by about 10%.
+
+| Measurement | Result |
+| --- | --- |
+| First `TypeConverter::getInstance` (includes global statics) | 2.0 to 2.1 s |
+| Each further distinct block dataset | 0.8 to 1.2 s on the main thread |
+| Protocols sharing an already loaded dataset | under 0.2 ms |
+| Protocols with only a new item list | 15 to 26 ms |
+| All 32 protocols | about 24 s, 28 chunk protocol groups, 27 item lists, about 167 MB retained, 210 MB peak |
+| Blocks only against full converter | totals within noise; item side is small |
+| Per dataset breakdown (17499 states) | NBT parse 616 ms, `upgrade()` 87 ms, `json_decode` 3 ms, `loadFromString` total 1141 ms |
+| Per dataset breakdown (13141 states, 1.20.0) | NBT parse 464 ms, `upgrade()` 280 ms, total 1014 ms |
+| Global handler statics, first use | 368 ms |
+
+Reading: the NBT parse is about half of the load time and entry construction a quarter to a third; `upgrade()` is 7% on recent datasets and 28% on the oldest. No small safe change to the construction cost was found. A worker holding every protocol would use about 82% of the default 256 MB limit, so nothing that adds worker memory should be applied.
