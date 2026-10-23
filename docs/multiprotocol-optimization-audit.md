@@ -113,3 +113,32 @@ One machine, PHP 8.2.29 ZTS, one run per mode (`tests/bench/TypeConverterLoadBen
 | Global handler statics, first use | 368 ms |
 
 Reading: the NBT parse is about half of the load time and entry construction a quarter to a third; `upgrade()` is 7% on recent datasets and 28% on the oldest. No small safe change to the construction cost was found. A worker holding every protocol would use about 82% of the default 256 MB limit, so nothing that adds worker memory should be applied.
+## Phase 4 implementation (option A)
+
+| Classification | Location | Evidence | Minimal fix | Regression test |
+| --- | --- | --- | --- | --- |
+| APPLIED | `src/Server.php`, `getProtocolsToPreload` (private static), `startupPreloadAllowedProtocols`, call in `startupPrepareNetworkInterfaces` | When `network.allowed-protocols` is non-empty, `TypeConverter::getInstance` runs at startup for each accepted protocol that `isProtocolAllowed` admits. With an empty list nothing new is loaded | 24 lines added, none removed | `ServerProtocolPreloadTest` |
+| NOT APPLIED | Preload every accepted protocol by default | About 24 s of startup and about 167 MB (measured in the benchmark) | None | None |
+| NOT APPLIED | Cheaper dictionary construction | NBT parse is about half of each load and entry construction a quarter to a third; no small safe change found | None | None |
+| NOT APPLIED | Worker builds only `BlockTranslator` instead of a full `TypeConverter` | Would save about 24 MB of peak and under 26 ms per item-only group; needs a `ChunkSerializer` signature change | None | None |
+
+`isProtocolAllowed`, admission and protocol selection are unchanged. No configuration key, log message or public method was added.
+
+## Phase 4 implementation changes
+
+- `src/Server.php`: the helper filters `ProtocolInfo::ACCEPTED_PROTOCOL` through `isProtocolAllowed` and returns an empty list when `allowed-protocols` is empty; `startupPrepareNetworkInterfaces` calls the preload before loading the current protocol.
+- `tests/phpunit/ServerProtocolPreloadTest.php`: empty list preloads nothing and never calls the filter; explicit list keeps accepted order; disabled and unknown protocols are excluded; listing every protocol preloads every one.
+
+## Phase 4 implementation verification status
+
+| Check | Result |
+| --- | --- |
+| `ServerProtocolPreloadTest` | PASSED on the owner machine: PHP 8.2.29, PHPUnit 10.5.63, 5 tests, 6 assertions |
+| `ServerConfigGroupTest`, `ProtocolAdmissionTest` | PASSED: 3 tests / 7 assertions and 9 tests / 15 assertions |
+| `php -l` on `Server.php` and the new test | No syntax errors |
+| `phpstan analyse` | `[OK] No errors` |
+| Benchmark with `--protocols=2169,2192` | Output not recorded |
+| Startup time and first-login stall on a real server with a listed protocol | NOT MEASURED |
+| Call from `startupPrepareNetworkInterfaces` | Not unit-tested: the `Server` constructor cannot be instantiated in a test |
+| `ProtocolResourceIndependenceTest` (2193, 9999) | Pre-existing failure, unrelated to this phase |
+| Phase 3 (F-05) | Not implemented in this branch |
