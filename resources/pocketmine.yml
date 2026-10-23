@@ -136,7 +136,7 @@ chunk-ticking:
 redstone:
   #Redstone wire, torches, repeaters, comparators, and what they power (lamps, copper bulbs, doors,
   #trapdoors, fence gates, TNT, powered and activator rails, note blocks, and hopper locking).
-  #Pistons, droppers, dispensers and observers are not simulated.
+  #Pistons, sticky pistons, droppers and dispensers are also simulated. Observers are not.
   enabled: true
   #Redstone positions evaluated per tick in each world. Busy circuits past this slow down instead of lagging the server.
   max-updates-per-tick: 2000
