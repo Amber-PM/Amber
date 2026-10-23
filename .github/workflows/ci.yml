@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_candidate_tag:
+        description: 'Build an untagged release candidate (e.g. v1.6.0); does not publish'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -140,13 +145,20 @@ jobs:
           key: composer-${{ runner.os }}-php-8.3-${{ hashFiles('composer.lock') }}
           restore-keys: composer-${{ runner.os }}-php-8.3-
 
-      - name: Build production PHAR
+      - name: Build PHAR
         env:
           GITHUB_REF_TYPE: ${{ github.ref_type }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
-        run: composer make-server
+          CANDIDATE_TAG: ${{ inputs.release_candidate_tag || '' }}
+        run: |
+          if [[ -n "$CANDIDATE_TAG" ]]; then
+            composer install --no-dev --classmap-authoritative --ignore-platform-reqs --no-interaction --no-progress
+            php -dphar.readonly=0 build/server-phar.php --tag="$CANDIDATE_TAG"
+          else
+            composer make-server
+          fi
 
       - name: Verify PHAR artifact
         env:
@@ -154,6 +166,24 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
+          CANDIDATE_TAG: ${{ inputs.release_candidate_tag || '' }}
         run: |
           test -s PocketMine-MP.phar
-          php build/verify-phar.php --phar=PocketMine-MP.phar
+          if [[ -n "$CANDIDATE_TAG" ]]; then
+            php build/verify-phar.php --phar=PocketMine-MP.phar --tag="$CANDIDATE_TAG"
+          else
+            php build/verify-phar.php --phar=PocketMine-MP.phar
+          fi
+
+      - name: Smoke test release candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate_tag != '' }}
+        run: php tests/support/check-server-startup.php "$PWD/PocketMine-MP.phar" "$RUNNER_TEMP/amber-rc-smoke" false false
+
+      - name: Upload verified release candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate_tag != '' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: amber-rc-${{ inputs.release_candidate_tag }}-${{ github.sha }}
+          path: PocketMine-MP.phar
+          if-no-files-found: error
+          retention-days: 14
