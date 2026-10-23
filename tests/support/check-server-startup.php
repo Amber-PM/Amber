@@ -56,7 +56,7 @@ $warning = str_contains($output, "You are running a AmberPM DEVELOPMENT build.")
 	str_contains($output, "The build may have bugs, crash, corrupt your data, or break your plugins.");
 $passed = !$status["running"] && $exit === ($expectedStart ? 0 : 1) && $started === $expectedStart &&
 	$rejected === !$expectedStart && $warning === ($expectedDev && $expectedStart) &&
-	(!$started || (str_contains($output, "PocketMine API 5.44.2") && str_contains($output, "This server is running AmberPM")));
+	(!$started || (str_contains($output, "  AmberPM 1.6.0") && str_contains($output, "GitHub: https://github.com/Amber-PM/Amber") && str_contains($output, "This server is running AmberPM")));
 echo json_encode(["pass" => $passed, "exit" => $exit, "started" => $started, "rejected" => $rejected, "warning" => $warning, "log" => $log], JSON_PRETTY_PRINT) . PHP_EOL;
 if(!$passed){
 	fwrite(STDERR, $output . $errors);

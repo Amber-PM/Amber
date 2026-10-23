@@ -1200,17 +1200,11 @@ class Server{
 			$highlight = TextFormat::AQUA;
 			$reset = TextFormat::RESET;
 			$github = VersionInfo::GITHUB_URL;
-
-			$channel = VersionInfo::BUILD_CHANNEL();
 			$version = VersionInfo::VERSION();
-			$stateName = $version->isDev() ? "development" : ($channel !== "stable" ? $channel : "release");
-			$compat = "PocketMine API " . $this->getApiVersion() . " | Bedrock " . ProtocolInfo::MINECRAFT_VERSION;
 
 			$splash = "\n" .
-				"  " . TextFormat::GOLD . VersionInfo::NAME . " " . $version->getFullVersion(true) . TextFormat::GRAY . " (" . $stateName . ")" . $reset . "\n" .
-				"  " . TextFormat::GRAY . "Compatibility: " . $reset . $compat . "\n" .
-				"  " . $this->language->translate(KnownTranslationFactory::pocketmine_server_url_sourceCode("{$highlight}{$github}{$reset}")) . "\n" .
-				"  " . $this->language->translate(KnownTranslationFactory::pocketmine_server_url_bugReporting("{$highlight}{$github}/issues{$reset}")) . "\n";
+				"  " . TextFormat::GOLD . VersionInfo::NAME . " " . $version->getFullVersion(true) . $reset . "\n" .
+				"  " . TextFormat::GRAY . "GitHub: " . $highlight . $github . $reset . "\n";
 			$this->logger->info($splash);
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_startFinished(strval(round(microtime(true) - $this->startTime, 3)))));
