@@ -34,6 +34,7 @@ use pocketmine\event\server\DataPacketDecodeEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\form\Form;
+use pocketmine\form\ProtocolAwareForm;
 use pocketmine\item\Item;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Translatable;
@@ -60,6 +61,7 @@ use pocketmine\network\mcpe\handler\PreSpawnPacketHandler;
 use pocketmine\network\mcpe\handler\ResourcePacksPacketHandler;
 use pocketmine\network\mcpe\handler\SessionStartPacketHandler;
 use pocketmine\network\mcpe\handler\SpawnResponsePacketHandler;
+use pocketmine\network\mcpe\protocol\ActorEventPacket;
 use pocketmine\network\mcpe\protocol\AvailableCommandsPacket;
 use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
@@ -89,6 +91,7 @@ use pocketmine\network\mcpe\protocol\TextPacket;
 use pocketmine\network\mcpe\protocol\ToastRequestPacket;
 use pocketmine\network\mcpe\protocol\PrimitiveShapesPacket;
 use pocketmine\network\mcpe\protocol\TransferPacket;
+use pocketmine\network\mcpe\protocol\types\ActorEvent;
 use pocketmine\network\mcpe\protocol\types\AbilitiesData;
 use pocketmine\network\mcpe\protocol\types\shape\PacketShapeData;
 use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
@@ -1391,7 +1394,8 @@ class NetworkSession{
 	}
 
 	public function onFormSent(int $id, Form $form) : bool{
-		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($form, JSON_THROW_ON_ERROR)));
+		$data = $form instanceof ProtocolAwareForm ? $form->serializeFor($this->protocolId) : $form;
+		return $this->sendDataPacket(ModalFormRequestPacket::create($id, json_encode($data, JSON_THROW_ON_ERROR)));
 	}
 
 	public function onCloseAllForms() : void{
@@ -1407,7 +1411,7 @@ class NetworkSession{
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
 			$shapes = $world->getChunkShapes($chunkX, $chunkZ);
-			if(count($shapes) > 0){
+			if(count($shapes) > 0 && $this->supportsShapes()){
 				$this->sendDataPacket(\pocketmine\network\mcpe\protocol\PrimitiveShapesPacket::create($shapes));
 			}
 		}finally{
@@ -1555,11 +1559,29 @@ class NetworkSession{
 		));
 	}
 
+	public function onChargeItemComplete() : void{
+		if($this->player !== null){
+			$packet = ActorEventPacket::create($this->player->getId(), ActorEvent::CHARGED_ITEM, 0, null);
+			$this->sendDataPacket($packet);
+			$this->player->getWorld()->broadcastPacketToViewers($this->player->getLocation(), $packet);
+		}
+	}
+
+	/** Whether the client can display primitive shapes (1.21.90+). */
+	public function supportsShapes() : bool{
+		return $this->protocolId >= ProtocolInfo::PROTOCOL_1_21_90;
+	}
+
 	public function sendShapes(array $shapes) : void{
-		$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		if($this->supportsShapes()){
+			$this->sendDataPacket(PrimitiveShapesPacket::create($shapes));
+		}
 	}
 
 	public function removeShapes(array $networkIds) : void{
+		if(!$this->supportsShapes()){
+			return;
+		}
 		$removes = [];
 		foreach($networkIds as $id){
 			$removes[] = PacketShapeData::remove($id);

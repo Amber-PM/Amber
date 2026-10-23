@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -203,7 +203,7 @@ class ResourcePacksPacketHandler extends PacketHandler{
 						$pack->getPackSize(),
 						$pack->getSha256(),
 						false,
-						ResourcePackType::RESOURCES //TODO: this might be an addon (not behaviour pack), needed to properly support client-side custom items
+						ResourcePackType::RESOURCES
 					));
 					$seen[$pack->getPackId()] = true;
 				}
@@ -219,7 +219,11 @@ class ResourcePacksPacketHandler extends PacketHandler{
 					return new ResourcePackStackEntry($pack->getPackId(), $pack->getPackVersion(), ""); //TODO: subpacks
 				}, $this->resourcePackStack);
 
-				if($this->session->getProtocolId() < ProtocolInfo::PROTOCOL_1_26_0 && $this->educationContentEnabled){
+				if($this->educationContentEnabled){
+					//chemistry resources are still separate from vanilla in 1.26.x clients.
+					if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_40){
+						$stack[] = new ResourcePackStackEntry("d34cfa4b-2ad1-453d-a0db-668b429a3ea0", "1.26.40", "");
+					}
 					foreach(self::CHEMISTRY_RESOURCE_PACKS as [$uuid, $version]){
 						$stack[] = new ResourcePackStackEntry($uuid, $version, "");
 					}
@@ -230,6 +234,9 @@ class ResourcePacksPacketHandler extends PacketHandler{
 				break;
 			case ResourcePackClientResponsePacket::STATUS_COMPLETED:
 				$this->session->getLogger()->debug("Resource packs sequence completed");
+				if($this->session->getHandler() === $this){
+					$this->session->setHandler(null); //a repeated completion must not create the player twice
+				}
 				($this->completionCallback)();
 				break;
 			default:

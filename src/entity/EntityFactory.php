@@ -33,6 +33,7 @@ use pocketmine\data\bedrock\PotionTypeIds;
 use pocketmine\data\SavedDataLoadingException;
 use pocketmine\entity\EntityDataHelper as Helper;
 use pocketmine\entity\object\AreaEffectCloud;
+use pocketmine\entity\object\ArmorStand;
 use pocketmine\entity\object\EndCrystal;
 use pocketmine\entity\object\ExperienceOrb;
 use pocketmine\entity\object\FallingBlock;
@@ -92,8 +93,17 @@ final class EntityFactory{
 			return new AreaEffectCloud(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['AreaEffectCloud', 'minecraft:area_effect_cloud']);
 
+		$this->register(ArmorStand::class, function(World $world, CompoundTag $nbt) : ArmorStand{
+			return new ArmorStand(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['ArmorStand', 'minecraft:armor_stand']);
+
 		$this->register(Arrow::class, function(World $world, CompoundTag $nbt) : Arrow{
-			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $nbt);
+			$potionType = null;
+			$potionId = $nbt->getShort(Arrow::TAG_POTION_ID, -1);
+			if($potionId !== -1){
+				$potionType = PotionTypeIdMap::getInstance()->fromId($potionId);
+			}
+			return new Arrow(Helper::parseLocation($nbt, $world), null, $nbt->getByte(Arrow::TAG_CRIT, 0) === 1, $nbt, $potionType);
 		}, ['Arrow', 'minecraft:arrow']);
 
 		$this->register(Egg::class, function(World $world, CompoundTag $nbt) : Egg{
@@ -195,6 +205,18 @@ final class EntityFactory{
 			'ThrownTrident' //as above
 		]);
 
+		$this->register(Cat::class, function(World $world, CompoundTag $nbt) : Cat{
+			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Cat', 'minecraft:cat']);
+
+		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
+			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Skeleton', 'minecraft:skeleton']);
+
+		$this->register(Spider::class, function(World $world, CompoundTag $nbt) : Spider{
+			return new Spider(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Spider', 'minecraft:spider']);
+
 		$this->register(Squid::class, function(World $world, CompoundTag $nbt) : Squid{
 			return new Squid(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Squid', 'minecraft:squid']);
@@ -202,6 +224,10 @@ final class EntityFactory{
 		$this->register(Villager::class, function(World $world, CompoundTag $nbt) : Villager{
 			return new Villager(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Villager', 'minecraft:villager']);
+
+		$this->register(Wolf::class, function(World $world, CompoundTag $nbt) : Wolf{
+			return new Wolf(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Wolf', 'minecraft:wolf']);
 
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);

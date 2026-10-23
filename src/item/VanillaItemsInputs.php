@@ -25,16 +25,21 @@ namespace pocketmine\item;
 
 use pocketmine\block\utils\RecordType;
 use pocketmine\block\VanillaBlocks as Blocks;
+use pocketmine\entity\Cat;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
+use pocketmine\entity\Skeleton;
+use pocketmine\entity\Spider;
 use pocketmine\entity\Squid;
 use pocketmine\entity\Villager;
+use pocketmine\entity\Wolf;
 use pocketmine\entity\Zombie;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\item\enchantment\ItemEnchantmentTags as EnchantmentTags;
 use pocketmine\item\ItemIdentifier as IID;
 use pocketmine\item\VanillaArmorMaterials as ArmorMaterials;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\utils\RegistrySource;
 use pocketmine\world\World;
 use function is_int;
@@ -100,6 +105,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::registerDelayed("acacia_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Acacia Hanging Sign", Blocks::ACACIA_CEILING_CENTER_HANGING_SIGN(), Blocks::ACACIA_CEILING_EDGES_HANGING_SIGN(), Blocks::ACACIA_WALL_HANGING_SIGN()));
 		self::register("amethyst_shard", fn(IID $id) => new Item($id, "Amethyst Shard"));
 		self::register("apple", fn(IID $id) => new Apple($id, "Apple"));
+		self::register("armor_stand", fn(IID $id) => new ArmorStand($id, "Armor Stand"));
 		self::register("arrow", fn(IID $id) => new Arrow($id, "Arrow"));
 		self::register("baked_potato", fn(IID $id) => new BakedPotato($id, "Baked Potato"));
 		self::register("bamboo", fn(IID $id) => new Bamboo($id, "Bamboo"));
@@ -183,6 +189,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::registerDelayed("coral_fan", fn(string $name) : CoralFan => new CoralFan(self::makeIID($name))); //uses VanillaBlocks in constructor :(
 		self::registerDelayed("crimson_sign", fn(string $name) : ItemBlockWallOrFloor => new ItemBlockWallOrFloor(self::makeIID($name), Blocks::CRIMSON_SIGN(), Blocks::CRIMSON_WALL_SIGN()));
 		self::registerDelayed("crimson_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Crimson Hanging Sign", Blocks::CRIMSON_CEILING_CENTER_HANGING_SIGN(), Blocks::CRIMSON_CEILING_EDGES_HANGING_SIGN(), Blocks::CRIMSON_WALL_HANGING_SIGN()));
+		self::register("crossbow", fn(IID $id) => new Crossbow($id, "Crossbow", [EnchantmentTags::CROSSBOW]));
 		self::registerDelayed("dark_oak_sign", fn(string $name) : ItemBlockWallOrFloor => new ItemBlockWallOrFloor(self::makeIID($name), Blocks::DARK_OAK_SIGN(), Blocks::DARK_OAK_WALL_SIGN()));
 		self::registerDelayed("dark_oak_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Dark Oak Hanging Sign", Blocks::DARK_OAK_CEILING_CENTER_HANGING_SIGN(), Blocks::DARK_OAK_CEILING_EDGES_HANGING_SIGN(), Blocks::DARK_OAK_WALL_HANGING_SIGN()));
 		self::register("diamond", fn(IID $id) => new Item($id, "Diamond"));
@@ -193,10 +200,12 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("dye", fn(IID $id) => new Dye($id, "Dye"));
 		self::register("echo_shard", fn(IID $id) => new Item($id, "Echo Shard"));
 		self::register("egg", fn(IID $id) => new Egg($id, "Egg"));
+		self::registerDelayed("elytra", fn(string $name) : Elytra => new Elytra(self::makeIID($name), "Elytra"));
 		self::register("emerald", fn(IID $id) => new Item($id, "Emerald"));
 		self::register("enchanted_book", fn(IID $id) => new EnchantedBook($id, "Enchanted Book", [EnchantmentTags::ALL]));
 		self::register("enchanted_golden_apple", fn(IID $id) => new GoldenAppleEnchanted($id, "Enchanted Golden Apple"));
 		self::register("end_crystal", fn(IID $id) => new EndCrystal($id, "End Crystal"));
+		self::register("ender_eye", fn(IID $id) => new EnderEye($id, "Eye of Ender"));
 		self::register("ender_pearl", fn(IID $id) => new EnderPearl($id, "Ender Pearl"));
 		self::register("experience_bottle", fn(IID $id) => new ExperienceBottle($id, "Bottle o' Enchanting"));
 		self::register("feather", fn(IID $id) => new Item($id, "Feather"));
@@ -309,6 +318,7 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("rotten_flesh", fn(IID $id) => new RottenFlesh($id, "Rotten Flesh"));
 		self::register("scute", fn(IID $id) => new Item($id, "Scute"));
 		self::register("shears", fn(IID $id) => new Shears($id, "Shears", [EnchantmentTags::SHEARS]));
+		self::register("shield", fn(IID $id) => new Shield($id, "Shield", [EnchantmentTags::SHIELD]));
 		self::register("shulker_shell", fn(IID $id) => new Item($id, "Shulker Shell"));
 		self::register("slimeball", fn(IID $id) => new Item($id, "Slimeball"));
 		self::register("snowball", fn(IID $id) => new Snowball($id, "Snowball"));
@@ -334,26 +344,70 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("writable_book", fn(IID $id) => new WritableBook($id, "Book & Quill"));
 		self::register("written_book", fn(IID $id) => new WrittenBook($id, "Written Book"));
 
-		foreach(BoatType::cases() as $type){
-			//boat type is static, because different types of wood may have different properties
-			self::register(strtolower($type->name) . "_boat", fn(IID $id) => new Boat($id, $type->getDisplayName() . " Boat", $type));
-		}
 	}
 
 	private function registerSpawnEggs() : void{
+		self::register("skeleton_spawn_egg", fn(IID $id) => new class($id, "Skeleton Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SKELETON;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Skeleton(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("spider_spawn_egg", fn(IID $id) => new class($id, "Spider Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SPIDER;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Spider(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
 		self::register("zombie_spawn_egg", fn(IID $id) => new class($id, "Zombie Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::ZOMBIE;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Zombie(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("squid_spawn_egg", fn(IID $id) => new class($id, "Squid Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SQUID;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Squid(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 		self::register("villager_spawn_egg", fn(IID $id) => new class($id, "Villager Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::VILLAGER;
+			}
+
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Villager(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("wolf_spawn_egg", fn(IID $id) => new class($id, "Wolf Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::WOLF;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Wolf(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("cat_spawn_egg", fn(IID $id) => new class($id, "Cat Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::CAT;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Cat(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 	}

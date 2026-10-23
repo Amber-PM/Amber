@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,10 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
+use pocketmine\math\Facing;
+use pocketmine\world\redstone\RedstoneEngine;
 use function count;
 
-abstract class SimplePressurePlate extends PressurePlate{
+abstract class SimplePressurePlate extends PressurePlate implements RedstoneSource{
 	protected bool $pressed = false;
 
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
@@ -45,6 +48,10 @@ abstract class SimplePressurePlate extends PressurePlate{
 		return $this->pressed;
 	}
 
+	protected function getMaximumSignalEntityCount() : int{
+		return 1;
+	}
+
 	protected function calculatePlateState(array $entities) : array{
 		$newPressed = count($entities) > 0;
 		if($newPressed === $this->pressed){
@@ -54,5 +61,9 @@ abstract class SimplePressurePlate extends PressurePlate{
 			(clone $this)->setPressed($newPressed),
 			$newPressed
 		];
+	}
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $this->pressed && (!$strongOnly || $face === Facing::DOWN) ? 15 : 0;
 	}
 }

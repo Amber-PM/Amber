@@ -25,8 +25,9 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\RailPoweredByRedstoneTrait;
+use pocketmine\block\utils\RedstoneReceiver;
 
-class ActivatorRail extends StraightOnlyRail implements PoweredByRedstone{
+class ActivatorRail extends StraightOnlyRail implements PoweredByRedstone, RedstoneReceiver{
 	use RailPoweredByRedstoneTrait;
 
 	//TODO

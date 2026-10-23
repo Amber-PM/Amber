@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,16 +25,19 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\AnyFacing;
 use pocketmine\block\utils\AnyFacingTrait;
+use pocketmine\block\utils\DelayedRedstoneReceiver;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\RedstonePowerOffSound;
 use pocketmine\world\sound\RedstonePowerOnSound;
 
-abstract class Button extends Flowable implements AnyFacing{
+abstract class Button extends Flowable implements AnyFacing, RedstoneSource, DelayedRedstoneReceiver{
 	use AnyFacingTrait;
 
 	protected bool $pressed = false;
@@ -67,7 +70,12 @@ abstract class Button extends Flowable implements AnyFacing{
 			$this->pressed = true;
 			$world = $this->position->getWorld();
 			$world->setBlock($this->position, $this);
-			$world->scheduleDelayedBlockUpdate($this->position, $this->getActivationTime());
+			$engine = $world->getRedstoneEngine();
+			if($engine !== null){
+				$engine->schedule($this->position, $this->getActivationTime(), $this->getStateId());
+			}else{
+				$world->scheduleDelayedBlockUpdate($this->position, $this->getActivationTime());
+			}
 			$world->addSound($this->position->add(0.5, 0.5, 0.5), new RedstonePowerOnSound());
 		}
 
@@ -83,6 +91,16 @@ abstract class Button extends Flowable implements AnyFacing{
 		}
 	}
 
+	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
+		$this->onScheduledUpdate();
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		if($this->pressed && !$engine->isScheduled($this->position)){
+			$engine->schedule($this->position, $this->getActivationTime(), $this->getStateId());
+		}
+	}
+
 	public function onNearbyBlockChange() : void{
 		if(!$this->canBeSupportedAt($this, $this->facing)){
 			$this->position->getWorld()->useBreakOn($this->position);
@@ -91,5 +109,9 @@ abstract class Button extends Flowable implements AnyFacing{
 
 	private function canBeSupportedAt(Block $block, int $face) : bool{
 		return $block->getAdjacentSupportType(Facing::opposite($face))->hasCenterSupport();
+	}
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $this->pressed && (!$strongOnly || $face === Facing::opposite($this->facing)) ? 15 : 0;
 	}
 }

@@ -80,4 +80,29 @@ final class ItemSerializerDeserializerTest extends TestCase{
 			self::assertTrue($item->equalsExact($newItem));
 		}
 	}
+
+	public function testTippedArrowSerializationAndDeserialization() : void{
+		$normalArrow = VanillaItems::ARROW();
+		$normalData = $this->serializer->serializeType($normalArrow);
+		self::assertSame(ItemTypeNames::ARROW, $normalData->getName());
+		self::assertSame(0, $normalData->getMeta());
+		$deserializedNormal = $this->deserializer->deserializeType($normalData);
+		self::assertInstanceOf(\pocketmine\item\Arrow::class, $deserializedNormal);
+		self::assertNull($deserializedNormal->getTipType());
+		self::assertTrue($normalArrow->equalsExact($deserializedNormal));
+
+		foreach(\pocketmine\item\PotionType::cases() as $potionType){
+			$tippedArrow = VanillaItems::ARROW()->setTipType($potionType);
+			$data = $this->serializer->serializeType($tippedArrow);
+			$expectedMeta = \pocketmine\data\bedrock\PotionTypeIdMap::getInstance()->toId($potionType) + 1;
+
+			self::assertSame(ItemTypeNames::ARROW, $data->getName());
+			self::assertSame($expectedMeta, $data->getMeta());
+
+			$deserialized = $this->deserializer->deserializeType($data);
+			self::assertInstanceOf(\pocketmine\item\Arrow::class, $deserialized);
+			self::assertSame($potionType, $deserialized->getTipType());
+			self::assertTrue($tippedArrow->equalsExact($deserialized));
+		}
+	}
 }

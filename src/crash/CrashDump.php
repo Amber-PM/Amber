@@ -286,9 +286,9 @@ class CrashDump{
 
 		$this->data->general = new CrashDumpDataGeneral(
 			name: $this->server->getName(),
-			base_version: VersionInfo::BASE_VERSION,
+			base_version: VersionInfo::BASE_VERSION(),
 			build: VersionInfo::BUILD_NUMBER(),
-			is_dev: VersionInfo::IS_DEVELOPMENT_BUILD,
+			is_dev: VersionInfo::IS_DEVELOPMENT_BUILD(),
 			protocol: ProtocolInfo::CURRENT_PROTOCOL,
 			git: VersionInfo::GIT_HASH(),
 			uname: php_uname("a"),

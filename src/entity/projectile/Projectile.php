@@ -59,6 +59,20 @@ abstract class Projectile extends Entity{
 
 	protected float $damage = 0.0;
 	protected ?Vector3 $blockHit = null;
+	protected bool $hitBlocked = false;
+	protected ?EntityDamageEvent $lastDamageEvent = null;
+
+	public function isHitBlocked() : bool{
+		return $this->hitBlocked;
+	}
+
+	public function getLastDamageEvent() : ?EntityDamageEvent{
+		return $this->lastDamageEvent;
+	}
+
+	public function isHitCancelled() : bool{
+		return $this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled();
+	}
 
 	public function __construct(Location $location, ?Entity $shootingEntity, ?CompoundTag $nbt = null){
 		parent::__construct($location, $nbt);
@@ -160,6 +174,8 @@ abstract class Projectile extends Entity{
 
 	protected function move(float $dx, float $dy, float $dz) : void{
 		$this->blocksAround = null;
+		$this->hitBlocked = false;
+		$this->lastDamageEvent = null;
 
 		Timings::$projectileMove->startTiming();
 		Timings::$projectileMoveRayTrace->startTiming();
@@ -171,7 +187,7 @@ abstract class Projectile extends Entity{
 
 		$world = $this->getWorld();
 		foreach(VoxelRayTrace::betweenPoints($start, $end) as $vector3){
-			$block = $world->getBlockAt($vector3->x, $vector3->y, $vector3->z);
+			$block = $world->getBlockAt((int) $vector3->x, (int) $vector3->y, (int) $vector3->z);
 
 			$blockHitResult = $this->calculateInterceptWithBlock($block, $start, $end);
 			if($blockHitResult !== null){
@@ -230,9 +246,26 @@ abstract class Projectile extends Entity{
 			$this->onHit($ev);
 			$specificHitFunc();
 
-			$this->isCollided = $this->onGround = true;
-			if($motionBeforeOnHit->equals($this->motion)){
-				$this->motion = Vector3::zero();
+			if($this->hitBlocked){
+				$this->isCollided = $this->onGround = false;
+				$this->blockHit = null;
+				$offset = $this->motion->normalize()->multiply(0.001);
+				$this->location->x += $offset->x;
+				$this->location->y += $offset->y;
+				$this->location->z += $offset->z;
+				$this->recalculateBoundingBox();
+
+				//recompute angles...
+				$f = sqrt(($this->motion->x ** 2) + ($this->motion->z ** 2));
+				$this->setRotation(
+					atan2($this->motion->x, $this->motion->z) * 180 / M_PI,
+					atan2($this->motion->y, $f) * 180 / M_PI
+				);
+			}else{
+				$this->isCollided = $this->onGround = true;
+				if($motionBeforeOnHit->equals($this->motion)){
+					$this->motion = Vector3::zero();
+				}
 			}
 		}else{
 			$this->isCollided = $this->onGround = false;
@@ -286,12 +319,19 @@ abstract class Projectile extends Entity{
 			}
 
 			$entityHit->attack($ev);
+			$this->lastDamageEvent = $ev;
 
-			if($this->isOnFire()){
-				$ev = new EntityCombustByEntityEvent($this, $entityHit, 5);
-				$ev->call();
-				if(!$ev->isCancelled()){
-					$entityHit->setOnFire($ev->getDuration());
+			if($ev->isApplicable(EntityDamageEvent::MODIFIER_SHIELD)){
+				$this->hitBlocked = true;
+				$this->setMotion($this->getMotion()->multiply(-0.5));
+				return;
+			}
+
+			if(!$ev->isCancelled() && $this->isOnFire()){
+				$evCombust = new EntityCombustByEntityEvent($this, $entityHit, 5);
+				$evCombust->call();
+				if(!$evCombust->isCancelled()){
+					$entityHit->setOnFire($evCombust->getDuration());
 				}
 			}
 		}

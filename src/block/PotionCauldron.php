@@ -24,8 +24,11 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\tile\Cauldron as TileCauldron;
+use pocketmine\item\Arrow;
 use pocketmine\item\Item;
 use pocketmine\item\ItemTypeIds;
+use pocketmine\item\Potion;
+use pocketmine\item\SplashPotion;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
@@ -33,6 +36,7 @@ use pocketmine\world\sound\CauldronEmptyPotionSound;
 use pocketmine\world\sound\CauldronFillPotionSound;
 use pocketmine\world\sound\Sound;
 use function assert;
+use function min;
 
 final class PotionCauldron extends FillableCauldron{
 	public const POTION_FILL_AMOUNT = 2;
@@ -99,10 +103,34 @@ final class PotionCauldron extends FillableCauldron{
 			ItemTypeIds::LINGERING_POTION, ItemTypeIds::POTION, ItemTypeIds::SPLASH_POTION => $this->addFillLevelsOrMix(self::POTION_FILL_AMOUNT, $item, VanillaItems::GLASS_BOTTLE(), $returnedItems),
 			ItemTypeIds::GLASS_BOTTLE => $this->potionItem === null ? null : $this->removeFillLevels(self::POTION_FILL_AMOUNT, $item, clone $this->potionItem, $returnedItems),
 			ItemTypeIds::LAVA_BUCKET, ItemTypeIds::POWDER_SNOW_BUCKET, ItemTypeIds::WATER_BUCKET => $this->mix($item, VanillaItems::BUCKET(), $returnedItems),
-			//TODO: tipped arrows
+			ItemTypeIds::ARROW => $this->potionItem === null ? null : $this->dipArrows($item, $returnedItems),
 			default => null
 		};
 		return true;
+	}
+
+	/**
+	 * @param Item[] &$returnedItems
+	 */
+	protected function dipArrows(Item $item, array &$returnedItems) : void{
+		if($this->getFillLevel() < 1 || !($item instanceof Arrow)){
+			return;
+		}
+		$potionType = match(true){
+			$this->potionItem instanceof Potion,
+			$this->potionItem instanceof SplashPotion => $this->potionItem->getType(),
+			default => null,
+		};
+		if($potionType === null || $item->getTipType() === $potionType){
+			return;
+		}
+
+		$tippedCount = min(16, $item->getCount());
+		$item->pop($tippedCount);
+		$returnedItems[] = VanillaItems::ARROW()->setTipType($potionType)->setCount($tippedCount);
+
+		$this->position->getWorld()->setBlock($this->position, $this->withFillLevel($this->getFillLevel() - 1));
+		$this->position->getWorld()->addSound($this->position->add(0.5, 0.5, 0.5), $this->getEmptySound());
 	}
 
 	public function onNearbyBlockChange() : void{

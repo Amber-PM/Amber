@@ -35,7 +35,7 @@ class RegenerationEffect extends Effect{
 	}
 
 	public function applyEffect(Living $entity, EffectInstance $instance, float $potency = 1.0, ?Entity $source = null) : void{
-		if($entity->getHealth() < $entity->getMaxHealth()){
+		if($entity->isAlive() && $entity->getHealth() < $entity->getMaxHealth()){
 			$ev = new EntityRegainHealthEvent($entity, 1, EntityRegainHealthEvent::CAUSE_MAGIC);
 			$entity->heal($ev);
 		}

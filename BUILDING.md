@@ -1,33 +1,44 @@
-# Building
-## Pre-requisites
-- A bash shell (git bash is sufficient for Windows)
-- [`git`](https://git-scm.com) available in your shell
-- PHP 8.2 or newer available in your shell
-- [`composer`](https://getcomposer.org) available in your shell
+# Building AmberPM
 
-## Custom PHP binaries
-Because PocketMine-MP requires several non-standard PHP extensions and configuration, PMMP provides scripts to build custom binaries for running PocketMine-MP, as well as prebuilt binaries.
+This guide covers **production releases and the stable `main` branch**.
 
-- [Prebuilt binaries](https://github.com/pmmp/PHP-Binaries/releases)
-- [Compile scripts](https://github.com/pmmp/php-build-scripts) are provided as a submodule in the path `build/php`
+## Recommended: use a release
 
-If you use a custom binary, you'll need to replace `composer` usages in this guide with `path/to/your/php path/to/your/composer.phar`.
+Building from source is optional. For a production server, download:
 
-## Setting up environment
-1. `git clone https://github.com/pmmp/PocketMine-MP.git`
-2. `composer install`
+1. **AmberPM server:** the `PocketMine-MP.phar` asset from [AmberPM Releases](https://github.com/Amber-PM/Amber/releases/latest).
+2. **PHP runtime:** a matching Windows or Linux package from [Amber-PM/PHP-Binaries Releases](https://github.com/Amber-PM/PHP-Binaries/releases). PHP 8.4 is the stable runtime; PHP 8.5 releases are marked pre-release.
+3. Extract the PHP runtime into your server directory, preserving its `bin/` structure, and place `PocketMine-MP.phar` in the server directory.
 
-## Checking out a different branch to build
-1. `git checkout <branch to checkout>`
-2. Re-run `composer install` to synchronize dependencies.
+The PHAR does **not** include the PHP interpreter or its extensions. The runtime must be 64-bit, thread-safe (ZTS), and include the PocketMine-MP extensions. Use a validated runtime package for your operating system.
 
-## Optimizing for release builds
-1. Add the flags `--no-dev --classmap-authoritative` to your `composer install` command. This will reduce build size and improve autoloading speed.
+To launch, use the startup scripts from the AmberPM source checkout (`start.cmd` on Windows or `start.sh` on Linux) or configure your server host to execute `PocketMine-MP.phar` with the extracted PHP binary and its `php.ini`.
 
-## Building `PocketMine-MP.phar`
-Run `composer make-server` using your preferred PHP binary. It'll drop a `PocketMine-MP.phar` into the current working directory.
+## Build from stable source
 
-You can also use the `--out` option to change the output filename.
+Requirements: Git, Composer, and PHP **8.1 or newer**, 64-bit, with the extensions listed in `composer.json`.
 
-## Running PocketMine-MP from source code
-Run `src/PocketMine.php` using your preferred PHP binary.
+```sh
+git clone --branch main https://github.com/Amber-PM/Amber.git
+cd Amber
+composer run make-server
+```
+
+The Composer script installs the locked production dependencies and creates `PocketMine-MP.phar` in the repository root. BedrockProtocol and BedrockData are downloaded through Composer; no sibling clones are required.
+
+On Windows, `compile.bat` is also available. It requires a compatible PHP runtime.
+
+To rebuild after updates to `main`, run:
+
+```sh
+git pull --ff-only
+composer run make-server
+```
+
+The build script runs `composer install` using the locked dependency versions.
+
+## Running and updating
+
+Keep your worlds, configuration files, and plugins backed up before replacing a PHAR or PHP runtime. Shut down the server cleanly before upgrading and confirm plugin compatibility with the selected PHP version.
+
+For a release installation, download the new stable PHAR from [AmberPM Releases](https://github.com/Amber-PM/Amber/releases) and a compatible runtime from [Amber-PM/PHP-Binaries Releases](https://github.com/Amber-PM/PHP-Binaries/releases), as needed. Avoid development builds on production servers.

@@ -142,6 +142,35 @@ class ProtocolAdmissionTest extends TestCase{
 		$this->assertFalse($this->server->isProtocolAllowed(999999));
 	}
 
+	public function testDefaultConfigAdmitsEveryAcceptedProtocolOnly() : void{
+		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocolId){
+			$this->assertTrue($this->server->isProtocolAllowed($protocolId), "protocol $protocolId");
+		}
+		foreach([0, -1, 2167, 2170, 2191, 2194, ProtocolInfo::CURRENT_PROTOCOL + 1] as $protocolId){
+			$this->assertFalse($this->server->isProtocolAllowed($protocolId), "protocol $protocolId");
+		}
+	}
+
+	public function testReleasedAndPreview2650AreConfiguredIndependently() : void{
+		$this->updateConfig([
+			'network' => [
+				'disabled-protocols' => [(string) ProtocolInfo::PROTOCOL_1_26_51]
+			]
+		]);
+		$this->assertFalse($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_51));
+		$this->assertTrue($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_50));
+		$this->assertTrue($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_44));
+
+		$this->updateConfig([
+			'network' => [
+				'allowed-protocols' => [ProtocolInfo::PROTOCOL_1_26_50, ProtocolInfo::PROTOCOL_1_26_44]
+			]
+		]);
+		$this->assertFalse($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_51));
+		$this->assertTrue($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_50));
+		$this->assertTrue($this->server->isProtocolAllowed(ProtocolInfo::PROTOCOL_1_26_44));
+	}
+
 	public function testSessionStartPacketHandlerDelegatesToServer() : void{
 		$server = $this->getMockBuilder(Server::class)
 			->disableOriginalConstructor()

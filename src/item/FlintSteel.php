@@ -40,6 +40,7 @@ class FlintSteel extends Tool{
 
 			$this->applyDamage(1);
 
+
 			return ItemUseResult::SUCCESS;
 		}
 

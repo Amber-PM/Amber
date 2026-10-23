@@ -25,12 +25,14 @@ namespace pocketmine\build\server_phar;
 
 use pocketmine\utils\Filesystem;
 use pocketmine\utils\Git;
+use pocketmine\VersionInfo;
 use Symfony\Component\Filesystem\Path;
 use function array_map;
 use function count;
 use function dirname;
 use function file_exists;
 use function getcwd;
+use function getenv;
 use function getopt;
 use function implode;
 use function ini_get;
@@ -47,6 +49,7 @@ use const DIRECTORY_SEPARATOR;
 use const PHP_EOL;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+require_once __DIR__ . '/BuildMetadataResolver.php';
 
 /**
  * @param string[] $strings
@@ -69,6 +72,11 @@ function buildPhar(string $pharPath, string $basePath, array $includedPaths, arr
 	$includedPaths = array_map(function(string $path) : string{
 		return rtrim(str_replace("/", DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
 	}, $includedPaths);
+	$versionInfoFile = Path::join($basePath, "src", "VersionInfo.php");
+	if(!file_exists($versionInfoFile)){
+		throw new \RuntimeException("Cannot build PHAR without src/VersionInfo.php");
+	}
+	$injectedSource = BuildMetadataResolver::injectConstants(Filesystem::fileGetContents($versionInfoFile), $metadata);
 	yield "Creating output file $pharPath";
 	if(file_exists($pharPath)){
 		yield "Phar file already exists, overwriting...";
@@ -118,6 +126,9 @@ function buildPhar(string $pharPath, string $basePath, array $includedPaths, arr
 	$count = count($phar->buildFromIterator($regexIterator, $basePath));
 	yield "Added $count files";
 
+	$phar->addFromString("src/VersionInfo.php", $injectedSource);
+	yield "Injected resolved VersionInfo constants into PHAR";
+
 	if($compression !== null){
 		yield "Compressing files...";
 		$phar->compressFiles($compression);
@@ -138,27 +149,43 @@ function main() : void{
 		exit(1);
 	}
 
-	$opts = getopt("", ["out:", "git:", "build:"]);
-	if(isset($opts["git"])){
-		$gitHash = $opts["git"];
-	}else{
-		$gitHash = Git::getRepositoryStatePretty(dirname(__DIR__));
-		echo "Git hash detected as $gitHash" . PHP_EOL;
+
+
+	$env = [
+		"GITHUB_REF_TYPE" => (string) (getenv("GITHUB_REF_TYPE") ?: ""),
+		"GITHUB_REF_NAME" => (string) (getenv("GITHUB_REF_NAME") ?: ""),
+		"GITHUB_RUN_NUMBER" => (string) (getenv("GITHUB_RUN_NUMBER") ?: ""),
+		"GITHUB_SHA" => (string) (getenv("GITHUB_SHA") ?: ""),
+	];
+
+	$detectedGit = Git::getRepositoryStatePretty(dirname(__DIR__));
+
+	try{
+		$opts = BuildMetadataResolver::parseOptions(array_slice($GLOBALS["argv"], 1), ["out", "git", "build", "tag", "channel", "is-dev"]);
+		$pharPath = $opts["out"] ?? getcwd() . DIRECTORY_SEPARATOR . "PocketMine-MP.phar";
+		unset($opts["out"]);
+		$metadata = BuildMetadataResolver::resolve(
+			VersionInfo::BASE_VERSION,
+			$opts,
+			$env,
+			$detectedGit
+		);
+	}catch(\InvalidArgumentException $e){
+		echo "Version metadata error: " . $e->getMessage() . PHP_EOL;
+		exit(1);
 	}
-	if(isset($opts["build"])){
-		$build = (int) $opts["build"];
-	}else{
-		$build = 0;
-	}
-	if(isset($opts["out"])){
-		if(!is_string($opts["out"])){
-			echo "--out cannot be specified multiple times" . PHP_EOL;
-			exit(1);
-		}
-		$pharPath = $opts["out"];
-	}else{
-		$pharPath = getcwd() . DIRECTORY_SEPARATOR . "PocketMine-MP.phar";
-	}
+
+	echo sprintf(
+		"Building %s %s (channel: %s, dev: %s, commit: %s, build: %d)%s",
+		VersionInfo::NAME,
+		$metadata["baseVersion"] . ($metadata["isDev"] ? "+dev" : ""),
+		$metadata["channel"],
+		$metadata["isDev"] ? "yes" : "no",
+		$metadata["git"],
+		$metadata["build"],
+		PHP_EOL
+	);
+
 	foreach(buildPhar(
 		$pharPath,
 		dirname(__DIR__) . DIRECTORY_SEPARATOR,
@@ -168,10 +195,7 @@ function main() : void{
 			'src',
 			'vendor'
 		],
-		[
-			'git' => $gitHash,
-			'build' => $build
-		],
+		$metadata,
 		Filesystem::fileGetContents(Path::join(__DIR__, 'server-phar-stub.php')) . "\n__HALT_COMPILER();",
 		\Phar::SHA1,
 		\Phar::GZ

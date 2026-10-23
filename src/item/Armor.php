@@ -60,6 +60,10 @@ class Armor extends Durable{
 		return $this->armorInfo->getDefensePoints();
 	}
 
+	public function takesDamageFromAttack() : bool{
+		return true;
+	}
+
 	/**
 	 * @see ArmorInventory
 	 */

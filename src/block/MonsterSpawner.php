@@ -23,11 +23,31 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\tile\MonsterSpawner as TileMonsterSpawner;
 use pocketmine\block\utils\SupportType;
 use pocketmine\item\Item;
+use pocketmine\item\SpawnEgg;
+use pocketmine\math\Vector3;
+use pocketmine\player\Player;
 use function mt_rand;
 
 class MonsterSpawner extends Transparent{
+
+	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
+		if($item instanceof SpawnEgg){
+			if(isset($this->position) && $this->position->isValid()){
+				$tile = $this->position->getWorld()->getTile($this->position);
+				if($tile instanceof TileMonsterSpawner){
+					$tile->setEntityId($item->getSpawnEntityNetworkId());
+					if($player === null || $player->hasFiniteResources()){
+						$item->pop();
+					}
+				}
+			}
+			return true;
+		}
+		return false;
+	}
 
 	public function getDropsForCompatibleTool(Item $item) : array{
 		return [];
@@ -35,10 +55,6 @@ class MonsterSpawner extends Transparent{
 
 	protected function getXpDropAmount() : int{
 		return mt_rand(15, 43);
-	}
-
-	public function onScheduledUpdate() : void{
-		//TODO
 	}
 
 	public function getSupportType(int $facing) : SupportType{

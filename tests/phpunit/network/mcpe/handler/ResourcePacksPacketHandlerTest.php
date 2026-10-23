@@ -30,10 +30,10 @@ final class ResourcePacksPacketHandlerTest extends TestCase{
 
 	/** @return iterable<string, array{int, bool, bool}> */
 	public static function protocolModes() : iterable{
-		yield "legacy enabled" => [ProtocolInfo::PROTOCOL_1_21_130, true, true];
-		yield "legacy disabled" => [ProtocolInfo::PROTOCOL_1_21_130, false, false];
-		yield "1.26.0 enabled" => [ProtocolInfo::PROTOCOL_1_26_0, true, false];
-		yield "1.26.0 disabled" => [ProtocolInfo::PROTOCOL_1_26_0, false, false];
+		foreach(ProtocolInfo::ACCEPTED_PROTOCOL as $protocol){
+			yield "$protocol enabled" => [$protocol, true, true];
+			yield "$protocol disabled" => [$protocol, false, false];
+		}
 	}
 
 	/**
@@ -79,8 +79,19 @@ final class ResourcePacksPacketHandlerTest extends TestCase{
 		self::assertSame(self::CONFIGURED_PACK_ID, $sent[0]->resourcePackEntries[0]->getPackId()->toString());
 		self::assertInstanceOf(ResourcePackStackPacket::class, $sent[1]);
 		$expectedIds = $expectChemistry ? [self::CONFIGURED_PACK_ID, ...self::CHEMISTRY_PACK_IDS] : [self::CONFIGURED_PACK_ID];
+		if($expectChemistry && $protocolId >= ProtocolInfo::PROTOCOL_1_26_40){
+			array_splice($expectedIds, 1, 0, ["d34cfa4b-2ad1-453d-a0db-668b429a3ea0"]);
+		}
 		self::assertSame($expectedIds, array_map(static fn(ResourcePackStackEntry $entry) : string => $entry->getPackId(), $sent[1]->resourcePackStack));
 		self::assertSame("2.3.4", $sent[1]->resourcePackStack[0]->getVersion());
+		$writer = new \pmmp\encoding\ByteBufferWriter();
+		$sent[1]->encode($writer, $protocolId);
+		$decoded = new ResourcePackStackPacket();
+		$decoded->decode(new \pmmp\encoding\ByteBufferReader($writer->getData()), $protocolId);
+		self::assertSame($expectedIds, array_map(static fn(ResourcePackStackEntry $entry) : string => $entry->getPackId(), $decoded->resourcePackStack));
+		if($expectChemistry && $protocolId >= ProtocolInfo::PROTOCOL_1_26_40){
+			self::assertSame("1.26.40", $decoded->resourcePackStack[1]->getVersion());
+		}
 	}
 
 	public function testDisabledModeStillOffersConfiguredPackForDownload() : void{
@@ -93,4 +104,44 @@ final class ResourcePacksPacketHandlerTest extends TestCase{
 		self::assertSame(self::CONFIGURED_PACK_ID, $sent[1]->packId);
 		self::assertSame(1024, $sent[1]->compressedPackSize);
 	}
+
+	public function testReplayedStatusCompletedOnlyInvokesCallbackOnce() : void{
+		$session = $this->getMockBuilder(NetworkSession::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["sendDataPacket", "getLogger", "unhandledPacketDebug", "getProtocolId"])
+			->getMock();
+		$session->method("getLogger")->willReturn($this->createMock(\PrefixedLogger::class));
+		$session->method("getProtocolId")->willReturn(ProtocolInfo::CURRENT_PROTOCOL);
+		$session->method("sendDataPacket")->willReturn(true);
+		(new \ReflectionProperty(NetworkSession::class, "logger"))->setValue($session, $this->createMock(\PrefixedLogger::class));
+
+		$completionCount = 0;
+		$handler = new ResourcePacksPacketHandler(
+			session: $session,
+			resourcePackStack: [],
+			encryptionKeys: [],
+			mustAccept: false,
+			forceDisableVibrantVisuals: false,
+			educationContentEnabled: false,
+			completionCallback: function() use (&$completionCount) : void{
+				$completionCount++;
+			}
+		);
+
+		$session->setHandler($handler);
+
+		$stream = new \pmmp\encoding\ByteBufferWriter();
+		\pmmp\encoding\VarInt::writeUnsignedInt($stream, ResourcePackClientResponsePacket::NETWORK_ID);
+		\pmmp\encoding\VarInt::writeUnsignedInt($stream, ResourcePackClientResponsePacket::STATUS_COMPLETED);
+		\pocketmine\network\mcpe\protocol\serializer\CommonTypes::putString($stream, "resourcepackstackfinished");
+		$buffer = $stream->getData();
+
+		$packet = ResourcePackClientResponsePacket::create(ResourcePackClientResponsePacket::STATUS_COMPLETED, []);
+		$session->handleDataPacket($packet, $buffer);
+		self::assertSame(1, $completionCount);
+
+		$session->handleDataPacket($packet, $buffer);
+		self::assertSame(1, $completionCount);
+	}
 }
+

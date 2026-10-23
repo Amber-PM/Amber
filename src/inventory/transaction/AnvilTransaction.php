@@ -184,15 +184,50 @@ class AnvilTransaction extends InventoryTransaction{
 		if(count($createdItems) > 1){
 			throw new TransactionValidationException("Transaction resulted into more than 1 item stack");
 		}
-		if(!$this->input->equals($createdItems[0], false, false)){
+		if(!$createdItems[0]->equalsExact($this->result)){
 			throw new TransactionValidationException("Transaction produced a different output item");
 		}
-		if(count($deletedItems) > count($this->consumed)){
-			throw new TransactionValidationException("Transaction consumed more than required items");
-		}
+		self::assertConsumed($deletedItems, $this->consumed);
 		$cost = $this->getXPCost();
 		if($cost > self::MAX_COST || $cost > $this->source->getXpManager()->getXpLevel()){
 			throw new TransactionValidationException("Too expensive");
+		}
+	}
+
+	/**
+	 * The items the transaction removed must be exactly the ones the anvil uses up: the input, and as much of the
+	 * material as the repair or enchanting takes.
+	 *
+	 * @param Item[] $deleted
+	 * @param Item[] $expected
+	 *
+	 * @throws TransactionValidationException
+	 */
+	private static function assertConsumed(array $deleted, array $expected) : void{
+		$remaining = [];
+		foreach($expected as $item){
+			if(!$item->isNull()){
+				$remaining[] = clone $item;
+			}
+		}
+		foreach($deleted as $item){
+			$count = $item->getCount();
+			foreach($remaining as $key => $want){
+				if($count > 0 && $want->canStackWith($item)){
+					$taken = min($count, $want->getCount());
+					$count -= $taken;
+					$want->setCount($want->getCount() - $taken);
+					if($want->getCount() === 0){
+						unset($remaining[$key]);
+					}
+				}
+			}
+			if($count > 0){
+				throw new TransactionValidationException("Transaction consumed items the anvil does not use");
+			}
+		}
+		if(count($remaining) > 0){
+			throw new TransactionValidationException("Transaction did not consume the items the anvil uses");
 		}
 	}
 

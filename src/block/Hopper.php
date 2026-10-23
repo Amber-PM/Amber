@@ -26,6 +26,7 @@ namespace pocketmine\block;
 use pocketmine\block\tile\Hopper as TileHopper;
 use pocketmine\block\utils\PoweredByRedstone;
 use pocketmine\block\utils\PoweredByRedstoneTrait;
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
@@ -34,8 +35,9 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class Hopper extends Transparent implements PoweredByRedstone{
+class Hopper extends Transparent implements PoweredByRedstone, RedstoneReceiver{
 	use PoweredByRedstoneTrait;
 
 	private int $facing = Facing::DOWN;
@@ -97,4 +99,12 @@ class Hopper extends Transparent implements PoweredByRedstone{
 	}
 
 	//TODO: redstone logic, sucking logic
+
+	/** A powered hopper is locked: it moves no items. */
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($powered !== $this->powered){
+			$engine->getWorld()->setBlock($this->position, $this->setPowered($powered));
+		}
+	}
 }

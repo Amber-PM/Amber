@@ -834,6 +834,28 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 		unset($this->db);
 	}
 
+	/**
+	 * Releases database file locks and waits for background compaction before capturing a backup.
+	 * The callback must only copy files and must not access this provider. Run on the main thread after saving.
+	 * Outstanding readers prevent capture rather than being invalidated by closing their database.
+	 *
+	 * @internal
+	 * @phpstan-param \Closure() : void $capture
+	 */
+	public function withClosedDatabase(\Closure $capture) : void{
+		$reference = \WeakReference::create($this->db);
+		unset($this->db);
+		if(($database = $reference->get()) !== null){
+			$this->db = $database;
+			throw new \RuntimeException("Cannot capture LevelDB backup while database readers are active");
+		}
+		try{
+			$capture();
+		}finally{
+			$this->db = self::createDB($this->getPath());
+		}
+	}
+
 	public function getAllChunks(bool $skipCorrupted = false, ?\Logger $logger = null) : \Generator{
 		foreach($this->db->getIterator() as $key => $_){
 			if(strlen($key) === 9 && ($key[8] === ChunkDataKey::NEW_VERSION || $key[8] === ChunkDataKey::OLD_VERSION)){

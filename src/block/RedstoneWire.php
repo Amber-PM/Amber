@@ -25,12 +25,15 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\AnalogRedstoneSignalEmitter;
 use pocketmine\block\utils\AnalogRedstoneSignalEmitterTrait;
+use pocketmine\block\utils\RedstoneReceiver;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\block\utils\StaticSupportTrait;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Facing;
+use pocketmine\world\redstone\RedstoneEngine;
 
-class RedstoneWire extends Flowable implements AnalogRedstoneSignalEmitter{
+class RedstoneWire extends Flowable implements AnalogRedstoneSignalEmitter, RedstoneSource, RedstoneReceiver{
 	use AnalogRedstoneSignalEmitterTrait;
 	use StaticSupportTrait;
 
@@ -47,5 +50,16 @@ class RedstoneWire extends Flowable implements AnalogRedstoneSignalEmitter{
 
 	public function asItem() : Item{
 		return VanillaItems::REDSTONE_DUST();
+	}
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		if($strongOnly || $face === Facing::UP || $this->signalStrength === 0){
+			return 0;
+		}
+		return $face === Facing::DOWN || isset($engine->getWires()->getDirections($this)[$face]) ? $this->signalStrength : 0;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$engine->getWires()->update($this);
 	}
 }

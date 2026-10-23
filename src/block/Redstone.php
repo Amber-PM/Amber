@@ -23,6 +23,12 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-class Redstone extends Opaque{
+use pocketmine\block\utils\RedstoneSource;
+use pocketmine\world\redstone\RedstoneEngine;
 
+class Redstone extends Opaque implements RedstoneSource{
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $strongOnly ? 0 : 15;
+	}
 }

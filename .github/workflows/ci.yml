@@ -21,31 +21,6 @@ jobs:
       - name: Checkout Amber
         uses: actions/checkout@v6
 
-      - name: Read locked sibling dependency revisions
-        id: dependency-refs
-        run: |
-          echo "protocol=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-protocol") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-          echo "data=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-data") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout Amber BedrockProtocol
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockProtocol
-          ref: ${{ steps.dependency-refs.outputs.protocol }}
-          path: BedrockProtocol
-
-      - name: Checkout Amber BedrockData
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockData
-          ref: ${{ steps.dependency-refs.outputs.data }}
-          path: BedrockData
-
-      - name: Place sibling dependencies
-        run: |
-          mv BedrockProtocol ../BedrockProtocol
-          mv BedrockData ../BedrockData
-
       - name: Setup PocketMine PHP
         uses: pmmp/setup-php-action@3.2.0
         with:
@@ -103,31 +78,6 @@ jobs:
       - name: Checkout Amber
         uses: actions/checkout@v6
 
-      - name: Read locked sibling dependency revisions
-        id: dependency-refs
-        run: |
-          echo "protocol=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-protocol") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-          echo "data=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-data") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout Amber BedrockProtocol
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockProtocol
-          ref: ${{ steps.dependency-refs.outputs.protocol }}
-          path: BedrockProtocol
-
-      - name: Checkout Amber BedrockData
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockData
-          ref: ${{ steps.dependency-refs.outputs.data }}
-          path: BedrockData
-
-      - name: Place sibling dependencies
-        run: |
-          mv BedrockProtocol ../BedrockProtocol
-          mv BedrockData ../BedrockData
-
       - name: Setup PocketMine PHP
         uses: pmmp/setup-php-action@3.2.0
         with:
@@ -172,31 +122,6 @@ jobs:
       - name: Checkout Amber
         uses: actions/checkout@v6
 
-      - name: Read locked sibling dependency revisions
-        id: dependency-refs
-        run: |
-          echo "protocol=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-protocol") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-          echo "data=$(jq -er '.packages[] | select(.name == "vapebw/bedrock-data") | .dist.reference' composer.lock)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout Amber BedrockProtocol
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockProtocol
-          ref: ${{ steps.dependency-refs.outputs.protocol }}
-          path: BedrockProtocol
-
-      - name: Checkout Amber BedrockData
-        uses: actions/checkout@v6
-        with:
-          repository: Amber-PM/BedrockData
-          ref: ${{ steps.dependency-refs.outputs.data }}
-          path: BedrockData
-
-      - name: Place sibling dependencies
-        run: |
-          mv BedrockProtocol ../BedrockProtocol
-          mv BedrockData ../BedrockData
-
       - name: Setup PocketMine PHP
         uses: pmmp/setup-php-action@3.2.0
         with:
@@ -216,9 +141,19 @@ jobs:
           restore-keys: composer-${{ runner.os }}-php-8.3-
 
       - name: Build production PHAR
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
         run: composer make-server
 
       - name: Verify PHAR artifact
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           test -s PocketMine-MP.phar
-          php -r '$phar = new Phar("PocketMine-MP.phar"); $phar->getStub();'
+          php build/verify-phar.php --phar=PocketMine-MP.phar

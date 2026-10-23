@@ -622,6 +622,10 @@ class Item implements \JsonSerializable{
 		return ItemUseResult::NONE;
 	}
 
+	public function continueUsing(Player $player, int $useDuration) : bool{
+		return false;
+	}
+
 	/**
 	 * Called when this item is used to destroy a block. Usually used to update durability.
 	 *

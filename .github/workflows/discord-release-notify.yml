@@ -15,27 +15,9 @@ jobs:
     name: Send Discord Release Webhook
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: PocketmineMV
-
     steps:
-      - name: Checkout PocketmineMV
+      - name: Checkout Amber
         uses: actions/checkout@v4
-        with:
-          path: PocketmineMV
-
-      - name: Checkout BedrockProtocol
-        uses: actions/checkout@v4
-        with:
-          repository: vapebw/BedrockProtocol
-          path: BedrockProtocol
-
-      - name: Checkout BedrockData
-        uses: actions/checkout@v4
-        with:
-          repository: vapebw/BedrockData
-          path: BedrockData
 
       - name: Setup PHP and tools
         uses: shivammathur/setup-php@v2

@@ -47,6 +47,7 @@ class EntityDamageEvent extends EntityEvent implements Cancellable{
 	public const MODIFIER_WEAPON_ENCHANTMENTS = 9;
 	public const MODIFIER_PREVIOUS_DAMAGE_COOLDOWN = 10;
 	public const MODIFIER_ARMOR_HELMET = 11;
+	public const MODIFIER_SHIELD = 12;
 
 	public const CAUSE_CONTACT = 0;
 	public const CAUSE_ENTITY_ATTACK = 1;
@@ -65,6 +66,7 @@ class EntityDamageEvent extends EntityEvent implements Cancellable{
 	public const CAUSE_CUSTOM = 14;
 	public const CAUSE_STARVATION = 15;
 	public const CAUSE_FALLING_BLOCK = 16;
+	public const CAUSE_FLY_INTO_WALL = 17;
 
 	private float $baseDamage;
 	private float $originalBase;
@@ -158,6 +160,7 @@ class EntityDamageEvent extends EntityEvent implements Cancellable{
 			case self::CAUSE_DROWNING:
 			case self::CAUSE_STARVATION:
 			case self::CAUSE_FALL:
+			case self::CAUSE_FLY_INTO_WALL:
 			case self::CAUSE_VOID:
 			case self::CAUSE_MAGIC:
 			case self::CAUSE_SUICIDE:

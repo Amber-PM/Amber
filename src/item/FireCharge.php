@@ -40,6 +40,7 @@ class FireCharge extends Item{
 
 			$this->pop();
 
+
 			return ItemUseResult::SUCCESS;
 		}
 

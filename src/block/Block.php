@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -894,6 +894,14 @@ class Block{
 	 */
 	public function onEntityLand(Entity $entity) : ?float{
 		return null;
+	}
+
+	public function getJumpVelocityMultiplier() : float{
+		return 1.0;
+	}
+
+	public function getFallDamageMultiplier() : float{
+		return 1.0;
 	}
 
 	/**

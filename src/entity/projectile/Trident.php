@@ -111,6 +111,10 @@ class Trident extends Projectile{
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
 		parent::onHitEntity($entityHit, $hitResult);
 
+		if($this->hitBlocked){
+			return;
+		}
+
 		$this->canCollide = false;
 		$this->broadcastSound(new TridentHitEntitySound());
 		$this->setMotion(new Vector3($this->motion->x * -0.01, $this->motion->y * -0.1, $this->motion->z * -0.01));

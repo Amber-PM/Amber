@@ -69,6 +69,30 @@ class ChunkCache implements ChunkListener{
 		return self::$instances[$worldId][$compressorId];
 	}
 
+	/**
+	 * @return self[]
+	 * @phpstan-return list<self>
+	 */
+	public static function getAllInstances() : array{
+		$result = [];
+		foreach(self::$instances as $compressorMap){
+			foreach($compressorMap as $chunkCache){
+				$result[] = $chunkCache;
+			}
+		}
+		return $result;
+	}
+
+	public function getWorld() : World{ return $this->world; }
+
+	public function getHits() : int{ return $this->hits; }
+
+	public function getMisses() : int{ return $this->misses; }
+
+	public function getCachedChunkCount() : int{
+		return count($this->caches);
+	}
+
 	public static function pruneCaches() : void{
 		foreach(self::$instances as $compressorMap){
 			foreach($compressorMap as $chunkCache){
@@ -170,6 +194,7 @@ class ChunkCache implements ChunkListener{
 	 * @return CompressBatchPromise|string Compressed chunk packet, or a promise for one to be resolved asynchronously.
 	 */
 	public function request(int $chunkX, int $chunkZ, TypeConverter $typeConverter) : CompressBatchPromise|string{
+		$typeConverter = TypeConverter::getInstance($typeConverter->getChunkProtocolId());
 		$chunkHash = World::chunkHash($chunkX, $chunkZ);
 		if(isset($this->caches[$chunkHash][$protocolId = $typeConverter->getProtocolId()])){
 			++$this->hits;

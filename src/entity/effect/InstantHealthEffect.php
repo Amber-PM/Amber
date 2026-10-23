@@ -30,7 +30,7 @@ use pocketmine\event\entity\EntityRegainHealthEvent;
 class InstantHealthEffect extends InstantEffect{
 
 	public function applyEffect(Living $entity, EffectInstance $instance, float $potency = 1.0, ?Entity $source = null) : void{
-		if($entity->getHealth() < $entity->getMaxHealth()){
+		if($entity->isAlive() && $entity->getHealth() < $entity->getMaxHealth()){
 			$entity->heal(new EntityRegainHealthEvent($entity, (4 << $instance->getAmplifier()) * $potency, EntityRegainHealthEvent::CAUSE_MAGIC));
 		}
 	}

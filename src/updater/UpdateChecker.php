@@ -44,7 +44,7 @@ class UpdateChecker{
 		$this->logger = new \PrefixedLogger($server->getLogger(), "Update Checker");
 		$this->endpoint = "http://$endpoint/api/";
 
-		if($server->getConfigGroup()->getPropertyBool(YmlServerProperties::AUTO_UPDATER_ENABLED, true)){
+		if($server->getConfigGroup()->getPropertyBool(YmlServerProperties::AUTO_UPDATER_ENABLED, false)){
 			$this->doCheck();
 		}
 	}
@@ -64,9 +64,9 @@ class UpdateChecker{
 				$this->showConsoleUpdate();
 			}
 		}else{
-			if(!VersionInfo::IS_DEVELOPMENT_BUILD && $this->getChannel() !== "stable"){
+			if(!VersionInfo::IS_DEVELOPMENT_BUILD() && $this->getChannel() !== "stable"){
 				$this->showChannelSuggestionStable();
-			}elseif(VersionInfo::IS_DEVELOPMENT_BUILD && $this->getChannel() === "stable"){
+			}elseif(VersionInfo::IS_DEVELOPMENT_BUILD() && $this->getChannel() === "stable"){
 				$this->showChannelSuggestionBeta();
 			}
 		}

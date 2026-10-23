@@ -34,6 +34,7 @@ class WorldTimings{
 	public TimingsHandler $doChunkUnload;
 	public TimingsHandler $scheduledBlockUpdates;
 	public TimingsHandler $neighbourBlockUpdates;
+	public TimingsHandler $redstone;
 	public TimingsHandler $randomChunkUpdates;
 	public TimingsHandler $randomChunkUpdatesChunkSelection;
 	public TimingsHandler $doChunkGC;
@@ -78,6 +79,7 @@ class WorldTimings{
 		$this->doChunkUnload = self::newTimer($name, "Unload Chunks");
 		$this->scheduledBlockUpdates = self::newTimer($name, "Scheduled Block Updates");
 		$this->neighbourBlockUpdates = self::newTimer($name, "Neighbour Block Updates");
+		$this->redstone = self::newTimer($name, "Redstone Updates");
 		$this->randomChunkUpdates = self::newTimer($name, "Random Chunk Updates");
 		$this->randomChunkUpdatesChunkSelection = self::newTimer($name, "Random Chunk Updates - Chunk Selection");
 		$this->doChunkGC = self::newTimer($name, "Garbage Collection");

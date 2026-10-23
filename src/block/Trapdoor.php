@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
+use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
@@ -33,9 +34,10 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\DoorSound;
 
-class Trapdoor extends Transparent implements HorizontalFacing{
+class Trapdoor extends Transparent implements HorizontalFacing, RedstoneReceiver{
 	use HorizontalFacingTrait;
 
 	protected bool $open = false;
@@ -84,10 +86,20 @@ class Trapdoor extends Transparent implements HorizontalFacing{
 	}
 
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
+		if($this->getTypeId() === BlockTypeIds::IRON_TRAPDOOR){
+			return false;
+		}
 		$this->open = !$this->open;
 		$world = $this->position->getWorld();
 		$world->setBlock($this->position, $this);
 		$world->addSound($this->position, new DoorSound());
 		return true;
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($engine->powerChanged($this->position, $powered) && $this->open !== $powered){
+			$engine->getWorld()->setBlock($this->position, $this->setOpen($powered));
+		}
 	}
 }

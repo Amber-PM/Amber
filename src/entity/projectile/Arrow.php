@@ -24,12 +24,18 @@ declare(strict_types=1);
 namespace pocketmine\entity\projectile;
 
 use pocketmine\block\Block;
+use pocketmine\color\Color;
+use pocketmine\data\bedrock\PotionTypeIdMap;
 use pocketmine\entity\animation\ArrowShakeAnimation;
+use pocketmine\entity\effect\EffectInstance;
+use pocketmine\entity\effect\InstantEffect;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
+use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\event\entity\EntityItemPickupEvent;
 use pocketmine\event\entity\ProjectileHitEvent;
+use pocketmine\item\PotionType;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\RayTraceResult;
 use pocketmine\nbt\tag\CompoundTag;
@@ -38,10 +44,15 @@ use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
+use pocketmine\world\particle\PotionSplashParticle;
 use pocketmine\world\sound\ArrowHitSound;
+use function array_values;
 use function ceil;
+use function count;
 use function mt_rand;
+use function round;
 use function sqrt;
 
 class Arrow extends Projectile{
@@ -55,15 +66,26 @@ class Arrow extends Projectile{
 	private const TAG_PICKUP = "pickup"; //TAG_Byte
 	public const TAG_CRIT = "crit"; //TAG_Byte
 	private const TAG_LIFE = "life"; //TAG_Short
+	private const TAG_PIERCE = "pierce"; //TAG_Byte
+	public const TAG_POTION_ID = "PotionId"; //TAG_Short
 
 	protected float $damage = 2.0;
 	protected int $pickupMode = self::PICKUP_ANY;
 	protected float $punchKnockback = 0.0;
 	protected int $collideTicks = 0;
 	protected bool $critical = false;
+	protected int $pierceLevel = 0;
+	/** @var array<int, bool> */
+	protected array $piercedEntityIds = [];
+	protected ?PotionType $potionType = null;
+	/** @var EffectInstance[]|null */
+	protected ?array $customPotionEffects = null;
 
-	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?CompoundTag $nbt = null){
+	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?CompoundTag $nbt = null, ?PotionType $potionType = null){
 		parent::__construct($location, $shootingEntity, $nbt);
+		if($potionType !== null){
+			$this->potionType = $potionType;
+		}
 		$this->setCritical($critical);
 	}
 
@@ -79,6 +101,12 @@ class Arrow extends Projectile{
 		$this->pickupMode = $nbt->getByte(self::TAG_PICKUP, self::PICKUP_ANY);
 		$this->critical = $nbt->getByte(self::TAG_CRIT, 0) === 1;
 		$this->collideTicks = $nbt->getShort(self::TAG_LIFE, $this->collideTicks);
+		$this->pierceLevel = $nbt->getByte(self::TAG_PIERCE, 0);
+
+		$potionId = $nbt->getShort(self::TAG_POTION_ID, -1);
+		if($potionId !== -1){
+			$this->potionType = PotionTypeIdMap::getInstance()->fromId($potionId);
+		}
 	}
 
 	public function saveNBT() : CompoundTag{
@@ -86,6 +114,10 @@ class Arrow extends Projectile{
 		$nbt->setByte(self::TAG_PICKUP, $this->pickupMode);
 		$nbt->setByte(self::TAG_CRIT, $this->critical ? 1 : 0);
 		$nbt->setShort(self::TAG_LIFE, $this->collideTicks);
+		$nbt->setByte(self::TAG_PIERCE, $this->pierceLevel);
+		if($this->potionType !== null){
+			$nbt->setShort(self::TAG_POTION_ID, PotionTypeIdMap::getInstance()->toId($this->potionType));
+		}
 		return $nbt;
 	}
 
@@ -115,6 +147,68 @@ class Arrow extends Projectile{
 		$this->punchKnockback = $punchKnockback;
 	}
 
+	public function getPotionType() : ?PotionType{
+		return $this->potionType;
+	}
+
+	public function setPotionType(?PotionType $type) : void{
+		$this->potionType = $type;
+		$this->networkPropertiesDirty = true;
+	}
+
+	/**
+	 * @return EffectInstance[]
+	 * @phpstan-return list<EffectInstance>
+	 */
+	public function getPotionEffects() : array{
+		$effects = [];
+		if($this->potionType !== null){
+			foreach($this->potionType->getEffects() as $effect){
+				$effects[\spl_object_id($effect->getType())] = clone $effect;
+			}
+		}
+		if($this->customPotionEffects !== null){
+			foreach($this->customPotionEffects as $effect){
+				$effects[\spl_object_id($effect->getType())] = clone $effect;
+			}
+		}
+		return array_values($effects);
+	}
+
+	/**
+	 * @return EffectInstance[]|null
+	 * @phpstan-return list<EffectInstance>|null
+	 */
+	public function getCustomEffects() : ?array{
+		return $this->customPotionEffects !== null ? array_values($this->customPotionEffects) : null;
+	}
+
+	/**
+	 * @param EffectInstance[] $effects
+	 * @return $this
+	 */
+	public function setCustomEffects(array $effects) : self{
+		$this->customPotionEffects = array_values($effects);
+		return $this;
+	}
+
+	/**
+	 * @return $this
+	 */
+	public function addCustomEffect(EffectInstance $effect) : self{
+		$this->customPotionEffects ??= [];
+		$this->customPotionEffects[] = $effect;
+		return $this;
+	}
+
+	/**
+	 * @return $this
+	 */
+	public function clearCustomEffects() : self{
+		$this->customPotionEffects = null;
+		return $this;
+	}
+
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
 		if($this->closed){
 			return false;
@@ -138,6 +232,20 @@ class Arrow extends Projectile{
 	protected function onHit(ProjectileHitEvent $event) : void{
 		$this->setCritical(false);
 		$this->broadcastSound(new ArrowHitSound());
+
+		if($this->potionType !== null || $this->customPotionEffects !== null){
+			$effects = $this->getPotionEffects();
+			if(count($effects) > 0){
+				$colors = [];
+				foreach($effects as $effect){
+					$level = $effect->getEffectLevel();
+					for($j = 0; $j < $level; ++$j){
+						$colors[] = $effect->getColor();
+					}
+				}
+				$this->getWorld()->addParticle($this->location, new PotionSplashParticle(count($colors) > 0 ? Color::mix(...$colors) : PotionSplashParticle::DEFAULT_COLOR()));
+			}
+		}
 	}
 
 	protected function onHitBlock(Block $blockHit, RayTraceResult $hitResult) : void{
@@ -145,13 +253,82 @@ class Arrow extends Projectile{
 		$this->broadcastAnimation(new ArrowShakeAnimation($this, 7));
 	}
 
+	public function getPierceLevel() : int{
+		return $this->pierceLevel;
+	}
+
+	public function setPierceLevel(int $pierceLevel) : void{
+		$this->pierceLevel = $pierceLevel;
+	}
+
+	public function hasPiercedEntity(Entity $entity) : bool{
+		return isset($this->piercedEntityIds[$entity->getId()]);
+	}
+
+	public function getPiercedEntityCount() : int{
+		return count($this->piercedEntityIds);
+	}
+
+	public function canCollideWith(Entity $entity) : bool{
+		if(isset($this->piercedEntityIds[$entity->getId()])){
+			return false;
+		}
+		return parent::canCollideWith($entity);
+	}
+
+	protected function despawnsOnEntityHit() : bool{
+		if($this->pierceLevel > 0 && count($this->piercedEntityIds) <= $this->pierceLevel){
+			return false;
+		}
+		return parent::despawnsOnEntityHit();
+	}
+
+	protected function move(float $dx, float $dy, float $dz) : void{
+		$piercedCountBefore = count($this->piercedEntityIds);
+		$motionBefore = clone $this->motion;
+		parent::move($dx, $dy, $dz);
+		if(count($this->piercedEntityIds) > $piercedCountBefore && count($this->piercedEntityIds) <= $this->pierceLevel && $this->blockHit === null){
+			$this->isCollided = false;
+			$this->onGround = false;
+			$this->motion = $motionBefore;
+		}
+	}
+
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
+		if($this->pierceLevel > 0){
+			$this->piercedEntityIds[$entityHit->getId()] = true;
+		}
 		parent::onHitEntity($entityHit, $hitResult);
+		if($this->hitBlocked || ($this->lastDamageEvent !== null && $this->lastDamageEvent->isCancelled())){
+			return;
+		}
+		if(!$entityHit->isAlive()){
+			return;
+		}
 		if($this->punchKnockback > 0){
 			$horizontalSpeed = sqrt($this->motion->x ** 2 + $this->motion->z ** 2);
 			if($horizontalSpeed > 0){
 				$multiplier = $this->punchKnockback * 0.6 / $horizontalSpeed;
 				$entityHit->setMotion($entityHit->getMotion()->add($this->motion->x * $multiplier, 0.1, $this->motion->z * $multiplier));
+			}
+		}
+
+		if(count($this->getPotionEffects()) > 0 && $entityHit instanceof Living){
+			$this->applyPotionEffects($entityHit);
+		}
+	}
+
+	protected function applyPotionEffects(Living $entityHit) : void{
+		if(!$entityHit->isAlive()){
+			return;
+		}
+		foreach($this->getPotionEffects() as $effect){
+			$effect = clone $effect;
+			if($effect->getType() instanceof InstantEffect){
+				$effect->getType()->applyEffect($entityHit, $effect, 1.0, $this);
+			}else{
+				$effect->setDuration((int) round($effect->getDuration() / 8));
+				$entityHit->getEffects()->add($effect);
 			}
 		}
 	}
@@ -169,7 +346,7 @@ class Arrow extends Projectile{
 			return;
 		}
 
-		$item = VanillaItems::ARROW();
+		$item = VanillaItems::ARROW()->setTipType($this->potionType);
 		$playerInventory = match(true){
 			!$player->hasFiniteResources() => null, //arrows are not picked up in creative
 			$player->getOffHandInventory()->getItem(0)->canStackWith($item) && $player->getOffHandInventory()->canAddItem($item) => $player->getOffHandInventory(),
@@ -203,5 +380,9 @@ class Arrow extends Projectile{
 		parent::syncNetworkData($properties);
 
 		$properties->setGenericFlag(EntityMetadataFlags::CRITICAL, $this->critical);
+		$properties->setByte(
+			EntityMetadataProperties::MINECART_HAS_DISPLAY,
+			$this->potionType !== null ? PotionTypeIdMap::getInstance()->toId($this->potionType) + 1 : 0
+		);
 	}
 }

@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -35,6 +35,7 @@ use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Filesystem;
 use pocketmine\utils\Utils;
 use function base64_decode;
+use function count;
 use function is_array;
 use function is_bool;
 use function is_int;
@@ -47,7 +48,7 @@ final class ItemTypeDictionaryFromDataHelper{
 	private const PATHS = [
 		ProtocolInfo::PROTOCOL_1_26_51 => "-1.26.50",
 		ProtocolInfo::PROTOCOL_1_26_50 => "-1.26.50",
-		ProtocolInfo::CURRENT_PROTOCOL => "",
+		ProtocolInfo::PROTOCOL_1_26_44 => "",
 		ProtocolInfo::PROTOCOL_1_26_40 => "",
 		ProtocolInfo::PROTOCOL_1_26_30 => "-1.26.30",
 		ProtocolInfo::PROTOCOL_1_26_20 => "-1.26.20",
@@ -79,8 +80,16 @@ final class ItemTypeDictionaryFromDataHelper{
 		ProtocolInfo::PROTOCOL_1_20_0 => "-1.20.0",
 	];
 
+	/** @phpstan-var array<string, ItemTypeDictionary> */
+	private static array $loaded = [];
+
+	/** Number of distinct item lists loaded in this thread. */
+	public static function getLoadedCount() : int{
+		return count(self::$loaded);
+	}
+
 	public static function loadFromProtocolId(int $protocolId) : ItemTypeDictionary{
-		return self::loadFromString(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId] . ".json", BedrockDataFiles::REQUIRED_ITEM_LIST_JSON)));
+		return self::$loaded[self::PATHS[$protocolId]] ??= self::loadFromString(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId] . ".json", BedrockDataFiles::REQUIRED_ITEM_LIST_JSON)));
 	}
 
 	public static function loadFromString(string $data) : ItemTypeDictionary{
@@ -98,9 +107,6 @@ final class ItemTypeDictionaryFromDataHelper{
 				throw new AssumptionFailedError("Invalid item list format");
 			}
 			$params[] = new ItemTypeEntry($name, $entry["runtime_id"], $entry["component_based"], $entry["version"] ?? 2, $componentNbt === null ? $emptyNBT : new CacheableNbt($nbtSerializer->read(ErrorToExceptionHandler::trapAndRemoveFalse(fn() => base64_decode($componentNbt, true)))->mustGetCompoundTag()));
-		}
-		foreach(\pocketmine\addon\AddonManager::getInstance()?->getItemTypeEntries() ?? [] as $entry){
-			$params[] = $entry;
 		}
 		return new ItemTypeDictionary($params);
 	}

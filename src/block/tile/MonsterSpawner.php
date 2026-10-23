@@ -56,6 +56,7 @@ class MonsterSpawner extends Spawnable{
 	public const DEFAULT_MAX_NEARBY_ENTITIES = 6;
 	public const DEFAULT_SPAWN_RANGE = 4; //blocks
 	public const DEFAULT_REQUIRED_PLAYER_RANGE = 16;
+	public const DEFAULT_SPAWN_COUNT = 4;
 
 	/** TODO: replace this with a cached entity or something of that nature */
 	private string $entityTypeId = ":";
@@ -71,7 +72,7 @@ class MonsterSpawner extends Spawnable{
 	private int $spawnDelay = self::DEFAULT_MIN_SPAWN_DELAY;
 	private int $minSpawnDelay = self::DEFAULT_MIN_SPAWN_DELAY;
 	private int $maxSpawnDelay = self::DEFAULT_MAX_SPAWN_DELAY;
-	private int $spawnPerAttempt = 1;
+	private int $spawnPerAttempt = self::DEFAULT_SPAWN_COUNT;
 	private int $maxNearbyEntities = self::DEFAULT_MAX_NEARBY_ENTITIES;
 	private int $spawnRange = self::DEFAULT_SPAWN_RANGE;
 	private int $requiredPlayerRange = self::DEFAULT_REQUIRED_PLAYER_RANGE;
@@ -92,7 +93,7 @@ class MonsterSpawner extends Spawnable{
 		$this->spawnDelay = $nbt->getShort(self::TAG_SPAWN_DELAY, self::DEFAULT_MIN_SPAWN_DELAY);
 		$this->minSpawnDelay = $nbt->getShort(self::TAG_MIN_SPAWN_DELAY, self::DEFAULT_MIN_SPAWN_DELAY);
 		$this->maxSpawnDelay = $nbt->getShort(self::TAG_MAX_SPAWN_DELAY, self::DEFAULT_MAX_SPAWN_DELAY);
-		$this->spawnPerAttempt = $nbt->getShort(self::TAG_SPAWN_PER_ATTEMPT, 1);
+		$this->spawnPerAttempt = $nbt->getShort(self::TAG_SPAWN_PER_ATTEMPT, self::DEFAULT_SPAWN_COUNT);
 		$this->maxNearbyEntities = $nbt->getShort(self::TAG_MAX_NEARBY_ENTITIES, self::DEFAULT_MAX_NEARBY_ENTITIES);
 		$this->requiredPlayerRange = $nbt->getShort(self::TAG_REQUIRED_PLAYER_RANGE, self::DEFAULT_REQUIRED_PLAYER_RANGE);
 		$this->spawnRange = $nbt->getShort(self::TAG_SPAWN_RANGE, self::DEFAULT_SPAWN_RANGE);
@@ -100,6 +101,7 @@ class MonsterSpawner extends Spawnable{
 		$this->displayEntityWidth = $nbt->getFloat(self::TAG_ENTITY_WIDTH, 1.0);
 		$this->displayEntityHeight = $nbt->getFloat(self::TAG_ENTITY_HEIGHT, 1.0);
 		$this->displayEntityScale = $nbt->getFloat(self::TAG_ENTITY_SCALE, 1.0);
+
 	}
 
 	protected function writeSaveData(CompoundTag $nbt) : void{
@@ -131,4 +133,73 @@ class MonsterSpawner extends Spawnable{
 
 		$nbt->setFloat(self::TAG_ENTITY_SCALE, $this->displayEntityScale);
 	}
+
+	public function getEntityId() : string{
+		return $this->entityTypeId;
+	}
+
+	public function setEntityId(string $id) : void{
+		$this->entityTypeId = $id;
+		$this->clearSpawnCompoundCache();
+		if(isset($this->position) && $this->position->isValid()){
+			$this->position->getWorld()->setBlock($this->position, $this->getBlock(), false);
+		}
+	}
+
+	public function getSpawnDelay() : int{
+		return $this->spawnDelay;
+	}
+
+	public function setSpawnDelay(int $delay) : void{
+		$this->spawnDelay = $delay;
+	}
+
+	public function getMinSpawnDelay() : int{
+		return $this->minSpawnDelay;
+	}
+
+	public function setMinSpawnDelay(int $delay) : void{
+		$this->minSpawnDelay = $delay;
+	}
+
+	public function getMaxSpawnDelay() : int{
+		return $this->maxSpawnDelay;
+	}
+
+	public function setMaxSpawnDelay(int $delay) : void{
+		$this->maxSpawnDelay = $delay;
+	}
+
+	public function getRequiredPlayerRange() : int{
+		return $this->requiredPlayerRange;
+	}
+
+	public function setRequiredPlayerRange(int $range) : void{
+		$this->requiredPlayerRange = $range;
+	}
+
+	public function getMaxNearbyEntities() : int{
+		return $this->maxNearbyEntities;
+	}
+
+	public function setMaxNearbyEntities(int $max) : void{
+		$this->maxNearbyEntities = $max;
+	}
+
+	public function getSpawnRange() : int{
+		return $this->spawnRange;
+	}
+
+	public function setSpawnRange(int $range) : void{
+		$this->spawnRange = $range;
+	}
+
+	public function getSpawnCount() : int{
+		return $this->spawnPerAttempt;
+	}
+
+	public function setSpawnCount(int $count) : void{
+		$this->spawnPerAttempt = $count;
+	}
+
 }

@@ -117,6 +117,7 @@ use pocketmine\utils\SignalHandler;
 use pocketmine\utils\Terminal;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
+use pocketmine\world\backup\WorldBackupManager;
 use pocketmine\world\format\io\WorldProviderManager;
 use pocketmine\world\format\io\WritableWorldProviderManagerEntry;
 use pocketmine\world\generator\Generator;
@@ -130,6 +131,7 @@ use pocketmine\YmlServerProperties as Yml;
 use Ramsey\Uuid\UuidInterface;
 use Symfony\Component\Filesystem\Path;
 use function array_fill;
+use function array_map;
 use function array_sum;
 use function base64_encode;
 use function chr;
@@ -144,6 +146,7 @@ use function filemtime;
 use function fopen;
 use function get_class;
 use function gettype;
+use function in_array;
 use function ini_set;
 use function is_array;
 use function is_dir;
@@ -269,7 +272,7 @@ class Server{
 	private CraftingManager $craftingManager;
 
 	private ResourcePackManager $resourceManager;
-	private \pocketmine\addon\AddonManager $addonManager;
+	private WorldBackupManager $backupManager;
 	private WorldManager $worldManager;
 
 	private int $maxPlayers;
@@ -334,12 +337,19 @@ class Server{
 		return VersionInfo::VERSION()->getFullVersion(true);
 	}
 
+	/**
+	 * Amber-named alias for getPocketMineVersion().
+	 */
+	public function getAmberVersion() : string{
+		return VersionInfo::VERSION()->getFullVersion(true);
+	}
+
 	public function getVersion() : string{
 		return ProtocolInfo::MINECRAFT_VERSION;
 	}
 
 	public function getApiVersion() : string{
-		return VersionInfo::BASE_VERSION;
+		return VersionInfo::COMPATIBLE_API_VERSION;
 	}
 
 	public function isProtocolAllowed(int $protocolId) : bool{
@@ -479,12 +489,12 @@ class Server{
 		return $this->resourceManager;
 	}
 
-	/** Bedrock add-ons (addons/ directory): resource packs, custom items, blocks and entities. */
-	public function getAddonManager() : \pocketmine\addon\AddonManager{
-		return $this->addonManager;
-	}
 	public function getWorldManager() : WorldManager{
 		return $this->worldManager;
+	}
+
+	public function getBackupManager() : WorldBackupManager{
+		return $this->backupManager;
 	}
 
 	public function getAsyncPool() : AsyncPool{
@@ -887,7 +897,7 @@ class Server{
 			$pocketmineYmlPath = Path::join($this->dataPath, "pocketmine.yml");
 			if(!file_exists($pocketmineYmlPath)){
 				$content = Filesystem::fileGetContents(Path::join(\pocketmine\RESOURCE_PATH, "pocketmine.yml"));
-				if(VersionInfo::IS_DEVELOPMENT_BUILD){
+				if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 					$content = str_replace("preferred-channel: stable", "preferred-channel: beta", $content);
 				}
 				@file_put_contents($pocketmineYmlPath, $content);
@@ -919,6 +929,13 @@ class Server{
 				])
 			);
 			$this->educationContentEnabled = $this->configGroup->getPropertyBool(Yml::EDUCATION_ENABLED, true);
+			$nativeSpectator = $this->configGroup->getPropertyBool(Yml::PLAYER_NATIVE_SPECTATOR, true);
+			foreach(TypeConverter::getAll() as $typeConverter){
+				$typeConverter->setNativeSpectator($nativeSpectator);
+			}
+			TypeConverter::addCreationListener(static function(TypeConverter $typeConverter) use ($nativeSpectator) : void{
+				$typeConverter->setNativeSpectator($nativeSpectator);
+			});
 
 			$debugLogLevel = $this->configGroup->getPropertyInt(Yml::DEBUG_LEVEL, 1);
 			if($this->logger instanceof MainLogger){
@@ -941,7 +958,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::language_selected($this->language->getName(), $this->language->getLang())));
 
-			if(VersionInfo::IS_DEVELOPMENT_BUILD){
+			if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 				if(!$this->configGroup->getPropertyBool(Yml::SETTINGS_ENABLE_DEV_BUILDS, false)){
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error1(VersionInfo::NAME)));
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error2()));
@@ -1077,7 +1094,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_info(
 				$this->getName(),
-				(VersionInfo::IS_DEVELOPMENT_BUILD ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
+				(VersionInfo::IS_DEVELOPMENT_BUILD() ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
 			)));
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_license($this->getName())));
 
@@ -1085,18 +1102,12 @@ class Server{
 
 			$this->commandMap = new SimpleCommandMap($this);
 
-			//add-on items, blocks and entities must exist before recipes, worlds and the network tables are built
-			$this->addonManager = new \pocketmine\addon\AddonManager($this, Path::join($this->dataPath, "addons"), $this->logger);
-			$this->addonManager->load();
-			$this->commandMap->register("pocketmine", new \pocketmine\addon\AddonsCommand($this->addonManager));
 			$this->craftingManager = CraftingManagerFromDataHelper::make(BedrockDataFiles::RECIPES);
-			$this->addonManager->registerRecipes($this->craftingManager);
 			if(!$this->educationContentEnabled){
 				CreativeInventory::getInstance()->removeEducationEditionContent();
 			}
 
 			$this->resourceManager = new ResourcePackManager(Path::join($this->dataPath, "resource_packs"), $this->logger);
-			$this->addonManager->registerResourcePacks($this->resourceManager);
 			$pluginGraylist = null;
 			$graylistFile = Path::join($this->dataPath, "plugin_list.yml");
 			if(!file_exists($graylistFile)){
@@ -1130,6 +1141,14 @@ class Server{
 			$this->worldManager = new WorldManager($this, Path::join($this->dataPath, "worlds"), $providerManager);
 			$this->worldManager->setAutoSave($this->configGroup->getConfigBool(ServerProperties::AUTO_SAVE, $this->worldManager->getAutoSave()));
 			$this->worldManager->setAutoSaveInterval($this->configGroup->getPropertyInt(Yml::TICKS_PER_AUTOSAVE, $this->worldManager->getAutoSaveInterval()));
+			$this->backupManager = new WorldBackupManager(
+				$this,
+				Path::join($this->dataPath, "backups"),
+				$this->configGroup->getPropertyBool(Yml::BACKUPS_ENABLED, false),
+				max(1, $this->configGroup->getPropertyInt(Yml::BACKUPS_INTERVAL_MINUTES, 360)) * 60,
+				max(0, $this->configGroup->getPropertyInt(Yml::BACKUPS_KEEP, 7)),
+				array_map(strval(...), (array) $this->configGroup->getProperty(Yml::BACKUPS_WORLDS, []))
+			);
 
 			$this->updater = new UpdateChecker($this, $this->configGroup->getPropertyString(Yml::AUTO_UPDATER_HOST, "update.pmmp.io"));
 
@@ -1163,9 +1182,6 @@ class Server{
 				return;
 			}
 
-			//add-on runtime: scripts, natural spawning and the event bridge, once worlds and plugins are up
-			$this->addonManager->start();
-
 			CameraPresetRegistry::getInstance()->freeze();
 
 			if(!$this->startupPrepareNetworkInterfaces()){
@@ -1184,18 +1200,11 @@ class Server{
 			$highlight = TextFormat::AQUA;
 			$reset = TextFormat::RESET;
 			$github = VersionInfo::GITHUB_URL;
-			$splash = "\n\n";
-			foreach([
-				KnownTranslationFactory::pocketmine_server_url_discord("{$highlight}https://discord.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_docs("{$highlight}https://doc.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_sourceCode("{$highlight}{$github}{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_freePlugins("{$highlight}https://poggit.pmmp.io/plugins{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_donations("{$highlight}https://patreon.com/pocketminemp{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_translations("{$highlight}https://translate.pocketmine.net{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_bugReporting("{$highlight}{$github}/issues{$reset}")
-			] as $link){
-				$splash .= "- " . $this->language->translate($link) . "\n";
-			}
+			$version = VersionInfo::VERSION();
+
+			$splash = "\n" .
+				"  " . TextFormat::GOLD . VersionInfo::NAME . " " . $version->getFullVersion(true) . $reset . "\n" .
+				"  " . TextFormat::GRAY . "GitHub: " . $highlight . $github . $reset . "\n";
 			$this->logger->info($splash);
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_startFinished(strval(round(microtime(true) - $this->startTime, 3)))));
@@ -1628,10 +1637,6 @@ class Server{
 
 			$this->shutdown();
 
-			if(isset($this->addonManager)){
-				$this->addonManager->shutdown();
-			}
-
 			if(isset($this->pluginManager)){
 				$this->logger->debug("Disabling all plugins");
 				$this->pluginManager->disablePlugins();
@@ -1775,7 +1780,7 @@ class Server{
 
 			$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_crash_submit($crashDumpPath)));
 
-			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, true)){
+			if($this->configGroup->getPropertyBool(Yml::AUTO_REPORT_ENABLED, false)){
 				$report = true;
 
 				$stamp = Path::join($this->dataPath, "crashdumps", ".last_crash");
@@ -1978,8 +1983,6 @@ class Server{
 		$this->pluginManager->tickSchedulers($this->tickCounter);
 		Timings::$scheduler->stopTiming();
 
-		$this->addonManager->tick($this->tickCounter);
-
 		Timings::$schedulerAsync->startTiming();
 		$this->asyncPool->collectTasks();
 		Timings::$schedulerAsync->stopTiming();
@@ -1991,6 +1994,7 @@ class Server{
 		Timings::$connection->stopTiming();
 
 		if(($this->tickCounter % self::TARGET_TICKS_PER_SECOND) === 0){
+			$this->backupManager->tick();
 			if($this->doTitleTick){
 				$this->titleTick();
 			}

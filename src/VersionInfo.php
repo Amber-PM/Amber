@@ -31,7 +31,8 @@ use function str_repeat;
 
 final class VersionInfo{
 	public const NAME = "AmberPM";
-	public const BASE_VERSION = "5.44.2";
+	public const BASE_VERSION = "1.6.0";
+	public const COMPATIBLE_API_VERSION = "5.44.2";
 	public const IS_DEVELOPMENT_BUILD = true;
 	public const BUILD_CHANNEL = "stable";
 	public const GITHUB_URL = "https://github.com/Amber-PM/Amber";
@@ -55,21 +56,59 @@ final class VersionInfo{
 		//NOOP
 	}
 
+	/** @var array<string, mixed>|null */
+	private static ?array $pharMetadata = null;
+
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	private static function getPharMetadata() : ?array{
+		if(self::$pharMetadata === null && \Phar::running(true) !== ""){
+			$pharPath = \Phar::running(false);
+			$phar = \Phar::isValidPharFilename($pharPath) ? new \Phar($pharPath) : new \PharData($pharPath);
+			$meta = $phar->getMetadata();
+			if(is_array($meta)){
+				self::$pharMetadata = $meta;
+			}
+		}
+
+		return self::$pharMetadata;
+	}
+
+	/**
+	 * Overrides artifact metadata for build tools and tests.
+	 * @internal
+	 * @param array<string, mixed>|null $metadata
+	 */
+	public static function setPharMetadataOverride(?array $metadata) : void{
+		self::reset();
+		self::$pharMetadata = $metadata;
+	}
+
+	/**
+	 * @internal
+	 */
+	public static function reset() : void{
+		self::$pharMetadata = null;
+		self::$gitHash = null;
+		self::$buildNumber = null;
+		self::$isDev = null;
+		self::$channel = null;
+		self::$effectiveBaseVersion = null;
+		self::$fullVersion = null;
+	}
+
 	private static ?string $gitHash = null;
 
 	public static function GIT_HASH() : string{
 		if(self::$gitHash === null){
 			$gitHash = str_repeat("00", 20);
 
-			if(\Phar::running(true) === ""){
+			$meta = self::getPharMetadata();
+			if(is_array($meta) && isset($meta["git"]) && is_string($meta["git"])){
+				$gitHash = $meta["git"];
+			}elseif(\Phar::running(true) === ""){
 				$gitHash = Git::getRepositoryStatePretty(\pocketmine\PATH);
-			}else{
-				$pharPath = \Phar::running(false);
-				$phar = \Phar::isValidPharFilename($pharPath) ? new \Phar($pharPath) : new \PharData($pharPath);
-				$meta = $phar->getMetadata();
-				if(isset($meta["git"])){
-					$gitHash = $meta["git"];
-				}
 			}
 
 			self::$gitHash = $gitHash;
@@ -83,24 +122,74 @@ final class VersionInfo{
 	public static function BUILD_NUMBER() : int{
 		if(self::$buildNumber === null){
 			self::$buildNumber = 0;
-			if(\Phar::running(true) !== ""){
-				$pharPath = \Phar::running(false);
-				$phar = \Phar::isValidPharFilename($pharPath) ? new \Phar($pharPath) : new \PharData($pharPath);
-				$meta = $phar->getMetadata();
-				if(is_array($meta) && isset($meta["build"]) && is_int($meta["build"])){
-					self::$buildNumber = $meta["build"];
-				}
+			$meta = self::getPharMetadata();
+			if(is_array($meta) && isset($meta["build"]) && is_int($meta["build"])){
+				self::$buildNumber = $meta["build"];
 			}
 		}
 
 		return self::$buildNumber;
 	}
 
+	private static ?bool $isDev = null;
+
+	public static function IS_DEVELOPMENT_BUILD() : bool{
+		if(self::$isDev === null){
+			self::$isDev = true;
+			$meta = self::getPharMetadata();
+			if(is_array($meta) && isset($meta["isDev"]) && is_bool($meta["isDev"])){
+				self::$isDev = $meta["isDev"];
+			}
+		}
+
+		return self::$isDev;
+	}
+
+	public static function isDevelopmentBuild() : bool{
+		return self::IS_DEVELOPMENT_BUILD();
+	}
+
+	private static ?string $channel = null;
+
+	public static function BUILD_CHANNEL() : string{
+		if(self::$channel === null){
+			self::$channel = self::BUILD_CHANNEL;
+			$meta = self::getPharMetadata();
+			if(is_array($meta) && isset($meta["channel"]) && is_string($meta["channel"])){
+				self::$channel = $meta["channel"];
+			}
+		}
+
+		return self::$channel;
+	}
+
+	public static function getChannel() : string{
+		return self::BUILD_CHANNEL();
+	}
+
+	private static ?string $effectiveBaseVersion = null;
+
+	public static function BASE_VERSION() : string{
+		if(self::$effectiveBaseVersion === null){
+			self::$effectiveBaseVersion = self::BASE_VERSION;
+			$meta = self::getPharMetadata();
+			if(is_array($meta) && isset($meta["baseVersion"]) && is_string($meta["baseVersion"])){
+				self::$effectiveBaseVersion = $meta["baseVersion"];
+			}
+		}
+
+		return self::$effectiveBaseVersion;
+	}
+
+	public static function getCompatibleApiVersion() : string{
+		return self::COMPATIBLE_API_VERSION;
+	}
+
 	private static ?VersionString $fullVersion = null;
 
 	public static function VERSION() : VersionString{
 		if(self::$fullVersion === null){
-			self::$fullVersion = new VersionString(self::BASE_VERSION, self::IS_DEVELOPMENT_BUILD, self::BUILD_NUMBER());
+			self::$fullVersion = new VersionString(self::BASE_VERSION(), self::IS_DEVELOPMENT_BUILD(), self::BUILD_NUMBER());
 		}
 		return self::$fullVersion;
 	}

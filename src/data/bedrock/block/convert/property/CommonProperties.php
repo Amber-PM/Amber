@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -79,6 +79,7 @@ final class CommonProperties{
 
 	/** @phpstan-var ValueFromIntProperty<AnyFacing, int> */
 	public readonly ValueFromIntProperty $anyFacingClassic;
+	public readonly ValueFromIntProperty $anyFacingPiston;
 
 	/** @phpstan-var ValueSetFromIntProperty<MultiAnyFacing, int> */
 	public readonly ValueSetFromIntProperty $multiFacingFlags;
@@ -238,6 +239,12 @@ final class CommonProperties{
 		$this->anyFacingClassic = new ValueFromIntProperty(
 			StateNames::FACING_DIRECTION,
 			$vm->facing,
+			fn(AnyFacing $b) => $b->getFacing(),
+			fn(AnyFacing $b, int $v) => $b->setFacing($v)
+		);
+		$this->anyFacingPiston = new ValueFromIntProperty(
+			StateNames::FACING_DIRECTION,
+			$vm->facingEndRod,
 			fn(AnyFacing $b) => $b->getFacing(),
 			fn(AnyFacing $b, int $v) => $b->setFacing($v)
 		);

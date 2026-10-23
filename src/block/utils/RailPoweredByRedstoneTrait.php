@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block\utils;
 
 use pocketmine\data\runtime\RuntimeDataDescriber;
+use pocketmine\world\redstone\RedstoneEngine;
 
 trait RailPoweredByRedstoneTrait{
 	use PoweredByRedstoneTrait;
@@ -31,5 +32,12 @@ trait RailPoweredByRedstoneTrait{
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
 		parent::describeBlockOnlyState($w);
 		$w->bool($this->powered);
+	}
+
+	public function onRedstoneUpdate(RedstoneEngine $engine) : void{
+		$powered = $engine->getReceivedPower($this->position) > 0;
+		if($powered !== $this->powered){
+			$engine->getWorld()->setBlock($this->position, $this->setPowered($powered));
+		}
 	}
 }

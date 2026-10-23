@@ -59,6 +59,10 @@ class EffectManager extends EffectCollection{
 	}
 
 	public function add(EffectInstance $effect) : bool{
+		if(!$this->entity->isAlive()){
+			return false;
+		}
+
 		$index = spl_object_id($effect->getType());
 		$oldEffect = $this->effects[$index] ?? null;
 

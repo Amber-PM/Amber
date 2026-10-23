@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\LeverFacing;
+use pocketmine\block\utils\RedstoneSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\math\Axis;
@@ -32,10 +33,11 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\redstone\RedstoneEngine;
 use pocketmine\world\sound\RedstonePowerOffSound;
 use pocketmine\world\sound\RedstonePowerOnSound;
 
-class Lever extends Flowable{
+class Lever extends Flowable implements RedstoneSource{
 	protected LeverFacing $facing = LeverFacing::UP_AXIS_X;
 	protected bool $activated = false;
 
@@ -106,4 +108,8 @@ class Lever extends Flowable{
 	}
 
 	//TODO
+
+	public function getRedstoneOutput(int $face, bool $strongOnly, RedstoneEngine $engine) : int{
+		return $this->activated && (!$strongOnly || $face === Facing::opposite($this->facing->getFacing())) ? 15 : 0;
+	}
 }
