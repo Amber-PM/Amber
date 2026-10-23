@@ -706,7 +706,7 @@ final class PistonNativeWorldTest extends TestCase{
 						self::assertTrue($piston->retract());
 						$this->finishMovement($world, new \pocketmine\math\Vector3(8, 64, 8));
 					}
-					foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+					foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_44, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
 						$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
 						$packets = $world->createBlockUpdatePackets($converter, [new \pocketmine\math\Vector3(8, 64, 8)]);
 						self::assertCount(3, $packets);
@@ -961,7 +961,7 @@ final class PistonNativeWorldTest extends TestCase{
 		$world->getTileAt(15, 64, 1)->getInventory()->setItem(0, VanillaItems::DIAMOND()->setCount(64));
 		self::assertTrue($world->getBlockAt(14, 64, 1)->extend());
 		$tile = $world->getTileAt(16, 64, 1);
-		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_44, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
 			$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
 			$spawn = $tile->getSpawnCompound($converter);
 			self::assertSame("MovingBlock", $spawn->getString("id"));

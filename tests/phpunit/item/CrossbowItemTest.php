@@ -99,7 +99,7 @@ final class CrossbowItemTest extends TestCase{
 
 	public function testNetworkChargeIncludesClientLoadedState() : void{
 		$crossbow = VanillaItems::CROSSBOW()->setChargedItem(VanillaItems::ARROW());
-		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_44, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
 			$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
 			$net = $converter->coreItemStackToNet($crossbow);
 			$tag = $converter->deserializeItemStackExtraData($net->getRawExtraData(), $net->getId())->getNbt();
