@@ -63,3 +63,36 @@ Equivalence argument for the applied part: with `$players === null` and no handl
 | `php -l` and `phpstan` | `php -l` on `World.php` and the new files: no syntax errors. `phpstan analyse`: `[OK] No errors` on the owner machine |
 | Benchmark, 100 players, 200000 calls, PHP 8.2.29 ZTS | MEASURED on one machine, two runs: null players 426.11 ms and 435.96 ms; explicit viewers (comparison still executed) 539.74 ms and 514.36 ms; difference 113.62 ms and 78.41 ms, about 390 to 570 ns per call. Synthetic: one chunk, no real sessions, isolated routing cost; not a TPS measurement |
 | Claim that the default path skips one chunk lookup and one array comparison per call | Confirmed by reading the code; the benchmark above measures the cost of that comparison in isolation |
+
+## Phase 4 - F-04 (investigation and characterization tests, no production change)
+
+Findings come from reading the code. Nothing about load time or memory is measured yet.
+
+| Classification | Location | Evidence | Minimal fix | Regression test |
+| --- | --- | --- | --- | --- |
+| CONFIRMED BY READING | `NetworkSession::setProtocolId` | Calls `TypeConverter::getInstance($protocolId)`; the constructor loads the block palette (`BlockStateDictionary::loadFromString`, one `upgrade()` per state), item dictionary, `ItemIdMetaDowngrader` and `ItemTranslator` on first use | Pending owner decision | `TypeConverterInstanceSharingTest` |
+| CONFIRMED BY READING | `Server::startupPrepareNetworkInterfaces` | Only `TypeConverter::getInstance()` of `CURRENT_PROTOCOL` is preloaded; 32 protocols are accepted | Pending owner decision | None yet |
+| ALREADY APPLIED | `BlockTranslator::$loaded`, `ItemTypeDictionaryFromDataHelper::$loaded`, `ChunkCache::request` | 32 protocols map to 23 block datasets and 27 item lists; chunk preparation is grouped by `getChunkProtocolId()` | None | `ChunkProtocolGroupTest`, `TypeConverterInstanceSharingTest` |
+| CONFIRMED BY READING | `ChunkRequestTask::onRun` | Builds a full `TypeConverter` per chunk group in each worker, but `ChunkSerializer::serializeFullChunk` only uses `getBlockTranslator()` and tiles arrive pre-serialized | Needs a `ChunkSerializer` signature decision | None yet |
+| CONFIRMED BY READING | Worker-side state | Data files and `Global*Handlers` statics are rebuilt per thread; the only main-thread-only state is `nativeSpectator`, set by the creation listener in `Server.php`, which only affects `coreGameModeToProtocol` | None | None |
+| HYPOTHESIS | Worker memory | A block dataset is about 2 MB of NBT on disk; its in-memory size is unknown and may approach the 256 MB worker hard limit if a worker serves many chunk groups | Measure first | `TypeConverterLoadBenchmark.php` |
+| PRE-EXISTING FAILURE | `ProtocolResourceIndependenceTest`, datasets 2193 and 9999 | `check-protocol-resources.php` l. 43 asserts a fixed `ACCEPTED_PROTOCOL` after replacing `CURRENT_PROTOCOL`, but `ProtocolInfo::ACCEPTED_PROTOCOL` contains `self::CURRENT_PROTOCOL` (l. 66 of the vendored file). Fails identically with the Phase 4 files stashed | Out of scope; not changed | The test itself |
+
+Admission (`isProtocolAllowed`, `SessionStartPacketHandler`) and protocol selection are not touched.
+
+## Phase 4 changes
+
+- `tests/phpunit/network/mcpe/convert/TypeConverterInstanceSharingTest.php`: pins instance caching, shared translators and item dictionaries for protocols with the same data files, and that `getChunkProtocolId()` is a fixed point whose group members share the representative's `BlockTranslator`.
+- `tests/bench/TypeConverterLoadBenchmark.php`: time and memory delta of loading each accepted protocol in order, plus the number of chunk groups. Run with `php tests/bench/TypeConverterLoadBenchmark.php [--blocks] [--protocols=a,b]`; use `php -dmemory_limit=256M` to reproduce the worker limit.
+- No production file was modified.
+
+## Phase 4 verification status
+
+| Check | Result |
+| --- | --- |
+| `TypeConverterInstanceSharingTest` | PASSED on the owner machine: PHP 8.2.29, PHPUnit 10.5.63, 5 tests, 196 assertions (`-dmemory_limit=2G`, 22 s, 210 MB) |
+| `tests/phpunit/network/mcpe/cache` | PASSED: 1 test, 97 assertions |
+| `tests/phpunit/network/mcpe/convert` | 17 of 19 passed; the 2 failures are `ProtocolResourceIndependenceTest` (see PRE-EXISTING FAILURE) |
+| `phpstan analyse` | `[OK] No errors` |
+| `TypeConverterLoadBenchmark.php` | NOT EXECUTED yet |
+| Worker RAM against the 256 MB limit | NOT MEASURED |
