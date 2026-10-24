@@ -38,6 +38,40 @@ use function strtolower;
 
 class GameRules{
 
+	public const COMMAND_BLOCK_OUTPUT = GameRule::COMMAND_BLOCK_OUTPUT;
+	public const COMMAND_BLOCKS_ENABLED = GameRule::COMMAND_BLOCKS_ENABLED;
+	public const DO_DAYLIGHT_CYCLE = GameRule::DO_DAYLIGHT_CYCLE;
+	public const DO_ENTITY_DROPS = GameRule::DO_ENTITY_DROPS;
+	public const DO_FIRE_TICK = GameRule::DO_FIRE_TICK;
+	public const DO_IMMEDIATE_RESPAWN = GameRule::DO_IMMEDIATE_RESPAWN;
+	public const DO_INSOMNIA = GameRule::DO_INSOMNIA;
+	public const DO_LIMITED_CRAFTING = GameRule::DO_LIMITED_CRAFTING;
+	public const DO_MOB_LOOT = GameRule::DO_MOB_LOOT;
+	public const DO_MOB_SPAWNING = GameRule::DO_MOB_SPAWNING;
+	public const DO_TILE_DROPS = GameRule::DO_TILE_DROPS;
+	public const DO_WEATHER_CYCLE = GameRule::DO_WEATHER_CYCLE;
+	public const DROWNING_DAMAGE = GameRule::DROWNING_DAMAGE;
+	public const FALL_DAMAGE = GameRule::FALL_DAMAGE;
+	public const FIRE_DAMAGE = GameRule::FIRE_DAMAGE;
+	public const FREEZE_DAMAGE = GameRule::FREEZE_DAMAGE;
+	public const FUNCTION_COMMAND_LIMIT = GameRule::FUNCTION_COMMAND_LIMIT;
+	public const KEEP_INVENTORY = GameRule::KEEP_INVENTORY;
+	public const LOCATOR_BAR = GameRule::LOCATOR_BAR;
+	public const MAX_COMMAND_CHAIN_LENGTH = GameRule::MAX_COMMAND_CHAIN_LENGTH;
+	public const MOB_GRIEFING = GameRule::MOB_GRIEFING;
+	public const NATURAL_REGENERATION = GameRule::NATURAL_REGENERATION;
+	public const PLAYERS_SLEEPING_PERCENTAGE = GameRule::PLAYERS_SLEEPING_PERCENTAGE;
+	public const PVP = GameRule::PVP;
+	public const RANDOM_TICK_SPEED = GameRule::RANDOM_TICK_SPEED;
+	public const RECIPES_UNLOCK = GameRule::RECIPES_UNLOCK;
+	public const RESPAWN_BLOCKS_EXPLODE = GameRule::RESPAWN_BLOCKS_EXPLODE;
+	public const SEND_COMMAND_FEEDBACK = GameRule::SEND_COMMAND_FEEDBACK;
+	public const SHOW_COORDINATES = GameRule::SHOW_COORDINATES;
+	public const SHOW_DEATH_MESSAGES = GameRule::SHOW_DEATH_MESSAGES;
+	public const SHOW_TAGS = GameRule::SHOW_TAGS;
+	public const SPAWN_RADIUS = GameRule::SPAWN_RADIUS;
+	public const TNT_EXPLODES = GameRule::TNT_EXPLODES;
+
 	/** @var array<string, GameRuleDefinition> */
 	private array $definitions = [];
 
