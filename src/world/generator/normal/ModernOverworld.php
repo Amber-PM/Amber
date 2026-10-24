@@ -58,6 +58,10 @@ class ModernOverworld extends Generator{
 	private int $gravelId;
 	private int $snowId;
 	private int $packedIceId;
+	private int $redSandId;
+	private int $terracottaId;
+	private int $myceliumId;
+	private int $mudId;
 
 	public function __construct(int $seed, string $preset){
 		parent::__construct($seed, $preset);
@@ -77,6 +81,10 @@ class ModernOverworld extends Generator{
 		$this->gravelId = VanillaBlocks::GRAVEL()->getStateId();
 		$this->snowId = VanillaBlocks::SNOW()->getStateId();
 		$this->packedIceId = VanillaBlocks::PACKED_ICE()->getStateId();
+		$this->redSandId = VanillaBlocks::RED_SAND()->getStateId();
+		$this->terracottaId = VanillaBlocks::HARDENED_CLAY()->getStateId();
+		$this->myceliumId = VanillaBlocks::MYCELIUM()->getStateId();
+		$this->mudId = VanillaBlocks::MUD()->getStateId();
 	}
 
 	public function generateChunk(ChunkManager $world, int $chunkX, int $chunkZ) : void{
@@ -97,6 +105,7 @@ class ModernOverworld extends Generator{
 		for($subY = Chunk::MIN_SUBCHUNK_INDEX; $subY <= Chunk::MAX_SUBCHUNK_INDEX; ++$subY){
 			$midY = ($subY << SubChunk::COORD_BIT_SIZE) + 8;
 			$subBiome = $this->multiNoise->pickBiome($centerSample, $midY);
+			/** @phpstan-ignore class.notFound */
 			$chunk->setSubChunk($subY, new SubChunk(Block::EMPTY_STATE_ID, [], new PalettedBlockArray($subBiome)));
 		}
 
@@ -224,6 +233,33 @@ class ModernOverworld extends Generator{
 					$chunk->setBlockStateId($x, $highestY, $z, $this->sandId);
 					for($d = 1; $d <= 3 && ($highestY - $d) > -60; ++$d){
 						$chunk->setBlockStateId($x, $highestY - $d, $z, $this->sandId);
+					}
+					continue;
+				}
+
+				// Badlands / Mesa
+				if($biomeId === BiomeIds::MESA){
+					$chunk->setBlockStateId($x, $highestY, $z, $this->redSandId);
+					for($d = 1; $d <= 3 && ($highestY - $d) > -60; ++$d){
+						$chunk->setBlockStateId($x, $highestY - $d, $z, $this->terracottaId);
+					}
+					continue;
+				}
+
+				// Mushroom island
+				if($biomeId === BiomeIds::MUSHROOM_ISLAND){
+					$chunk->setBlockStateId($x, $highestY, $z, $this->myceliumId);
+					for($d = 1; $d <= 3 && ($highestY - $d) > -60; ++$d){
+						$chunk->setBlockStateId($x, $highestY - $d, $z, $this->dirtId);
+					}
+					continue;
+				}
+
+				// Mangrove swamp
+				if($biomeId === BiomeIds::MANGROVE_SWAMP){
+					$chunk->setBlockStateId($x, $highestY, $z, $this->mudId);
+					for($d = 1; $d <= 3 && ($highestY - $d) > -60; ++$d){
+						$chunk->setBlockStateId($x, $highestY - $d, $z, $this->mudId);
 					}
 					continue;
 				}

@@ -30,13 +30,25 @@ use pocketmine\math\VectorMath;
 use pocketmine\utils\Random;
 use pocketmine\world\ChunkManager;
 use pocketmine\world\format\Chunk;
+use function array_key_exists;
 use function sin;
+use function sqrt;
 use const M_PI;
 
 final class ModernOrePopulator implements Populator{
 
 	/** @var list<array{stoneOre: Block, deepslateOre: Block, size: int, attempts: int, minY: int, maxY: int, peakY: ?int}> */
 	private array $rules = [];
+
+	/** @var array<int, true> */
+	private array $stoneReplaceableTypeIds;
+	/** @var array<int, true> */
+	private array $deepslateReplaceableTypeIds;
+
+	/** @var array<int, true> */
+	private array $stoneReplaceableStateIds;
+	/** @var array<int, true> */
+	private array $deepslateReplaceableStateIds;
 
 	public function __construct(){
 		$this->rules = [
@@ -110,6 +122,16 @@ final class ModernOrePopulator implements Populator{
 				"maxY" => 16,
 				"peakY" => -64
 			],
+			// Emerald: Y -16 to 320, peak 232 (triangle distribution in 1.18+)
+			[
+				"stoneOre" => VanillaBlocks::EMERALD_ORE(),
+				"deepslateOre" => VanillaBlocks::DEEPSLATE_EMERALD_ORE(),
+				"size" => 3,
+				"attempts" => 12,
+				"minY" => -16,
+				"maxY" => 320,
+				"peakY" => 232
+			],
 			// Dirt in stone: Y 0 to 160
 			[
 				"stoneOre" => VanillaBlocks::DIRT(),
@@ -130,6 +152,28 @@ final class ModernOrePopulator implements Populator{
 				"maxY" => 160,
 				"peakY" => null
 			]
+		];
+
+		$this->stoneReplaceableTypeIds = [
+			BlockTypeIds::STONE => true,
+			BlockTypeIds::GRANITE => true,
+			BlockTypeIds::DIORITE => true,
+			BlockTypeIds::ANDESITE => true,
+		];
+		$this->deepslateReplaceableTypeIds = [
+			BlockTypeIds::DEEPSLATE => true,
+			BlockTypeIds::TUFF => true,
+		];
+
+		$this->stoneReplaceableStateIds = [
+			VanillaBlocks::STONE()->getStateId() => true,
+			VanillaBlocks::GRANITE()->getStateId() => true,
+			VanillaBlocks::DIORITE()->getStateId() => true,
+			VanillaBlocks::ANDESITE()->getStateId() => true,
+		];
+		$this->deepslateReplaceableStateIds = [
+			VanillaBlocks::DEEPSLATE()->getStateId() => true,
+			VanillaBlocks::TUFF()->getStateId() => true,
 		];
 	}
 
@@ -155,22 +199,31 @@ final class ModernOrePopulator implements Populator{
 	}
 
 	private function sampleY(Random $random, int $minY, int $maxY, ?int $peakY) : int{
-		if($peakY === null){
+		if($peakY === null || $minY >= $maxY){
 			return $random->nextRange($minY, $maxY);
 		}
 
-		// 1.18 Triangular distribution
-		if($peakY === $minY){
-			// Skewed down towards minY
+		if($peakY <= $minY){
+			// Skewed down towards minY (e.g. Diamond, Redstone)
 			$diff = $maxY - $minY;
 			$r = $random->nextFloat();
 			return (int) ($minY + $diff * (1.0 - (1.0 - $r) ** 2));
 		}
 
-		// Centered triangular around peakY
-		$r1 = $random->nextRange($minY, $maxY);
-		$r2 = $random->nextRange($minY, $maxY);
-		return (int) (($r1 + $r2) / 2);
+		if($peakY >= $maxY){
+			// Skewed up towards maxY
+			$diff = $maxY - $minY;
+			$r = $random->nextFloat();
+			return (int) ($minY + $diff * ($r ** 2));
+		}
+
+		// Exact mathematical triangular distribution with mode = peakY
+		$u = $random->nextFloat();
+		$f = ($peakY - $minY) / ($maxY - $minY);
+		if($u < $f){
+			return (int) ($minY + sqrt($u * ($maxY - $minY) * ($peakY - $minY)));
+		}
+		return (int) ($maxY - sqrt((1.0 - $u) * ($maxY - $minY) * ($maxY - $peakY)));
 	}
 
 	private function placeVein(
@@ -191,6 +244,12 @@ final class ModernOrePopulator implements Populator{
 		$z2 = $z + 8 - $offset->y;
 		$y1 = $y + $random->nextBoundedInt(3) + 2;
 		$y2 = $y + $random->nextBoundedInt(3) + 2;
+
+		$stoneOreStateId = $stoneOre->getStateId();
+		$deepslateOreStateId = $deepslateOre->getStateId();
+
+		/** @var array<int, ?Chunk> $chunkCache */
+		$chunkCache = [];
 
 		for($count = 0; $count <= $clusterSize; ++$count){
 			$seedFactor = $count / $clusterSize;
@@ -214,6 +273,9 @@ final class ModernOrePopulator implements Populator{
 				}
 
 				for($py = $startY; $py <= $endY; ++$py){
+					if($py < -64 || $py > 319){
+						continue;
+					}
 					$sizeY = ($py + 0.5 - $cy) / $size;
 					$sizeY2 = $sizeY * $sizeY;
 					if($sizeX2 + $sizeY2 >= 1.0){
@@ -226,13 +288,27 @@ final class ModernOrePopulator implements Populator{
 							continue;
 						}
 
-						$block = $world->getBlockAt($px, $py, $pz);
-						$typeId = $block->getTypeId();
+						$chunkHash = (($px >> 4) << 32) ^ ($pz >> 4);
+						if(!array_key_exists($chunkHash, $chunkCache)){
+							$chunkCache[$chunkHash] = $world->getChunk($px >> 4, $pz >> 4);
+						}
+						$targetChunk = $chunkCache[$chunkHash];
 
-						if($typeId === BlockTypeIds::STONE){
-							$world->setBlockAt($px, $py, $pz, $stoneOre);
-						}elseif($typeId === BlockTypeIds::DEEPSLATE){
-							$world->setBlockAt($px, $py, $pz, $deepslateOre);
+						if($targetChunk !== null){
+							$stateId = $targetChunk->getBlockStateId($px & 0xf, $py, $pz & 0xf);
+							if(isset($this->stoneReplaceableStateIds[$stateId])){
+								$targetChunk->setBlockStateId($px & 0xf, $py, $pz & 0xf, $stoneOreStateId);
+							}elseif(isset($this->deepslateReplaceableStateIds[$stateId])){
+								$targetChunk->setBlockStateId($px & 0xf, $py, $pz & 0xf, $deepslateOreStateId);
+							}
+						}else{
+							$block = $world->getBlockAt($px, $py, $pz);
+							$typeId = $block->getTypeId();
+							if(isset($this->stoneReplaceableTypeIds[$typeId])){
+								$world->setBlockAt($px, $py, $pz, $stoneOre);
+							}elseif(isset($this->deepslateReplaceableTypeIds[$typeId])){
+								$world->setBlockAt($px, $py, $pz, $deepslateOre);
+							}
 						}
 					}
 				}
