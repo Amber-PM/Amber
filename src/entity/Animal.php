@@ -139,8 +139,8 @@ abstract class Animal extends Mob implements Ageable{
 		parent::tickAI($tickDiff);
 	}
 
-	public function readSaveData(CompoundTag $nbt) : void{
-		parent::readSaveData($nbt);
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
 
 		$age = $nbt->getInt(self::TAG_AGE, 0);
 		if($age < 0){
@@ -157,12 +157,14 @@ abstract class Animal extends Mob implements Ageable{
 		$this->breedingCooldown = $nbt->getInt(self::TAG_BREEDING_COOLDOWN, 0);
 	}
 
-	protected function writeSaveData(CompoundTag $nbt) : void{
-		parent::writeSaveData($nbt);
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
 
 		$nbt->setInt(self::TAG_AGE, $this->baby ? -$this->babyAge : 0);
 		$nbt->setInt(self::TAG_IN_LOVE, $this->inLoveTicks);
 		$nbt->setInt(self::TAG_BREEDING_COOLDOWN, $this->breedingCooldown);
+
+		return $nbt;
 	}
 
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{

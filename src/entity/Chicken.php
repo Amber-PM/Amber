@@ -101,13 +101,14 @@ class Chicken extends Animal{
 		return VanillaItems::CHICKEN_SPAWN_EGG();
 	}
 
-	public function readSaveData(CompoundTag $nbt) : void{
-		parent::readSaveData($nbt);
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
 		$this->eggLayTime = $nbt->getInt(self::TAG_EGG_LAY_TIME, mt_rand(6000, 12000));
 	}
 
-	protected function writeSaveData(CompoundTag $nbt) : void{
-		parent::writeSaveData($nbt);
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
 		$nbt->setInt(self::TAG_EGG_LAY_TIME, $this->eggLayTime);
+		return $nbt;
 	}
 }

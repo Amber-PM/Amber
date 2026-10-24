@@ -7,6 +7,7 @@ namespace pocketmine\entity;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\utils\DyeColor;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\entity\ai\goal\EatGrassGoal;
 use pocketmine\item\Dye;
 use pocketmine\item\Item;
@@ -180,22 +181,23 @@ class Sheep extends Animal{
 		return VanillaItems::SHEEP_SPAWN_EGG();
 	}
 
-	public function readSaveData(CompoundTag $nbt) : void{
-		parent::readSaveData($nbt);
-		$colorId = $nbt->getByte(self::TAG_COLOR, DyeColor::WHITE->id());
-		$this->color = DyeColor::fromId($colorId) ?? DyeColor::WHITE;
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
+		$colorId = $nbt->getByte(self::TAG_COLOR, DyeColorIdMap::getInstance()->toId(DyeColor::WHITE));
+		$this->color = DyeColorIdMap::getInstance()->fromId($colorId) ?? DyeColor::WHITE;
 		$this->setSheared($nbt->getByte(self::TAG_SHEARED, 0) !== 0);
 	}
 
-	protected function writeSaveData(CompoundTag $nbt) : void{
-		parent::writeSaveData($nbt);
-		$nbt->setByte(self::TAG_COLOR, $this->color->id());
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
+		$nbt->setByte(self::TAG_COLOR, DyeColorIdMap::getInstance()->toId($this->color));
 		$nbt->setByte(self::TAG_SHEARED, $this->sheared ? 1 : 0);
+		return $nbt;
 	}
 
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
-		$properties->setByte(EntityMetadataProperties::COLOR, $this->color->id());
+		$properties->setByte(EntityMetadataProperties::COLOR, DyeColorIdMap::getInstance()->toId($this->color));
 		$properties->setGenericFlag(EntityMetadataFlags::SHEARED, $this->sheared);
 	}
 }

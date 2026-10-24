@@ -143,13 +143,8 @@ class Creeper extends Monster{
 		$this->flagForDespawn();
 	}
 
-	public function attack(EntityDamageEvent $source) : void{
-		if($source->getCause() === EntityDamageEvent::CAUSE_LIGHTNING){
-			$this->setPowered(true);
-			$source->cancel();
-			return;
-		}
-		parent::attack($source);
+	public function onStruckByLightning() : void{
+		$this->setPowered(true);
 	}
 
 	public function getDrops() : array{
@@ -184,18 +179,19 @@ class Creeper extends Monster{
 		return VanillaItems::CREEPER_SPAWN_EGG();
 	}
 
-	public function readSaveData(CompoundTag $nbt) : void{
-		parent::readSaveData($nbt);
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
 		$this->setPowered($nbt->getByte(self::TAG_POWERED, 0) !== 0);
 		$this->setIgnited($nbt->getByte(self::TAG_IGNITED, 0) !== 0);
 		$this->setFuseTicks($nbt->getShort(self::TAG_FUSE, 0));
 	}
 
-	protected function writeSaveData(CompoundTag $nbt) : void{
-		parent::writeSaveData($nbt);
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
 		$nbt->setByte(self::TAG_POWERED, $this->powered ? 1 : 0);
 		$nbt->setByte(self::TAG_IGNITED, $this->ignited ? 1 : 0);
 		$nbt->setShort(self::TAG_FUSE, $this->fuseTicks);
+		return $nbt;
 	}
 
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{

@@ -20,7 +20,7 @@ abstract class Mob extends Living{
 
 	protected GoalSelector $goalSelector;
 	protected GoalSelector $targetSelector;
-	protected Navigator $navigator;
+	protected ?Navigator $navigator = null;
 	protected ?Entity $combatTarget = null;
 	protected float $movementSpeed = 0.23;
 	protected float $attackDamage = 2.0;
@@ -86,9 +86,13 @@ abstract class Mob extends Living{
 		if(isset($this->moveSpeedAttr)){
 			parent::setMovementSpeed($v, $fit);
 		}
-		if(isset($this->navigator)){
+		if($this->navigator !== null){
 			$this->navigator->setBaseSpeed($v);
 		}
+	}
+
+	public function getAttackTime() : int{
+		return $this->attackTime;
 	}
 
 	public function getAttackDamage() : float{
