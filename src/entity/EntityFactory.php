@@ -49,6 +49,12 @@ use pocketmine\entity\projectile\IceBomb;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
+use pocketmine\entity\vehicle\Boat;
+use pocketmine\entity\vehicle\ChestBoat;
+use pocketmine\entity\vehicle\ChestMinecart;
+use pocketmine\entity\vehicle\HopperMinecart;
+use pocketmine\entity\vehicle\Minecart;
+use pocketmine\entity\vehicle\TNTMinecart;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -236,6 +242,30 @@ final class EntityFactory{
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
 		}, ['Human']);
+
+		$this->register(Boat::class, function(World $world, CompoundTag $nbt) : Boat{
+			return new Boat(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['Boat', 'minecraft:boat']);
+
+		$this->register(ChestBoat::class, function(World $world, CompoundTag $nbt) : ChestBoat{
+			return new ChestBoat(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['ChestBoat', 'minecraft:chest_boat']);
+
+		$this->register(Minecart::class, function(World $world, CompoundTag $nbt) : Minecart{
+			return new Minecart(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['Minecart', 'minecraft:minecart', 'RideableMinecart']);
+
+		$this->register(ChestMinecart::class, function(World $world, CompoundTag $nbt) : ChestMinecart{
+			return new ChestMinecart(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['ChestMinecart', 'minecraft:chest_minecart']);
+
+		$this->register(HopperMinecart::class, function(World $world, CompoundTag $nbt) : HopperMinecart{
+			return new HopperMinecart(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['HopperMinecart', 'minecraft:hopper_minecart']);
+
+		$this->register(TNTMinecart::class, function(World $world, CompoundTag $nbt) : TNTMinecart{
+			return new TNTMinecart(Helper::parseLocation($nbt, $world), nbt: $nbt);
+		}, ['TNTMinecart', 'minecraft:tnt_minecart']);
 	}
 
 	/**
