@@ -65,6 +65,11 @@ class Boat extends Vehicle{
 		return $this->boatType;
 	}
 
+	public function getDropItem() : ?\pocketmine\item\Item{
+		$name = $this->boatType->isRaft() ? "bamboo_raft" : ($this->boatType->value . "_boat");
+		return \pocketmine\item\StringToItemParser::getInstance()->parse($name);
+	}
+
 	public function getSeatOffset(int $seat) : Vector3{
 		// In Bedrock: Seat 0 (rider) is at (0, 0.2, -0.2), Seat 1 (passenger) is at (0, 0.2, 0.4)
 		return ($seat === 0) ? new Vector3(0, 0.2, -0.2) : new Vector3(0, 0.2, 0.4);

@@ -110,4 +110,26 @@ final class BoatMovementTest extends TestCase{
 
 		self::assertGreaterThan(0.01, $boat->getMotion()->length());
 	}
+
+	public function testBoatDamageAndCreativeInstantBreak() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$loc = new Location(0, 64, 0, $world, 0, 0);
+
+		$boat = new Boat($loc, BoatType::OAK);
+
+		// Damage without breaking
+		$ev = new \pocketmine\event\entity\EntityDamageEvent($boat, \pocketmine\event\entity\EntityDamageEvent::CAUSE_ENTITY_ATTACK, 10.0);
+		$boat->attack($ev);
+		self::assertSame(30.0, $boat->getHealth());
+		self::assertFalse($boat->isFlaggedForDespawn());
+
+		// Creative player instant break
+		$player = $this->createMock(\pocketmine\player\Player::class);
+		$player->method("isCreative")->willReturn(true);
+
+		$creativeEv = new \pocketmine\event\entity\EntityDamageByEntityEvent($player, $boat, \pocketmine\event\entity\EntityDamageEvent::CAUSE_ENTITY_ATTACK, 1.0);
+		$boat->attack($creativeEv);
+		self::assertTrue($boat->isFlaggedForDespawn());
+	}
 }

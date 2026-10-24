@@ -26,6 +26,9 @@ namespace pocketmine\entity\vehicle;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\SetActorLinkPacket;
@@ -40,9 +43,47 @@ abstract class Vehicle extends Entity{
 	protected array $passengers = [];
 
 	protected int $maxPassengers = 1;
+	protected float $health = 40.0;
+	protected float $maxHealth = 40.0;
 
 	public function __construct(Location $location, ?CompoundTag $nbt = null){
 		parent::__construct($location, $nbt);
+	}
+
+	public function getHealth() : float{
+		return $this->health;
+	}
+
+	public function getMaxHealth() : int{
+		return (int) $this->maxHealth;
+	}
+
+	abstract public function getDropItem() : ?Item;
+
+	public function attack(EntityDamageEvent $source) : void{
+		parent::attack($source);
+		if($source->isCancelled()){
+			return;
+		}
+
+		$damager = null;
+		if($source instanceof EntityDamageByEntityEvent){
+			$damager = $source->getDamager();
+		}
+
+		if($damager instanceof Player && $damager->isCreative()){
+			$this->flagForDespawn();
+			return;
+		}
+
+		$this->health -= $source->getFinalDamage();
+		if($this->health <= 0.0){
+			$this->flagForDespawn();
+			$drop = $this->getDropItem();
+			if($drop !== null && $this->location->isValid()){
+				$this->getWorld()->dropItem($this->location, $drop);
+			}
+		}
 	}
 
 	public function getMaxPassengers() : int{

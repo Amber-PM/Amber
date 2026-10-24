@@ -64,6 +64,10 @@ class Minecart extends Vehicle{
 		return $this->minecartType;
 	}
 
+	public function getDropItem() : ?\pocketmine\item\Item{
+		return \pocketmine\item\VanillaItems::MINECART();
+	}
+
 	public function getSeatOffset(int $seat) : Vector3{
 		return new Vector3(0, 0.35, 0);
 	}
