@@ -61,7 +61,7 @@ abstract class DefaultPermissions{
 		if($parameters !== null && count($parameters) !== 0){
 			throw new \InvalidArgumentException("Cannot use this function to register a permission with a parameterisable description string");
 		}
-		$translatable = new Translatable($translationKey, [], $translationKey);
+		$translatable = new Translatable($translationKey, []);
 		return self::registerPermission(new Permission($permission, $translatable), $grantedBy);
 	}
 
