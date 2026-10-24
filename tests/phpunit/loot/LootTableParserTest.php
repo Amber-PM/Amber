@@ -134,4 +134,120 @@ final class LootTableParserTest extends TestCase{
 		$ctx1 = $this->createTestContext(looting: 1);
 		self::assertTrue($cond->test($ctx1));
 	}
+
+	public function testRegistrationAndRetrievalNormalization() : void{
+		$reg = LootTableRegistry::getInstance();
+		$table = new LootTable("test/example", []);
+		$reg->register("loot_tables/test/example.json", $table);
+
+		self::assertTrue($reg->has("loot_tables/test/example.json"));
+		self::assertTrue($reg->has("test/example"));
+		self::assertSame($table, $reg->get("loot_tables/test/example.json"));
+		self::assertSame($table, $reg->get("test/example"));
+	}
+
+	public function testUnsupportedConditionRejectsPool() : void{
+		$reg = LootTableRegistry::getInstance();
+		$json = [
+			"pools" => [
+				[
+					"rolls" => 1,
+					"conditions" => [
+						["condition" => "passenger_of_entity"]
+					],
+					"entries" => [
+						["type" => "item", "name" => "minecraft:diamond"]
+					]
+				]
+			]
+		];
+
+		$reg->register("test/unsupported_cond", $reg->parseTable("test/unsupported_cond", $json));
+		$table = $reg->get("test/unsupported_cond");
+		self::assertNotNull($table);
+		self::assertSame([], $table->roll($this->createTestContext()));
+	}
+
+	public function testUnsupportedItemSkippedRatherThanCrashing() : void{
+		$entry = new LootEntry("item", "minecraft:completely_unregistered_mystery_item_xyz", 1, 0.0, [], []);
+		$items = $entry->roll($this->createTestContext());
+		self::assertSame([], $items);
+	}
+
+	public function testSetDataFunctionResolvesWoolAndSuspiciousStewVariants() : void{
+		$woolFunc = new SetDataFunction(14); // Red
+		$woolItem = \pocketmine\block\VanillaBlocks::WOOL()->asItem();
+		$resolvedWool = $woolFunc->apply($woolItem, $this->createTestContext());
+		self::assertInstanceOf(\pocketmine\item\ItemBlock::class, $resolvedWool);
+		$woolBlock = $resolvedWool->getBlock();
+		self::assertInstanceOf(\pocketmine\block\Wool::class, $woolBlock);
+		self::assertSame(\pocketmine\block\utils\DyeColor::RED, $woolBlock->getColor());
+
+		$stewFunc = new SetDataFunction(3);
+		$stewItem = \pocketmine\item\VanillaItems::SUSPICIOUS_STEW();
+		$resolvedStew = $stewFunc->apply($stewItem, $this->createTestContext());
+		self::assertInstanceOf(\pocketmine\item\SuspiciousStew::class, $resolvedStew);
+		self::assertSame(\pocketmine\item\SuspiciousStewType::AZURE_BLUET, $resolvedStew->getType());
+	}
+
+	public function testEnchantRandomlyConvertsBookToEnchantedBookAndFiltersCompat() : void{
+		$func = new EnchantRandomlyFunction();
+		$book = \pocketmine\item\VanillaItems::BOOK();
+		$enchanted = $func->apply($book, $this->createTestContext());
+		self::assertSame(\pocketmine\item\ItemTypeIds::ENCHANTED_BOOK, $enchanted->getTypeId());
+		self::assertTrue($enchanted->hasEnchantments());
+
+		$sword = \pocketmine\item\VanillaItems::IRON_SWORD();
+		for($i = 0; $i < 10; ++$i){
+			$enchantedSword = $func->apply(clone $sword, $this->createTestContext());
+			foreach($enchantedSword->getEnchantments() as $ench){
+				self::assertNotSame(\pocketmine\item\enchantment\VanillaEnchantments::POWER(), $ench->getType());
+				self::assertNotSame(\pocketmine\item\enchantment\VanillaEnchantments::PROTECTION(), $ench->getType());
+			}
+		}
+	}
+
+	public function testEnchantWithLevelsExcludesTreasureWhenDisabled() : void{
+		$func = new EnchantWithLevelsFunction(minLevels: 30, maxLevels: 30, treasure: false);
+		$book = \pocketmine\item\VanillaItems::BOOK();
+		for($i = 0; $i < 20; ++$i){
+			$res = $func->apply(clone $book, $this->createTestContext());
+			foreach($res->getEnchantments() as $ench){
+				self::assertNotSame(\pocketmine\item\enchantment\VanillaEnchantments::MENDING(), $ench->getType());
+			}
+		}
+	}
+
+	public function testConditionalFunctionRespectsCondition() : void{
+		$reg = LootTableRegistry::getInstance();
+		$json = [
+			"pools" => [
+				[
+					"rolls" => 1,
+					"entries" => [
+						[
+							"type" => "item",
+							"name" => "minecraft:diamond",
+							"functions" => [
+								[
+									"function" => "set_count",
+									"count" => 9,
+									"conditions" => [
+										["condition" => "random_chance", "chance" => 0.0]
+									]
+								]
+							]
+						]
+					]
+				]
+			]
+		];
+
+		$reg->register("test/cond_func", $reg->parseTable("test/cond_func", $json));
+		$table = $reg->get("test/cond_func");
+		self::assertNotNull($table);
+		$items = $table->roll($this->createTestContext());
+		self::assertCount(1, $items);
+		self::assertSame(1, $items[0]->getCount(), "Count should remain 1 when function condition fails");
+	}
 }

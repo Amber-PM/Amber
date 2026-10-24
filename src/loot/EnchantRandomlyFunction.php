@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _
- *    / \   _ __ ___ | |__   ___ _ __
+ *     _             _               
+ *    / \   _ __ ___ | |__   ___ _ __ 
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |
- * /_/   \_\_| |_| |_|_.__/ \___|_|
+ *  / ___ \| | | | | | |_) |  __/ |   
+ * /_/   \_\_| |_| |_|_.__/ \___|_|   
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,34 +23,33 @@ declare(strict_types=1);
 
 namespace pocketmine\loot;
 
+use pocketmine\item\enchantment\AvailableEnchantmentRegistry;
+use pocketmine\item\enchantment\EnchantingHelper;
 use pocketmine\item\enchantment\EnchantmentInstance;
-use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
+use pocketmine\item\ItemTypeIds;
 use function array_rand;
+use function array_values;
+use function count;
 use function mt_rand;
 
 final class EnchantRandomlyFunction implements LootFunction{
-	public function apply(Item $item, LootContext $context) : Item{
-		$all = [
-			VanillaEnchantments::UNBREAKING(),
-			VanillaEnchantments::EFFICIENCY(),
-			VanillaEnchantments::SHARPNESS(),
-			VanillaEnchantments::PROTECTION(),
-			VanillaEnchantments::FEATHER_FALLING(),
-			VanillaEnchantments::FIRE_ASPECT(),
-			VanillaEnchantments::KNOCKBACK(),
-			VanillaEnchantments::FORTUNE(),
-			VanillaEnchantments::POWER(),
-			VanillaEnchantments::PUNCH(),
-			VanillaEnchantments::FLAME(),
-			VanillaEnchantments::INFINITY(),
-			VanillaEnchantments::MENDING(),
-			VanillaEnchantments::SILK_TOUCH()
-		];
 
-		$enchant = $all[array_rand($all)];
+	public function apply(Item $item, LootContext $context) : Item{
+		$registry = AvailableEnchantmentRegistry::getInstance();
+		if($item->getTypeId() === ItemTypeIds::BOOK || $item->getTypeId() === ItemTypeIds::ENCHANTED_BOOK){
+			$candidates = array_values($registry->getAll());
+		}else{
+			$candidates = array_values($registry->getAllEnchantmentsForItem($item));
+		}
+
+		if(count($candidates) === 0){
+			return $item;
+		}
+
+		$enchant = $candidates[array_rand($candidates)];
 		$level = mt_rand(1, $enchant->getMaxLevel());
-		$item->addEnchantment(new EnchantmentInstance($enchant, $level));
-		return $item;
+
+		return EnchantingHelper::enchantItem($item, [new EnchantmentInstance($enchant, $level)]);
 	}
 }

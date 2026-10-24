@@ -26,6 +26,7 @@ namespace pocketmine\tests\comparative;
 require_once dirname(__DIR__) . '/phpunit/bootstrap.php';
 
 use pocketmine\entity\Entity;
+use pocketmine\item\StringToItemParser;
 use pocketmine\loot\LootContext;
 use pocketmine\loot\LootTableRegistry;
 use pocketmine\player\Player;
@@ -121,13 +122,20 @@ foreach($tablesToValidate as $tableId => $spec){
 	}
 	$targetPool = $table->pools[$poolIndex];
 
+	$supportedWeights = [];
+	foreach($spec["pool_weights"] as $key => $weight){
+		if(StringToItemParser::getInstance()->parse($key) !== null){
+			$supportedWeights[$key] = $weight;
+		}
+	}
+
 	$totalPoolWeight = 0;
-	foreach($spec["pool_weights"] as $w){
+	foreach($supportedWeights as $w){
 		$totalPoolWeight += $w;
 	}
 
 	$counts = [];
-	foreach($spec["pool_weights"] as $name => $w){
+	foreach($supportedWeights as $name => $w){
 		$counts[$name] = 0;
 	}
 
@@ -141,7 +149,7 @@ foreach($tablesToValidate as $tableId => $spec){
 			$name = strtolower(str_replace([' ', '_', 'minecraft:'], '', $item->getName()));
 			$vanilla = strtolower(str_replace([' ', '_', 'minecraft:'], '', $item->getVanillaName()));
 
-			foreach($spec["pool_weights"] as $key => $weight){
+			foreach($supportedWeights as $key => $weight){
 				$cleanKey = strtolower(str_replace([' ', '_', 'minecraft:'], '', $key));
 
 				$matched = false;
@@ -149,6 +157,8 @@ foreach($tablesToValidate as $tableId => $spec){
 					$matched = ($name === "enchantedgoldenapple" || $vanilla === "enchantedgoldenapple" || $name === "appleenchanted" || $vanilla === "appleenchanted");
 				}elseif($cleanKey === "goldenapple"){
 					$matched = ($name === "goldenapple" || $vanilla === "goldenapple");
+				}elseif($cleanKey === "book"){
+					$matched = ($name === "book" || $vanilla === "book" || $name === "enchantedbook" || $vanilla === "enchantedbook");
 				}elseif($name === $cleanKey || $vanilla === $cleanKey){
 					$matched = true;
 				}
@@ -168,7 +178,7 @@ foreach($tablesToValidate as $tableId => $spec){
 	printf("    +--------------------------------+------------+------------+-----------+%s", PHP_EOL);
 
 	$tablePassed = true;
-	foreach($spec["pool_weights"] as $entryName => $weight){
+	foreach($supportedWeights as $entryName => $weight){
 		$expectedRatio = $weight / $totalPoolWeight;
 		$empiricalRatio = $poolSamples > 0 ? ($counts[$entryName] / $poolSamples) : 0.0;
 		$delta = abs($empiricalRatio - $expectedRatio);

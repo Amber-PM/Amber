@@ -60,4 +60,5 @@ Documentation/*
 
 # BDS cache
 bds-cache/
-resources/vanilla/
+resources/vanilla/*
+!resources/vanilla/loot_tables/

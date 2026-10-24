@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _
- *    / \   _ __ ___ | |__   ___ _ __
+ *     _             _               
+ *    / \   _ __ ___ | |__   ___ _ __ 
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |
- * /_/   \_\_| |_| |_|_.__/ \___|_|
+ *  / ___ \| | | | | | |_) |  __/ |   
+ * /_/   \_\_| |_| |_|_.__/ \___|_|   
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -24,13 +24,11 @@ declare(strict_types=1);
 namespace pocketmine\loot;
 
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
-use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
-use function floor;
+use pocketmine\world\format\io\GlobalItemDataHandlers;
 use function max;
 
-final class LootEntry{
+class LootEntry{
 
 	/**
 	 * @param LootCondition[] $conditions
@@ -39,24 +37,27 @@ final class LootEntry{
 	public function __construct(
 		public readonly string $type,
 		public readonly string $name,
-		public readonly int $weight = 1,
-		public readonly float $quality = 0.0,
-		public readonly array $conditions = [],
-		public readonly array $functions = []
+		public readonly int $weight,
+		public readonly float $quality,
+		public readonly array $conditions,
+		public readonly array $functions
 	){}
 
-	public function getEffectiveWeight(float $luck = 0.0) : int{
-		$eff = (int) floor($this->weight + ($this->quality * $luck));
-		return max(0, $eff);
-	}
-
-	public function testConditions(LootContext $context) : bool{
+	public function passesConditions(LootContext $context) : bool{
 		foreach($this->conditions as $cond){
 			if(!$cond->test($context)){
 				return false;
 			}
 		}
 		return true;
+	}
+
+	public function testConditions(LootContext $context) : bool{
+		return $this->passesConditions($context);
+	}
+
+	public function getEffectiveWeight(float $luck) : int{
+		return (int) max(0, (int) ($this->weight + ($this->quality * $luck)));
 	}
 
 	/**
@@ -72,9 +73,32 @@ final class LootEntry{
 			return $subTable !== null ? $subTable->roll($context) : [];
 		}
 
-		$item = StringToItemParser::getInstance()->parse($this->name);
+		$requestedData = null;
+		foreach($this->functions as $func){
+			if($func instanceof SetDataFunction){
+				$requestedData = $func->data;
+				break;
+			}
+		}
+
+		$item = null;
+		if($requestedData !== null && $requestedData !== 0){
+			try{
+				$upgrader = GlobalItemDataHandlers::getUpgrader();
+				$upgraded = $upgrader->upgradeItemTypeDataString($this->name, $requestedData, 0, null);
+				$item = GlobalItemDataHandlers::getDeserializer()->deserializeStack($upgraded);
+			}catch(\Throwable){
+				$item = null;
+			}
+		}
+
 		if($item === null){
-			$item = new Item(new ItemIdentifier(ItemTypeIds::newId()), $this->name);
+			$item = StringToItemParser::getInstance()->parse($this->name);
+		}
+
+		if($item === null){
+			// Skip unsupported items to avoid saving unregistered item entities
+			return [];
 		}
 
 		$item = clone $item;

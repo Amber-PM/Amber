@@ -45,11 +45,12 @@ final class LootTableRegistry{
 	private array $tables = [];
 
 	public function register(string $id, LootTable $table) : void{
-		$this->tables[$id] = $table;
+		$this->tables[$this->normalizeId($id)] = $table;
 	}
 
 	public function has(string $id) : bool{
-		return isset($this->tables[$id]) || $this->findTableFile($id) !== null;
+		$normalized = $this->normalizeId($id);
+		return isset($this->tables[$normalized]) || $this->findTableFile($normalized) !== null;
 	}
 
 	public function get(string $id) : ?LootTable{
@@ -179,10 +180,7 @@ final class LootTableRegistry{
 				if(is_array($condData)){
 					/** @var array<string, mixed> $typedCond */
 					$typedCond = $condData;
-					$cond = $this->parseCondition($typedCond);
-					if($cond !== null){
-						$conditions[] = $cond;
-					}
+					$conditions[] = $this->parseCondition($typedCond);
 				}
 			}
 		}
@@ -218,10 +216,7 @@ final class LootTableRegistry{
 				if(is_array($condData)){
 					/** @var array<string, mixed> $typedCond */
 					$typedCond = $condData;
-					$cond = $this->parseCondition($typedCond);
-					if($cond !== null){
-						$conditions[] = $cond;
-					}
+					$conditions[] = $this->parseCondition($typedCond);
 				}
 			}
 		}
@@ -247,7 +242,7 @@ final class LootTableRegistry{
 	/**
 	 * @param array<string, mixed> $condData
 	 */
-	private function parseCondition(array $condData) : ?LootCondition{
+	private function parseCondition(array $condData) : LootCondition{
 		$type = self::asString($condData["condition"] ?? "", "");
 		if($type === "killed_by_player"){
 			return new KilledByPlayerCondition(allowPets: false);
@@ -264,16 +259,24 @@ final class LootTableRegistry{
 				self::asFloat($condData["looting_multiplier"] ?? 0.0, 0.0)
 			);
 		}
+		if($type === "is_baby"){
+			return new class implements LootCondition{
+				public function test(LootContext $context) : bool{
+					$victim = $context->victim;
+					return $victim instanceof \pocketmine\entity\Ageable && $victim->isBaby();
+				}
+			};
+		}
 		if($type === "inverted"){
 			$termRaw = $condData["term"] ?? null;
 			if(is_array($termRaw)){
 				/** @var array<string, mixed> $typedTerm */
 				$typedTerm = $termRaw;
 				$term = $this->parseCondition($typedTerm);
-				return $term !== null ? new InvertedCondition($term) : null;
+				return new InvertedCondition($term);
 			}
 		}
-		return null;
+		return new AlwaysFalseCondition();
 	}
 
 	/**
@@ -281,7 +284,7 @@ final class LootTableRegistry{
 	 */
 	private function parseFunction(array $funcData) : ?LootFunction{
 		$type = self::asString($funcData["function"] ?? "", "");
-		return match($type){
+		$func = match($type){
 			"set_count" => $this->parseSetCount($funcData),
 			"set_damage" => $this->parseSetDamage($funcData),
 			"set_data" => new SetDataFunction(self::asInt($funcData["data"] ?? 0, 0)),
@@ -290,6 +293,28 @@ final class LootTableRegistry{
 			"enchant_with_levels" => $this->parseEnchantWithLevels($funcData),
 			default => null
 		};
+
+		if($func === null){
+			return null;
+		}
+
+		$conditions = [];
+		$condsRaw = $funcData["conditions"] ?? null;
+		if(is_array($condsRaw)){
+			foreach($condsRaw as $condData){
+				if(is_array($condData)){
+					/** @var array<string, mixed> $typedCond */
+					$typedCond = $condData;
+					$conditions[] = $this->parseCondition($typedCond);
+				}
+			}
+		}
+
+		if(count($conditions) > 0){
+			return new ConditionalFunction($func, $conditions);
+		}
+
+		return $func;
 	}
 
 	/**

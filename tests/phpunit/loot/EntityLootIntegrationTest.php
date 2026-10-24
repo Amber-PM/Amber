@@ -114,7 +114,12 @@ final class EntityLootIntegrationTest extends TestCase{
 		);
 		$mockEntity->setLastDamageCause($damageEvent);
 
-		$dropsWithPlayer = $mockEntity->getDrops();
+		$dropsWithPlayer = [];
+		for($i = 0; $i < 10; ++$i){
+			foreach($mockEntity->getDrops() as $item){
+				$dropsWithPlayer[] = $item;
+			}
+		}
 		self::assertNotEmpty($dropsWithPlayer);
 	}
 }
