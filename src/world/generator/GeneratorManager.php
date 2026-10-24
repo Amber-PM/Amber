@@ -26,6 +26,7 @@ namespace pocketmine\world\generator;
 use pocketmine\utils\SingletonTrait;
 use pocketmine\utils\Utils;
 use pocketmine\world\generator\hell\Nether;
+use pocketmine\world\generator\normal\ModernOverworld;
 use pocketmine\world\generator\normal\Normal;
 use function array_keys;
 use function strtolower;
@@ -53,6 +54,9 @@ final class GeneratorManager{
 		}, fast: true);
 		$this->addGenerator(Normal::class, "normal", fn() => null);
 		$this->addAlias("normal", "default");
+		$this->addGenerator(ModernOverworld::class, "modern", fn() => null);
+		$this->addAlias("modern", "modern_overworld");
+		$this->addAlias("modern", "v118");
 		$this->addGenerator(Nether::class, "nether", fn() => null);
 		$this->addAlias("nether", "hell");
 	}
