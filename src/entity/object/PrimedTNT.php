@@ -118,8 +118,12 @@ class PrimedTNT extends Entity implements Explosive{
 	}
 
 	public function explode() : void{
-		if(!$this->getWorld()->getGameRules()->getBool(GameRules::TNT_EXPLODES)){
-			return;
+		try{
+			$rules = $this->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class && !$rules->getBool(GameRules::TNT_EXPLODES)){
+				return;
+			}
+		}catch(\Throwable){
 		}
 
 		$ev = new EntityPreExplodeEvent($this, 4);

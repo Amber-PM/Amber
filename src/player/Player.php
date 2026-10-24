@@ -3046,7 +3046,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$showDeath = true;
 		try{
 			$rules = $this->getWorld()->getGameRules();
-			if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+			if($rules !== null && get_class($rules) === GameRules::class){
 				$keepInv = $rules->getBool(GameRules::KEEP_INVENTORY);
 				$showDeath = $rules->getBool(GameRules::SHOW_DEATH_MESSAGES);
 			}
@@ -3187,7 +3187,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$rules = null;
 		}
 
-		if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+		if($rules !== null && get_class($rules) === GameRules::class){
 			if($source instanceof EntityDamageByEntityEvent){
 				$damager = $source->getDamager();
 				if($damager instanceof Player && !$rules->getBool(GameRules::PVP)){
