@@ -21,7 +21,22 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\block;
+namespace pmmp\encoding {
+	if(!class_exists(BE::class, false)){
+		class BE{
+			public static function unpackSignedLong(string $bytes) : int{
+				return (int) unpack('J', $bytes)[1];
+			}
+		}
+		class LE{
+			public static function packSignedLong(int $val) : string{
+				return pack('P', $val);
+			}
+		}
+	}
+}
+
+namespace pocketmine\block {
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\inventory\CrafterInventory;
@@ -105,4 +120,9 @@ final class CrafterTest extends TestCase{
 		$crafter->onRedstoneScheduledUpdate($engine);
 		self::assertFalse($crafter->isCrafting());
 	}
+
+	public function testCrafterPistonMovableParity() : void{
+		self::assertTrue(\pocketmine\block\piston\PistonMoveRules::isTileClassSupported(TileCrafter::class));
+	}
+}
 }

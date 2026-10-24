@@ -49,6 +49,7 @@ final class PistonMoveRules{
 			\pocketmine\block\tile\NormalFurnace::class,
 			\pocketmine\block\tile\BlastFurnace::class,
 			\pocketmine\block\tile\Smoker::class,
+			\pocketmine\block\tile\Crafter::class,
 			\pocketmine\block\tile\Note::class,
 			\pocketmine\block\tile\PistonArm::class,
 			\pocketmine\block\tile\ShulkerBox::class
