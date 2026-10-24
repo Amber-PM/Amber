@@ -33,8 +33,11 @@ use pocketmine\inventory\transaction\AnvilTransaction;
 use pocketmine\inventory\transaction\CraftingTransaction;
 use pocketmine\inventory\transaction\EnchantingTransaction;
 use pocketmine\inventory\transaction\InventoryTransaction;
+use pocketmine\inventory\transaction\TradeTransaction;
 use pocketmine\inventory\transaction\TransactionBuilder;
 use pocketmine\inventory\transaction\TransactionBuilderInventory;
+use pocketmine\inventory\transaction\TransactionValidationException;
+use pocketmine\inventory\villager\TradeInventory;
 use pocketmine\item\Durable;
 use pocketmine\item\Item;
 use pocketmine\network\mcpe\cache\CraftingDataCache;
@@ -304,6 +307,37 @@ class ItemStackRequestExecutor{
 	/**
 	 * @throws ItemStackRequestProcessException
 	 */
+	protected function beginTradeTransaction(int $tradeIndex) : void{
+		$this->assertFirstSpecialTransaction();
+		$currentWindow = $this->player->getCurrentWindow();
+		if(!$currentWindow instanceof TradeInventory){
+			throw new ItemStackRequestProcessException("Player's current window is not a trade inventory");
+		}
+
+		$villager = $currentWindow->getVillager();
+		$offer = $villager->getTradeOffer($tradeIndex);
+		if($offer === null){
+			throw new ItemStackRequestProcessException("No such trade offer index: $tradeIndex");
+		}
+		if($offer->isSoldOut()){
+			throw new ItemStackRequestProcessException("Trade offer is sold out");
+		}
+
+		$firstItem = clone $currentWindow->getItem(TradeInventory::SLOT_BUY_A);
+		$secondItem = clone $currentWindow->getItem(TradeInventory::SLOT_BUY_B);
+
+		try{
+			$this->specialTransaction = new TradeTransaction($this->player, $villager, $offer, $firstItem, $secondItem);
+		}catch(TransactionValidationException $e){
+			throw new ItemStackRequestProcessException("Invalid trade transaction: " . $e->getMessage(), 0, $e);
+		}
+
+		$this->setNextCreatedItem($this->specialTransaction->getResult());
+	}
+
+	/**
+	 * @throws ItemStackRequestProcessException
+	 */
 	protected function takeCreatedItem(int $count) : Item{
 		if($count < 1){
 			//this should be impossible at the protocol level, but in case of buggy core code this will prevent exploits
@@ -387,6 +421,8 @@ class ItemStackRequestExecutor{
 					$this->specialTransaction = new EnchantingTransaction($this->player, $option, $optionId + 1);
 					$this->setNextCreatedItem($window->getOutput($optionId));
 				}
+			}elseif($window instanceof TradeInventory){
+				$this->beginTradeTransaction($action->getRecipeId());
 			}else{
 				$this->beginCrafting($action->getRecipeId(), $this->player->getNetworkSession()->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_20 ? $action->getRepetitions() : 1);
 			}
