@@ -40,7 +40,11 @@ class Skeleton extends Living{
 		return "Skeleton";
 	}
 
-	public function getDrops() : array{
+	public function getLootTableId() : ?string{
+		return "entities/skeleton";
+	}
+
+	protected function getLegacyDrops() : array{
 		return [
 			VanillaItems::BONE()->setCount(mt_rand(0, 2)),
 			VanillaItems::ARROW()->setCount(mt_rand(0, 2))

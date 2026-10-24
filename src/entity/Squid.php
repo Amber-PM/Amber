@@ -120,7 +120,11 @@ class Squid extends WaterAnimal{
 		return $hasUpdate;
 	}
 
-	public function getDrops() : array{
+	public function getLootTableId() : ?string{
+		return "entities/squid";
+	}
+
+	protected function getLegacyDrops() : array{
 		return [
 			VanillaItems::INK_SAC()->setCount(mt_rand(1, 3))
 		];

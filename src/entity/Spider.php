@@ -45,7 +45,11 @@ class Spider extends Living{
 		return "Spider";
 	}
 
-	public function getDrops() : array{
+	public function getLootTableId() : ?string{
+		return "entities/spider";
+	}
+
+	protected function getLegacyDrops() : array{
 		$drops = [
 			VanillaItems::STRING()->setCount(mt_rand(0, 2))
 		];

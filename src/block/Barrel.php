@@ -82,6 +82,7 @@ class Barrel extends Opaque implements AnyFacing{
 					return true;
 				}
 
+				$barrel->generateLoot($player);
 				$player->setCurrentWindow($barrel->getInventory());
 			}
 		}

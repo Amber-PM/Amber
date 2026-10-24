@@ -27,7 +27,7 @@ Built on top of the stable **PocketMine-MP 5.44.2** codebase, this fork incorpor
 
 ## :x: AmberPM is NOT a vanilla Minecraft server software.
 **It is designed primarily for custom game modes, minigames, and lobby servers.**
-Just like official PocketMine-MP, it does not ship with most survival features from the vanilla game (such as vanilla mob AI, redstone simulation, or vanilla world generation).
+AmberPM implements selected native gameplay mechanics, including redstone circuits, pistons, dispensers, and droppers, but it is not a complete vanilla survival implementation (for example, full vanilla mob AI and vanilla world generation are not provided).
 
 If you are trying to host a purely **vanilla survival multiplayer** server, please use the [official Minecraft: Bedrock server software](https://minecraft.net/download/server/bedrock).
 

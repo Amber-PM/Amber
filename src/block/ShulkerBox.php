@@ -106,6 +106,7 @@ class ShulkerBox extends Opaque implements AnyFacing{
 					return true;
 				}
 
+				$shulker->generateLoot($player);
 				$player->setCurrentWindow($shulker->getInventory());
 			}
 		}
