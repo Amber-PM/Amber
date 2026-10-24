@@ -205,6 +205,59 @@ final class LootTableParserTest extends TestCase{
 		self::assertSame(\pocketmine\item\SuspiciousStewType::AZURE_BLUET, $resolvedStew->getType());
 	}
 
+	public function testSetDataFunctionRangeKeepsBoundsAndRolls() : void{
+		$func = new SetDataFunction(1, 3);
+		$item = \pocketmine\item\VanillaItems::SUSPICIOUS_STEW();
+
+		for($i = 0; $i < 20; ++$i){
+			$resolved = $func->apply(clone $item, $this->createTestContext());
+			self::assertInstanceOf(\pocketmine\item\SuspiciousStew::class, $resolved);
+			$type = $resolved->getType();
+			self::assertContains($type, [
+				\pocketmine\item\SuspiciousStewType::POPPY,
+				\pocketmine\item\SuspiciousStewType::ALLIUM,
+				\pocketmine\item\SuspiciousStewType::AZURE_BLUET
+			]);
+		}
+	}
+
+	public function testSetDataFunctionRepeatedColorConversionsWithUnderscores() : void{
+		$wool = \pocketmine\block\VanillaBlocks::WOOL()->asItem();
+		$ctx = $this->createTestContext();
+
+		// 1. set_data: 3 (light_blue), then set_data: 14 (red) -> red wool
+		$func3 = new SetDataFunction(3);
+		$lightBlueWool = $func3->apply($wool, $ctx);
+		$func14 = new SetDataFunction(14);
+		$redWool = $func14->apply($lightBlueWool, $ctx);
+		self::assertInstanceOf(\pocketmine\item\ItemBlock::class, $redWool);
+		$block14 = $redWool->getBlock();
+		self::assertInstanceOf(\pocketmine\block\Wool::class, $block14);
+		self::assertSame(\pocketmine\block\utils\DyeColor::RED, $block14->getColor());
+
+		// 2. set_data: 8 (light_gray), then set_data: 14 (red) -> red wool
+		$func8 = new SetDataFunction(8);
+		$lightGrayWool = $func8->apply($wool, $ctx);
+		$redWoolFromGray = $func14->apply($lightGrayWool, $ctx);
+		self::assertInstanceOf(\pocketmine\item\ItemBlock::class, $redWoolFromGray);
+		$blockFromGray = $redWoolFromGray->getBlock();
+		self::assertInstanceOf(\pocketmine\block\Wool::class, $blockFromGray);
+		self::assertSame(\pocketmine\block\utils\DyeColor::RED, $blockFromGray->getColor());
+	}
+
+	public function testEnchantRandomlyTreasureDisabledExcludesMending() : void{
+		$funcNoTreasure = new EnchantRandomlyFunction(treasure: false);
+		$book = \pocketmine\item\VanillaItems::BOOK();
+
+		for($i = 0; $i < 30; ++$i){
+			$res = $funcNoTreasure->apply(clone $book, $this->createTestContext());
+			foreach($res->getEnchantments() as $ench){
+				self::assertNotSame(\pocketmine\item\enchantment\VanillaEnchantments::MENDING(), $ench->getType());
+				self::assertNotSame(\pocketmine\item\enchantment\VanillaEnchantments::FROST_WALKER(), $ench->getType());
+			}
+		}
+	}
+
 	public function testEnchantRandomlyConvertsBookToEnchantedBookAndFiltersCompat() : void{
 		$func = new EnchantRandomlyFunction();
 		$book = \pocketmine\item\VanillaItems::BOOK();

@@ -26,17 +26,35 @@ namespace pocketmine\loot;
 use pocketmine\item\Durable;
 use pocketmine\item\Item;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
+use function implode;
+use function mt_rand;
 use function preg_match;
 
 final class SetDataFunction implements LootFunction{
 
+	private const COLOR_PREFIXES = [
+		"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+		"light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"
+	];
+
+	public readonly int $minData;
+	public readonly int $maxData;
+	public readonly int $data;
+
 	public function __construct(
-		public readonly int $data
-	){}
+		int $minData,
+		?int $maxData = null
+	){
+		$this->minData = $minData;
+		$this->maxData = $maxData ?? $minData;
+		$this->data = $minData;
+	}
 
 	public function apply(Item $item, LootContext $context) : Item{
+		$data = ($this->maxData > $this->minData) ? mt_rand($this->minData, $this->maxData) : $this->minData;
+
 		if($item instanceof Durable){
-			$item->setDamage($this->data);
+			$item->setDamage($data);
 			return $item;
 		}
 
@@ -47,10 +65,14 @@ final class SetDataFunction implements LootFunction{
 		try{
 			$serialized = $serializer->serializeType($item);
 			$name = $serialized->getName();
-			if(preg_match('/^minecraft:([a-z]+)_(wool|carpet|concrete|concrete_powder|shulker_box|stained_glass|stained_glass_pane|terracotta|glazed_terracotta)$/', $name, $matches) === 1){
-				$name = "minecraft:" . $matches[2];
+
+			$colorsPattern = implode('|', self::COLOR_PREFIXES);
+			if(preg_match('/^minecraft:(?:' . $colorsPattern . ')_(wool|carpet|concrete|concrete_powder|shulker_box|stained_glass|stained_glass_pane|terracotta|glazed_terracotta)$/', $name, $matches) === 1){
+				$family = $matches[1];
+				$name = ($family === "terracotta") ? "minecraft:stained_hardened_clay" : ("minecraft:" . $family);
 			}
-			$upgraded = $upgrader->upgradeItemTypeDataString($name, $this->data, 0, $serialized->getTag());
+
+			$upgraded = $upgrader->upgradeItemTypeDataString($name, $data, 0, $serialized->getTag());
 			$newItem = $deserializer->deserializeStack($upgraded);
 			$newItem->setCount($item->getCount());
 			return $newItem;

@@ -63,15 +63,8 @@ final class EnchantWithLevelsFunction implements LootFunction{
 			return $item;
 		}
 
-		$isTreasure = function(Enchantment $enchantment) : bool{
-			return $enchantment === VanillaEnchantments::MENDING()
-				|| $enchantment === VanillaEnchantments::FROST_WALKER()
-				|| $enchantment === VanillaEnchantments::SWIFT_SNEAK()
-				|| $enchantment === VanillaEnchantments::VANISHING();
-		};
-
 		if(!$this->treasure){
-			$candidates = array_values(array_filter($candidates, fn(Enchantment $e) => !$isTreasure($e)));
+			$candidates = array_values(array_filter($candidates, fn(Enchantment $e) => !EnchantRandomlyFunction::isTreasure($e)));
 		}
 
 		if(count($candidates) === 0){

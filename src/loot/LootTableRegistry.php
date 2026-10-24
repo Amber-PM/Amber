@@ -287,13 +287,13 @@ final class LootTableRegistry{
 		$func = match($type){
 			"set_count" => $this->parseSetCount($funcData),
 			"set_damage" => $this->parseSetDamage($funcData),
-			"set_data" => new SetDataFunction(self::asInt($funcData["data"] ?? 0, 0)),
+			"set_data" => $this->parseSetData($funcData),
 			"set_name" => new SetNameFunction(self::asString($funcData["name"] ?? "", "")),
 			"set_lore" => $this->parseSetLore($funcData),
 			"furnace_smelt" => new FurnaceSmeltFunction(),
 			"specific_enchants" => $this->parseSpecificEnchants($funcData),
 			"looting_enchant" => $this->parseLootingEnchant($funcData),
-			"enchant_randomly" => new EnchantRandomlyFunction(),
+			"enchant_randomly" => new EnchantRandomlyFunction(self::asBool($funcData["treasure"] ?? true, true)),
 			"enchant_with_levels" => $this->parseEnchantWithLevels($funcData),
 			default => null
 		};
@@ -352,6 +352,22 @@ final class LootTableRegistry{
 			$max = self::asFloat($dmgRaw["max"] ?? $min, $min);
 		}
 		return new SetDamageFunction($min, $max);
+	}
+
+	/**
+	 * @param array<string, mixed> $funcData
+	 */
+	private function parseSetData(array $funcData) : SetDataFunction{
+		$min = 0;
+		$max = 0;
+		$dataRaw = $funcData["data"] ?? null;
+		if(is_numeric($dataRaw)){
+			$min = $max = self::asInt($dataRaw, 0);
+		}elseif(is_array($dataRaw)){
+			$min = self::asInt($dataRaw["min"] ?? 0, 0);
+			$max = self::asInt($dataRaw["max"] ?? $min, $min);
+		}
+		return new SetDataFunction($min, $max);
 	}
 
 	/**
