@@ -44,7 +44,6 @@ class Crafter extends Opaque implements PoweredByRedstone, DelayedRedstoneReceiv
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
 		$w->facing($this->facing);
 		$w->bool($this->powered);
-		$w->bool($this->crafting);
 	}
 
 	public function getFacing() : int{
