@@ -221,6 +221,38 @@ final class EntityFactory{
 			return new Squid(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Squid', 'minecraft:squid']);
 
+		$this->register(GlowSquid::class, function(World $world, CompoundTag $nbt) : GlowSquid{
+			return new GlowSquid(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['GlowSquid', 'minecraft:glow_squid']);
+
+		$this->register(Dolphin::class, function(World $world, CompoundTag $nbt) : Dolphin{
+			return new Dolphin(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Dolphin', 'minecraft:dolphin']);
+
+		$this->register(Axolotl::class, function(World $world, CompoundTag $nbt) : Axolotl{
+			return new Axolotl(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Axolotl', 'minecraft:axolotl']);
+
+		$this->register(SeaTurtle::class, function(World $world, CompoundTag $nbt) : SeaTurtle{
+			return new SeaTurtle(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Turtle', 'minecraft:turtle']);
+
+		$this->register(Pufferfish::class, function(World $world, CompoundTag $nbt) : Pufferfish{
+			return new Pufferfish(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Pufferfish', 'minecraft:pufferfish']);
+
+		$this->register(Salmon::class, function(World $world, CompoundTag $nbt) : Salmon{
+			return new Salmon(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Salmon', 'minecraft:salmon']);
+
+		$this->register(Cod::class, function(World $world, CompoundTag $nbt) : Cod{
+			return new Cod(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Cod', 'minecraft:cod']);
+
+		$this->register(TropicalFish::class, function(World $world, CompoundTag $nbt) : TropicalFish{
+			return new TropicalFish(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['TropicalFish', 'minecraft:tropicalfish', 'minecraft:tropical_fish']);
+
 		$this->register(Villager::class, function(World $world, CompoundTag $nbt) : Villager{
 			return new Villager(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Villager', 'minecraft:villager']);
