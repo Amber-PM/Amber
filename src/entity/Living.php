@@ -655,7 +655,18 @@ abstract class Living extends Entity{
 	}
 
 	protected function onDeath() : void{
-		$drops = $this->getWorld()->getGameRules()->getBool(GameRules::DO_MOB_LOOT) ? $this->getDrops() : [];
+		$dropLoot = true;
+		if(!($this instanceof \pocketmine\entity\object\ArmorStand) && !($this instanceof Human)){
+			try{
+				$rules = $this->getWorld()->getGameRules();
+				if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+					$dropLoot = $rules->getBool(GameRules::DO_MOB_LOOT);
+				}
+			}catch(\Throwable){
+				$dropLoot = true;
+			}
+		}
+		$drops = $dropLoot ? $this->getDrops() : [];
 		$ev = new EntityDeathEvent($this, $drops, $this->getXpDropAmount());
 		$ev->call();
 		foreach($ev->getDrops() as $item){

@@ -407,7 +407,7 @@ class World implements ChunkManager{
 	private ?BlockLightUpdate $blockLightUpdate = null;
 	private ?SkyLightUpdate $skyLightUpdate = null;
 
-	protected GameRules $gameRules;
+	protected ?GameRules $gameRules = null;
 	protected int $weather = Weather::CLEAR;
 	protected int $weatherDuration = 12000;
 
@@ -3649,7 +3649,7 @@ class World implements ChunkManager{
 	}
 
 	public function getGameRules() : GameRules{
-		return $this->gameRules;
+		return $this->gameRules ??= new GameRules($this);
 	}
 
 	public function getWeather() : int{
