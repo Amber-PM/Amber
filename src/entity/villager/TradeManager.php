@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\villager;
 
+use pocketmine\entity\villager\data\VanillaTradeData;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
@@ -71,19 +72,27 @@ final class TradeManager{
 			return $this->tradeTables[$fileName];
 		}
 
-		$path = \pocketmine\RESOURCE_PATH . 'vanilla/trading/economy_trades/' . $fileName;
-		if(!is_file($path)){
-			return null;
-		}
-
-		try{
-			/** @var array<string, mixed> $data */
-			$data = json_decode(Filesystem::fileGetContents($path), true, flags: JSON_THROW_ON_ERROR);
+		$data = VanillaTradeData::getTable($fileName);
+		if($data !== null){
 			$this->tradeTables[$fileName] = $data;
 			return $data;
-		}catch(\Throwable){
-			return null;
 		}
+
+		if(defined('pocketmine\RESOURCE_PATH')){
+			$path = \pocketmine\RESOURCE_PATH . 'vanilla/trading/economy_trades/' . $fileName;
+			if(is_file($path)){
+				try{
+					/** @var array<string, mixed> $fileData */
+					$fileData = json_decode(Filesystem::fileGetContents($path), true, flags: JSON_THROW_ON_ERROR);
+					$this->tradeTables[$fileName] = $fileData;
+					return $fileData;
+				}catch(\Throwable){
+					// Fall through
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**
