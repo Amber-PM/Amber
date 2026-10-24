@@ -34,6 +34,7 @@ use pocketmine\item\enchantment\WindBurstEnchantment;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\sound\ExplodeSound;
+use function max;
 
 class Mace extends Tool{
 
