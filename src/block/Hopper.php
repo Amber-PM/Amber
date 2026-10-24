@@ -87,6 +87,7 @@ class Hopper extends Transparent implements PoweredByRedstone, RedstoneReceiver{
 		if($player !== null){
 			$tile = $this->position->getWorld()->getTile($this->position);
 			if($tile instanceof TileHopper){ //TODO: find a way to have inventories open on click without this boilerplate in every block
+				$tile->generateLoot($player);
 				$player->setCurrentWindow($tile->getInventory());
 			}
 			return true;

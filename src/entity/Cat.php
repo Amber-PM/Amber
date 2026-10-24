@@ -80,6 +80,10 @@ class Cat extends TameableAnimal{
 		return "Cat";
 	}
 
+	public function getLootTableId() : ?string{
+		return "entities/cat";
+	}
+
 	protected function addAttributes() : void{
 		parent::addAttributes();
 		$this->setMaxHealth(10);

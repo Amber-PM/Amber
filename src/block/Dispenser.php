@@ -80,6 +80,7 @@ class Dispenser extends Opaque implements PoweredByRedstone, DelayedRedstoneRece
 		if($player !== null){
 			$tile = $this->position->getWorld()->getTile($this->position);
 			if($tile instanceof TileDispenser && $tile->canOpenWith($item->getCustomName())){
+				$tile->generateLoot($player);
 				$player->setCurrentWindow($tile->getInventory());
 			}
 			return true;

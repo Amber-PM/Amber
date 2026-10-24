@@ -87,6 +87,10 @@ class Wolf extends TameableAnimal{
 		return "Wolf";
 	}
 
+	public function getLootTableId() : ?string{
+		return "entities/wolf";
+	}
+
 	protected function addAttributes() : void{
 		parent::addAttributes();
 		$this->setMaxHealth(8);

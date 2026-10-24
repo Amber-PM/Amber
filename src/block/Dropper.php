@@ -84,6 +84,7 @@ class Dropper extends Opaque implements PoweredByRedstone, DelayedRedstoneReceiv
 		if($player !== null){
 			$tile = $this->position->getWorld()->getTile($this->position);
 			if($tile instanceof TileDropper && $tile->canOpenWith($item->getCustomName())){
+				$tile->generateLoot($player);
 				$player->setCurrentWindow($tile->getInventory());
 			}
 			return true;
