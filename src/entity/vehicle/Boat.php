@@ -75,6 +75,16 @@ class Boat extends Vehicle{
 		return ($seat === 0) ? new Vector3(0, 0.2, -0.2) : new Vector3(0, 0.2, 0.4);
 	}
 
+	public function getTransformedSeatOffset(int $seat) : Vector3{
+		$base = $this->getSeatOffset($seat);
+		$rad = deg2rad($this->location->yaw);
+		$cos = cos($rad);
+		$sin = sin($rad);
+		$rx = $base->x * $cos - $base->z * $sin;
+		$rz = $base->x * $sin + $base->z * $cos;
+		return new Vector3($rx, $base->y, $rz);
+	}
+
 	public function getFriction() : float{
 		$blockUnder = $this->getWorld()->getBlock($this->location->floor()->down());
 		$id = $blockUnder->getTypeId();
@@ -148,7 +158,7 @@ class Boat extends Vehicle{
 				$this->removePassenger($passenger);
 				continue;
 			}
-			$offset = $this->getSeatOffset($seat);
+			$offset = $this->getTransformedSeatOffset($seat);
 			$passenger->teleport($this->location->add($offset->x, $offset->y, $offset->z));
 		}
 

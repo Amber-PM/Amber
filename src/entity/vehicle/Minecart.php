@@ -96,8 +96,11 @@ class Minecart extends Vehicle{
 				}
 			}
 		}elseif($rail instanceof DetectorRail){
-			// Activate detector rail
-			$rail->setActivated(true);
+			// Activate detector rail in world
+			if(!$rail->isActivated()){
+				$rail->setActivated(true);
+				$this->getWorld()->setBlock($rail->getPosition(), $rail);
+			}
 		}else{
 			// Normal rail friction
 			$this->motion = new Vector3($this->motion->x * 0.96, $this->motion->y, $this->motion->z * 0.96);
