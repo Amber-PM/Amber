@@ -61,6 +61,10 @@ class NetherPortal extends Transparent{
 		return false;
 	}
 
+	public function hasEntityCollision() : bool{
+		return true;
+	}
+
 	protected function recalculateCollisionBoxes() : array{
 		return [];
 	}
