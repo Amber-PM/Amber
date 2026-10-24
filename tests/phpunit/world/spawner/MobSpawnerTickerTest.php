@@ -184,6 +184,7 @@ final class MobSpawnerTickerTest extends TestCase{
 	public function testSuccessfulSpawnAttempt() : void{
 		$world = $this->createMockWorld();
 		$tile = $this->createSpawnerTile($world, new Vector3(0, 64, 0));
+		$tile->setSpawnCount(16);
 		$world->method("getNearbyEntities")->willReturn([]);
 
 		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z){

@@ -174,6 +174,14 @@ final class MobSpawnerTicker{
 				continue;
 			}
 
+			// In vanilla BDS, search down to 1-2 blocks below to find valid solid floor
+			while($targetY > $this->world->getMinY() && !$this->world->getBlockAt($targetX, $targetY - 1, $targetZ)->isSolid()){
+				--$targetY;
+				if($pos->getFloorY() - $targetY > 2){
+					break;
+				}
+			}
+
 			$ground = $this->world->getBlockAt($targetX, $targetY - 1, $targetZ);
 			$feet = $this->world->getBlockAt($targetX, $targetY, $targetZ);
 			$head = $this->world->getBlockAt($targetX, $targetY + 1, $targetZ);
