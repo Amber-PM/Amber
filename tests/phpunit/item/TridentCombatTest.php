@@ -35,6 +35,7 @@ use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\world\Position;
 use pocketmine\world\World;
 
 final class TridentCombatTest extends TestCase{
@@ -60,11 +61,11 @@ final class TridentCombatTest extends TestCase{
 		$player = $this->createMock(Player::class);
 		$player->method("getWorld")->willReturn($world);
 		$player->method("getLocation")->willReturn(new Location(0, 64, 0, $world, 0, 0));
-		$player->method("getPosition")->willReturn(new Vector3(0, 64, 0));
+		$player->method("getPosition")->willReturn(new Position(0, 64, 0, $world));
 		$player->method("getItemUseDuration")->willReturn(20);
 		$player->method("isUnderwater")->willReturn(false);
 
-		$trident = VanillaItems::TRIDENT();
+		$trident = new Trident(new ItemIdentifier(ItemTypeIds::TRIDENT), "Trident");
 		$trident->addEnchantment(new EnchantmentInstance(VanillaEnchantments::RIPTIDE(), 3));
 
 		$returned = [];
@@ -84,7 +85,7 @@ final class TridentCombatTest extends TestCase{
 		$player = $this->createMock(Player::class);
 		$player->method("getWorld")->willReturn($world);
 		$player->method("getLocation")->willReturn(new Location(0, 64, 0, $world, 0, 0));
-		$player->method("getPosition")->willReturn(new Vector3(0, 64, 0));
+		$player->method("getPosition")->willReturn(new Position(0, 64, 0, $world));
 		$player->method("getDirectionVector")->willReturn(new Vector3(0, 1, 0));
 		$player->method("getItemUseDuration")->willReturn(20);
 		$player->method("isUnderwater")->willReturn(true);
@@ -100,7 +101,7 @@ final class TridentCombatTest extends TestCase{
 		$player->expects(self::once())
 			->method("resetFallDistance");
 
-		$trident = VanillaItems::TRIDENT();
+		$trident = new Trident(new ItemIdentifier(ItemTypeIds::TRIDENT), "Trident");
 		$trident->addEnchantment(new EnchantmentInstance(VanillaEnchantments::RIPTIDE(), 3));
 
 		$returned = [];
@@ -112,30 +113,50 @@ final class TridentCombatTest extends TestCase{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
 
-		$tridentItem = VanillaItems::TRIDENT();
-		$tridentItem->addEnchantment(new EnchantmentInstance(VanillaEnchantments::LOYALTY(), 3));
-
 		$player = $this->createMock(Player::class);
 		$player->method("isAlive")->willReturn(true);
 		$player->method("isClosed")->willReturn(false);
-		$player->method("getWorld")->willReturn($world);
 		$player->method("getEyePos")->willReturn(new Vector3(10, 65, 10));
+		$player->method("getWorld")->willReturn($world);
+
+		$tridentItem = new Trident(new ItemIdentifier(ItemTypeIds::TRIDENT), "Trident");
+		$tridentItem->addEnchantment(new EnchantmentInstance(VanillaEnchantments::LOYALTY(), 3));
 
 		$loc = new Location(10, 64, 20, $world, 0, 0);
-		$entity = new TridentEntity($loc, $tridentItem, $player);
+
+		/** @var TridentEntity&\PHPUnit\Framework\MockObject\MockObject $entity */
+		$entity = $this->getMockBuilder(TridentEntity::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getOwningEntity", "getWorld", "broadcastSound", "move", "updateMovement"])
+			->getMock();
+
+		$entity->method("getOwningEntity")->willReturn($player);
+		$entity->method("getWorld")->willReturn($world);
+
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "location"))->setValue($entity, $loc);
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "motion"))->setValue($entity, Vector3::zero());
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($entity, false);
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "networkProperties"))->setValue($entity, new \pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection());
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "boundingBox"))->setValue($entity, new \pocketmine\math\AxisAlignedBB(0, 0, 0, 0, 0, 0));
+		(new \ReflectionProperty(TridentEntity::class, "item"))->setValue($entity, $tridentItem);
+		(new \ReflectionProperty(TridentEntity::class, "canCollide"))->setValue($entity, true);
 
 		// Hit block
 		$block = $this->createMock(Block::class);
+		$block->position($world, 10, 64, 20);
 		$hitResult = new RayTraceResult(new \pocketmine\math\AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(10, 64, 20));
-		$entity->onHitBlock($block, $hitResult);
+		$onHitBlock = new \ReflectionMethod(TridentEntity::class, "onHitBlock");
+		$onHitBlock->invoke($entity, $block, $hitResult);
 
 		// Tick 9 times: delay not reached yet
+		$entityBaseTick = new \ReflectionMethod(TridentEntity::class, "entityBaseTick");
 		for($i = 0; $i < 9; ++$i){
-			$entity->onUpdate($i + 1);
+			$entityBaseTick->invoke($entity, 1);
 		}
 
 		// Tick 10: reaches 10 delay ticks and initiates return motion
-		$entity->onUpdate(10);
+		$entityBaseTick->invoke($entity, 1);
+
 		self::assertGreaterThan(0.0, $entity->getMotion()->length());
 	}
 }
