@@ -233,6 +233,30 @@ final class EntityFactory{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
 
+		$this->register(Creeper::class, function(World $world, CompoundTag $nbt) : Creeper{
+			return new Creeper(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Creeper', 'minecraft:creeper']);
+
+		$this->register(Enderman::class, function(World $world, CompoundTag $nbt) : Enderman{
+			return new Enderman(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Enderman', 'minecraft:enderman']);
+
+		$this->register(Cow::class, function(World $world, CompoundTag $nbt) : Cow{
+			return new Cow(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Cow', 'minecraft:cow']);
+
+		$this->register(Sheep::class, function(World $world, CompoundTag $nbt) : Sheep{
+			return new Sheep(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Sheep', 'minecraft:sheep']);
+
+		$this->register(Pig::class, function(World $world, CompoundTag $nbt) : Pig{
+			return new Pig(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Pig', 'minecraft:pig']);
+
+		$this->register(Chicken::class, function(World $world, CompoundTag $nbt) : Chicken{
+			return new Chicken(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Chicken', 'minecraft:chicken']);
+
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
 		}, ['Human']);
