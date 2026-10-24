@@ -102,6 +102,7 @@ abstract class Living extends Entity{
 	private const TAG_LEGACY_HEALTH = "HealF"; //TAG_Float
 	private const TAG_HEALTH = "Health"; //TAG_Float
 	private const TAG_BREATH_TICKS = "Air"; //TAG_Short
+	private const TAG_PERSISTENCE_REQUIRED = "PersistenceRequired"; //TAG_Byte
 	private const TAG_ACTIVE_EFFECTS = "ActiveEffects"; //TAG_List<TAG_Compound>
 	private const TAG_EFFECT_ID = "Id"; //TAG_Byte
 	private const TAG_EFFECT_DURATION = "Duration"; //TAG_Int
@@ -133,6 +134,7 @@ abstract class Living extends Entity{
 	protected bool $sneaking = false;
 	protected bool $gliding = false;
 	protected bool $swimming = false;
+	protected bool $persistent = false;
 
 	private ?int $frostWalkerLevel = null;
 
@@ -146,8 +148,18 @@ abstract class Living extends Entity{
 		return true;
 	}
 
+	public function isPersistent() : bool{
+		return $this->persistent || $this->getNameTag() !== "";
+	}
+
+	public function setPersistent(bool $persistent = true) : void{
+		$this->persistent = $persistent;
+	}
+
 	protected function initEntity(CompoundTag $nbt) : void{
 		parent::initEntity($nbt);
+
+		$this->persistent = $nbt->getByte(self::TAG_PERSISTENCE_REQUIRED, 0) !== 0;
 
 		$this->effectManager = new EffectManager($this);
 		$this->effectManager->getEffectAddHooks()->add(function() : void{ $this->networkPropertiesDirty = true; });
@@ -317,6 +329,9 @@ abstract class Living extends Entity{
 		$nbt->setFloat(self::TAG_HEALTH, $this->getHealth());
 
 		$nbt->setShort(self::TAG_BREATH_TICKS, $this->getAirSupplyTicks());
+		if($this->persistent){
+			$nbt->setByte(self::TAG_PERSISTENCE_REQUIRED, 1);
+		}
 
 		if(count($this->effectManager->all()) > 0){
 			$effects = [];
