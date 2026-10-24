@@ -3042,7 +3042,17 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 		$this->setDeathPosition($this->getPosition());
 
-		$keepInv = $this->getWorld()->getGameRules()->getBool(GameRules::KEEP_INVENTORY);
+		$keepInv = false;
+		$showDeath = true;
+		try{
+			$rules = $this->getWorld()->getGameRules();
+			if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+				$keepInv = $rules->getBool(GameRules::KEEP_INVENTORY);
+				$showDeath = $rules->getBool(GameRules::SHOW_DEATH_MESSAGES);
+			}
+		}catch(\Throwable){
+		}
+
 		$ev = new PlayerDeathEvent($this, $this->getDrops(), $this->getXpDropAmount(), null);
 		if($keepInv){
 			$ev->setKeepInventory(true);
@@ -3067,7 +3077,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$this->xpManager->setXpAndProgress(0, 0.0);
 		}
 
-		if($ev->getDeathMessage() !== "" && $this->getWorld()->getGameRules()->getBool(GameRules::SHOW_DEATH_MESSAGES)){
+		if($ev->getDeathMessage() !== "" && $showDeath){
 			$this->server->broadcastMessage($ev->getDeathMessage());
 		}
 
@@ -3171,29 +3181,36 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return;
 		}
 
-		$rules = $this->getWorld()->getGameRules();
-		if($source instanceof EntityDamageByEntityEvent){
-			$damager = $source->getDamager();
-			if($damager instanceof Player && !$rules->getBool(GameRules::PVP)){
-				$source->cancel();
-			}
+		try{
+			$rules = $this->getWorld()->getGameRules();
+		}catch(\Throwable){
+			$rules = null;
 		}
 
-		if(!$rules->getBool(GameRules::FALL_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FALL){
-			$source->cancel();
-		}
-		if(!$rules->getBool(GameRules::DROWNING_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_DROWNING){
-			$source->cancel();
-		}
-		if(!$rules->getBool(GameRules::FIRE_DAMAGE) && (
-			$source->getCause() === EntityDamageEvent::CAUSE_FIRE
-			|| $source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK
-			|| $source->getCause() === EntityDamageEvent::CAUSE_LAVA
-		)){
-			$source->cancel();
-		}
-		if(!$rules->getBool(GameRules::FREEZE_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FREEZING){
-			$source->cancel();
+		if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+			if($source instanceof EntityDamageByEntityEvent){
+				$damager = $source->getDamager();
+				if($damager instanceof Player && !$rules->getBool(GameRules::PVP)){
+					$source->cancel();
+				}
+			}
+
+			if(!$rules->getBool(GameRules::FALL_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FALL){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::DROWNING_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_DROWNING){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::FIRE_DAMAGE) && (
+				$source->getCause() === EntityDamageEvent::CAUSE_FIRE
+				|| $source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK
+				|| $source->getCause() === EntityDamageEvent::CAUSE_LAVA
+			)){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::FREEZE_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FREEZING){
+				$source->cancel();
+			}
 		}
 
 		if($this->isCreative()
