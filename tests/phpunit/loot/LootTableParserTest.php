@@ -306,9 +306,8 @@ final class LootTableParserTest extends TestCase{
 		$world->method("isLoaded")->willReturn(true);
 
 		$victim = $this->createMock(Entity::class);
+		(new ReflectionProperty(Entity::class, "closed"))->setValue($victim, true);
 		$victim->method("isOnFire")->willReturn(true);
-		$victim->method("getPosition")->willReturn(new Position(0, 64, 0, $world));
-		$victim->method("getLocation")->willReturn(new \pocketmine\entity\Location(0, 64, 0, $world, 0.0, 0.0));
 
 		$context = new LootContext(
 			position: new Position(0, 64, 0, $world),
