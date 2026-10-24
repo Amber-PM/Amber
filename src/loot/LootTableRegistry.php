@@ -295,6 +295,7 @@ final class LootTableRegistry{
 			"random_aux_value" => $this->parseRandomAuxValue($funcData),
 			"set_name" => new SetNameFunction(self::asString($funcData["name"] ?? "", "")),
 			"set_lore" => $this->parseSetLore($funcData),
+			"set_potion" => new SetPotionFunction(self::asString($funcData["id"] ?? "", "")),
 			"furnace_smelt" => new FurnaceSmeltFunction(),
 			"specific_enchants" => $this->parseSpecificEnchants($funcData),
 			"looting_enchant" => $this->parseLootingEnchant($funcData),

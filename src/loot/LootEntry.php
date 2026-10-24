@@ -115,6 +115,10 @@ class LootEntry{
 		$item->setCount(1);
 
 		foreach($this->functions as $func){
+			if($func instanceof SetPotionFunction && $func->discards($item)){
+				// Later functions (e.g. set_count) must not revive a discarded entry
+				return [];
+			}
 			$item = $func->apply($item, $context);
 		}
 
