@@ -28,29 +28,41 @@ use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\StringToEnchantmentParser;
 use pocketmine\item\Item;
 use function is_numeric;
+use function max;
+use function min;
+use function mt_rand;
 
 final class SpecificEnchantsFunction implements LootFunction{
 
 	/**
-	 * @param array<string|int, int> $enchants enchantment_name_or_id => level
+	 * @param array<string|int, array{int, int}> $enchants enchantment_name_or_id => [minLevel, maxLevel]
 	 */
 	public function __construct(
 		public readonly array $enchants
 	){}
 
 	public function apply(Item $item, LootContext $context) : Item{
-		foreach($this->enchants as $key => $level){
+		$instances = [];
+		foreach($this->enchants as $key => [$minLevel, $maxLevel]){
 			$enchantment = null;
 			if(is_numeric($key)){
 				$enchantment = EnchantmentIdMap::getInstance()->fromId((int) $key);
 			}else{
 				$enchantment = StringToEnchantmentParser::getInstance()->parse((string) $key);
 			}
-
 			if($enchantment !== null){
-				$item->addEnchantment(new EnchantmentInstance($enchantment, $level));
+				$level = $minLevel === $maxLevel ? $minLevel : mt_rand($minLevel, $maxLevel);
+				// Max enchantment levels are hard-coded in Bedrock and can't be overwritten by loot tables
+				$level = max(1, min($level, $enchantment->getMaxLevel()));
+				$instances[] = new EnchantmentInstance($enchantment, $level);
 			}
 		}
-		return $item;
+
+		if($instances === []){
+			return $item;
+		}
+
+		// Turns a plain book into an enchanted book, keeping name and lore
+		return LootEnchantingHelper::enchantItem($item, $instances);
 	}
 }

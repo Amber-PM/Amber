@@ -24,7 +24,6 @@ declare(strict_types=1);
 namespace pocketmine\loot;
 
 use pocketmine\item\enchantment\AvailableEnchantmentRegistry;
-use pocketmine\item\enchantment\EnchantingHelper;
 use pocketmine\item\enchantment\Enchantment;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
@@ -85,11 +84,11 @@ final class EnchantWithLevelsFunction implements LootFunction{
 		if(count($filteredCandidates) === 0){
 			$candidate = $candidates[array_rand($candidates)];
 			$tier = (int) max(1, min($candidate->getMaxLevel(), (int) round(($level / 30.0) * $candidate->getMaxLevel())));
-			return EnchantingHelper::enchantItem($item, [new EnchantmentInstance($candidate, $tier)]);
+			return LootEnchantingHelper::enchantItem($item, [new EnchantmentInstance($candidate, $tier)]);
 		}
 
 		/** @var array{Enchantment, int} $selected */
 		$selected = $filteredCandidates[array_rand($filteredCandidates)];
-		return EnchantingHelper::enchantItem($item, [new EnchantmentInstance($selected[0], $selected[1])]);
+		return LootEnchantingHelper::enchantItem($item, [new EnchantmentInstance($selected[0], $selected[1])]);
 	}
 }

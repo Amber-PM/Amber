@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\loot;
 
 use pocketmine\utils\SingletonTrait;
+use function array_is_list;
+use function count;
 use function file_exists;
 use function file_get_contents;
 use function is_array;
@@ -33,6 +35,8 @@ use function is_int;
 use function is_numeric;
 use function is_string;
 use function json_decode;
+use function max;
+use function min;
 use function str_ends_with;
 use function str_starts_with;
 use function substr;
@@ -295,7 +299,12 @@ final class LootTableRegistry{
 			"specific_enchants" => $this->parseSpecificEnchants($funcData),
 			"looting_enchant" => $this->parseLootingEnchant($funcData),
 			"enchant_randomly", "enchant_book_for_trading" => new EnchantRandomlyFunction(self::asBool($funcData["treasure"] ?? true, true)),
-			"enchant_with_levels", "enchant_random_gear" => $this->parseEnchantWithLevels($funcData),
+			"enchant_with_levels" => $this->parseEnchantWithLevels($funcData),
+			// Difficulty scaling of the chance is not available in the loot context; honour the raw chance
+			"enchant_random_gear" => new ConditionalFunction(
+				$this->parseEnchantWithLevels($funcData),
+				[new RandomChanceCondition(self::asFloat($funcData["chance"] ?? 1.0, 1.0))]
+			),
 			"explosion_decay" => new class implements LootFunction{
 				public function apply(\pocketmine\item\Item $item, LootContext $context) : \pocketmine\item\Item{
 					return $item;
@@ -453,15 +462,38 @@ final class LootTableRegistry{
 			foreach($enchantsRaw as $key => $val){
 				if(is_array($val)){
 					$id = self::asString($val["id"] ?? "", "");
-					$level = self::asInt($val["level"] ?? 1, 1);
 					if($id !== ""){
-						$enchants[$id] = $level;
+						$enchants[$id] = self::parseLevelRange($val["level"] ?? 1);
 					}
 				}elseif(is_numeric($val)){
-					$enchants[$key] = self::asInt($val, 1);
+					$level = self::asInt($val, 1);
+					$enchants[$key] = [$level, $level];
+				}elseif(is_string($val) && $val !== ""){
+					// Documented string-list form: ["knockback", "fire_aspect"] => level 1
+					$enchants[$val] = [1, 1];
 				}
 			}
 		}
 		return new SpecificEnchantsFunction($enchants);
+	}
+
+	/**
+	 * Accepts a fixed level, a [min, max] list (as used by vanilla tables) or a {min, max} object.
+	 *
+	 * @return array{int, int}
+	 */
+	private static function parseLevelRange(mixed $raw) : array{
+		if(is_array($raw)){
+			if(array_is_list($raw) && count($raw) >= 1){
+				$min = self::asInt($raw[0], 1);
+				$max = self::asInt($raw[1] ?? $min, $min);
+			}else{
+				$min = self::asInt($raw["min"] ?? 1, 1);
+				$max = self::asInt($raw["max"] ?? $min, $min);
+			}
+			return [min($min, $max), max($min, $max)];
+		}
+		$level = self::asInt($raw, 1);
+		return [$level, $level];
 	}
 }
