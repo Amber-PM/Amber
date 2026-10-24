@@ -23,7 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\event\entity;
 
-use pocketmine\entity\TameableAnimal;
+use pocketmine\entity\Living;
 use pocketmine\event\Cancellable;
 use pocketmine\event\CancellableTrait;
 use pocketmine\player\Player;
@@ -31,23 +31,23 @@ use pocketmine\player\Player;
 /**
  * Called when a wild animal is successfully tamed by a player.
  *
- * @phpstan-extends EntityEvent<TameableAnimal>
+ * @phpstan-extends EntityEvent<Living>
  */
 class EntityTameEvent extends EntityEvent implements Cancellable{
 	use CancellableTrait;
 
 	public function __construct(
-		TameableAnimal $entity,
+		Living $entity,
 		private Player $player
 	){
 		$this->entity = $entity;
 	}
 
 	/**
-	 * @return TameableAnimal
+	 * @return Living
 	 */
-	public function getEntity() : TameableAnimal{
-		/** @var TameableAnimal $entity */
+	public function getEntity() : Living{
+		/** @var Living $entity */
 		$entity = $this->entity;
 		return $entity;
 	}

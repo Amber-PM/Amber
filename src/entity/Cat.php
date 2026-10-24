@@ -206,13 +206,19 @@ class Cat extends TameableAnimal{
 	}
 
 	public function isCreeper(Entity $entity) : bool{
+		return $this->isRepelledMob($entity);
+	}
+
+	public function isRepelledMob(Entity $entity) : bool{
 		if($entity->isClosed() || !$entity->isAlive()){
 			return false;
 		}
 		$typeId = $entity::getNetworkTypeId();
 		return $typeId === EntityIds::CREEPER
 			|| $typeId === "minecraft:creeper"
-			|| ($entity instanceof Living && strtolower($entity->getName()) === "creeper");
+			|| $typeId === EntityIds::PHANTOM
+			|| $typeId === "minecraft:phantom"
+			|| ($entity instanceof Living && (strtolower($entity->getName()) === "creeper" || strtolower($entity->getName()) === "phantom"));
 	}
 
 	public function repelCreepers() : void{
@@ -227,7 +233,7 @@ class Cat extends TameableAnimal{
 		$radius = 10.0;
 		$bb = $this->boundingBox->expandedCopy($radius, $radius, $radius);
 		foreach($world->getNearbyEntities($bb, $this) as $nearby){
-			if($this->isCreeper($nearby) && isset($nearby->location)){
+			if($this->isRepelledMob($nearby) && isset($nearby->location)){
 				$distSq = $this->location->distanceSquared($nearby->location);
 				if($distSq <= $radius * $radius){
 					$dx = $nearby->location->x - $this->location->x;

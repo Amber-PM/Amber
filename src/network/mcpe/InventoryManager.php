@@ -38,6 +38,7 @@ use pocketmine\block\inventory\SmithingTableInventory;
 use pocketmine\block\inventory\StonecutterInventory;
 use pocketmine\crafting\FurnaceType;
 use pocketmine\data\bedrock\EnchantmentIdMap;
+use pocketmine\inventory\HorseInventory;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
@@ -397,6 +398,9 @@ class InventoryManager{
 				default => WindowTypes::CONTAINER
 			};
 			return [ContainerOpenPacket::blockInv($id, $windowType, $blockPosition)];
+		}
+		if($inv instanceof HorseInventory){
+			return [ContainerOpenPacket::entityInv($id, WindowTypes::HORSE, $inv->getHolder()->getId())];
 		}
 		return null;
 	}
