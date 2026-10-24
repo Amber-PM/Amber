@@ -92,6 +92,7 @@ final class StructureTemplateTest extends TestCase{
 
 		$chunk = new Chunk([], false);
 		for($sy = Chunk::MIN_SUBCHUNK_INDEX; $sy <= Chunk::MAX_SUBCHUNK_INDEX; ++$sy){
+			/** @phpstan-ignore class.notFound */
 			$chunk->setSubChunk($sy, new SubChunk(0, [], new PalettedBlockArray(0)));
 		}
 
@@ -115,6 +116,7 @@ final class StructureTemplateTest extends TestCase{
 
 		$chunk = new Chunk([], false);
 		for($sy = Chunk::MIN_SUBCHUNK_INDEX; $sy <= Chunk::MAX_SUBCHUNK_INDEX; ++$sy){
+			/** @phpstan-ignore class.notFound */
 			$chunk->setSubChunk($sy, new SubChunk(0, [], new PalettedBlockArray(0)));
 		}
 
@@ -142,6 +144,7 @@ final class StructureTemplateTest extends TestCase{
 
 		$chunk = new Chunk([], false);
 		for($sy = Chunk::MIN_SUBCHUNK_INDEX; $sy <= Chunk::MAX_SUBCHUNK_INDEX; ++$sy){
+			/** @phpstan-ignore class.notFound */
 			$chunk->setSubChunk($sy, new SubChunk(0, [], new PalettedBlockArray(0)));
 		}
 

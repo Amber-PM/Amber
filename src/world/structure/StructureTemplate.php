@@ -419,6 +419,9 @@ class StructureTemplate{
 					$chunk = $world->getChunk($targetX >> 4, $targetZ >> 4);
 					if($chunk !== null){
 						$chunk->setBlockStateId($targetX & 0xf, $targetY, $targetZ & 0xf, $stateId);
+					}else{
+						$block = RuntimeBlockStateRegistry::getInstance()->fromStateId($stateId);
+						$world->setBlockAt($targetX, $targetY, $targetZ, $block);
 					}
 				}
 			}

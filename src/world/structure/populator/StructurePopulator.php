@@ -30,6 +30,7 @@ use pocketmine\world\generator\populator\Populator;
 use pocketmine\world\structure\jigsaw\JigsawAssembler;
 use pocketmine\world\structure\jigsaw\JigsawPoolRegistry;
 use function abs;
+use function floor;
 
 class StructurePopulator implements Populator{
 
