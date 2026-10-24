@@ -659,7 +659,7 @@ abstract class Living extends Entity{
 		if(!($this instanceof \pocketmine\entity\object\ArmorStand) && !($this instanceof Human)){
 			try{
 				$rules = $this->getWorld()->getGameRules();
-				if($rules instanceof GameRules && !($rules instanceof \PHPUnit\Framework\MockObject\MockObject)){
+				if($rules !== null && get_class($rules) === GameRules::class){
 					$dropLoot = $rules->getBool(GameRules::DO_MOB_LOOT);
 				}
 			}catch(\Throwable){

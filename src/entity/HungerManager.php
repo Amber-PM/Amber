@@ -204,7 +204,16 @@ class HungerManager{
 
 		if($this->foodTickTimer === 0){
 			if($food >= 18){
-				if($health < $this->entity->getMaxHealth() && $this->entity->getWorld()->getGameRules()->getBool(GameRules::NATURAL_REGENERATION)){
+				$regen = true;
+				try{
+					$rules = $this->entity->getWorld()->getGameRules();
+					if($rules !== null && get_class($rules) === GameRules::class){
+						$regen = $rules->getBool(GameRules::NATURAL_REGENERATION);
+					}
+				}catch(\Throwable){
+					$regen = true;
+				}
+				if($health < $this->entity->getMaxHealth() && $regen){
 					$this->entity->heal(new EntityRegainHealthEvent($this->entity, 1, EntityRegainHealthEvent::CAUSE_SATURATION));
 					$this->exhaust(6.0, PlayerExhaustEvent::CAUSE_HEALTH_REGEN);
 				}
