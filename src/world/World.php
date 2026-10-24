@@ -110,6 +110,8 @@ use pocketmine\world\hopper\HopperTicker;
 use pocketmine\world\light\BlockLightUpdate;
 use pocketmine\world\light\LightPopulationTask;
 use pocketmine\world\light\SkyLightUpdate;
+use pocketmine\world\spawner\MobSpawnerTicker;
+use pocketmine\world\spawner\NaturalSpawner;
 use pocketmine\world\particle\BlockBreakParticle;
 use pocketmine\world\particle\BlockParticle;
 use pocketmine\world\particle\ItemParticle;
@@ -339,6 +341,8 @@ class World implements ChunkManager{
 	private \SplQueue $neighbourBlockUpdateQueue;
 	private ?RedstoneEngine $redstone = null;
 	private ?HopperTicker $hopperTicker = null;
+	private ?MobSpawnerTicker $mobSpawnerTicker = null;
+	private ?NaturalSpawner $naturalSpawner = null;
 	private array $movingBlocksByChunk = [];
 	/**
 	 * @var true[] blockhash => dummy
@@ -527,6 +531,8 @@ class World implements ChunkManager{
 		$cfg = $this->server->getConfigGroup();
 		$this->damageY = $cfg->getPropertyInt(YmlServerProperties::LEVEL_SETTINGS_MIN_Y, 0);
 		$this->hopperTicker = new HopperTicker($this);
+		$this->mobSpawnerTicker = new MobSpawnerTicker($this);
+		$this->naturalSpawner = new NaturalSpawner($this);
 		if($cfg->getPropertyBool(YmlServerProperties::REDSTONE_ENABLED, true)){
 			$this->redstone = new RedstoneEngine($this, max(1, $cfg->getPropertyInt(YmlServerProperties::REDSTONE_MAX_UPDATES_PER_TICK, 2000)));
 		}
@@ -695,6 +701,9 @@ class World implements ChunkManager{
 		$this->redstone = null;
 		$this->hopperTicker?->clear();
 		$this->hopperTicker = null;
+		$this->mobSpawnerTicker?->clear();
+		$this->mobSpawnerTicker = null;
+		$this->naturalSpawner = null;
 
 		$this->unloaded = true;
 	}
@@ -1123,6 +1132,14 @@ class World implements ChunkManager{
 		return $this->hopperTicker;
 	}
 
+	public function getMobSpawnerTicker() : ?MobSpawnerTicker{
+		return $this->mobSpawnerTicker;
+	}
+
+	public function getNaturalSpawner() : ?NaturalSpawner{
+		return $this->naturalSpawner;
+	}
+
 	protected function actuallyDoTick(int $currentTick) : void{
 		if(!$this->stopTime){
 			//this simulates an overflow, as would happen in any language which doesn't do stupid things to var types
@@ -1200,6 +1217,8 @@ class World implements ChunkManager{
 		$this->timings->redstone->stopTiming();
 
 		$this->hopperTicker?->tick($currentTick);
+		$this->mobSpawnerTicker?->tick($currentTick);
+		$this->naturalSpawner?->tick($currentTick);
 
 		$this->timings->entityTick->startTiming();
 		//Update entities that need update
@@ -3200,6 +3219,7 @@ class World implements ChunkManager{
 		if(isset($this->chunks[$hash = World::chunkHash($chunkX, $chunkZ)])){
 			$this->chunks[$hash]->addTile($tile);
 			$this->hopperTicker?->onTileAdded($tile);
+			$this->mobSpawnerTicker?->onTileAdded($tile);
 			if($tile instanceof \pocketmine\block\tile\Comparator){
 				$this->redstone?->request($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 			}
@@ -3234,6 +3254,7 @@ class World implements ChunkManager{
 			}
 			$this->chunks[$hash]->removeTile($tile);
 			$this->hopperTicker?->onTileRemoved($tile);
+			$this->mobSpawnerTicker?->onTileRemoved($tile);
 		}
 		$relative = self::chunkBlockHash($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
 		$chunkHash = self::chunkHash($chunkX, $chunkZ);
@@ -3481,6 +3502,7 @@ class World implements ChunkManager{
 		}
 
 		$this->hopperTicker?->onChunkUnloaded($x, $z);
+		$this->mobSpawnerTicker?->onChunkUnloaded($x, $z);
 		$this->redstone?->onChunkUnloaded($x, $z);
 		unset($this->chunks[$chunkHash]);
 		$this->blockCacheSize -= count($this->blockCache[$chunkHash] ?? []);
