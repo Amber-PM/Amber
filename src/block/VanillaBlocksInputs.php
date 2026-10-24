@@ -40,6 +40,7 @@ use pocketmine\block\tile\Cauldron as TileCauldron;
 use pocketmine\block\tile\Chest as TileChest;
 use pocketmine\block\tile\ChiseledBookshelf as TileChiseledBookshelf;
 use pocketmine\block\tile\Comparator as TileComparator;
+use pocketmine\block\tile\Crafter as TileCrafter;
 use pocketmine\block\tile\DaylightSensor as TileDaylightSensor;
 use pocketmine\block\tile\Dispenser as TileDispenser;
 use pocketmine\block\tile\Dropper as TileDropper;
@@ -202,6 +203,9 @@ final class VanillaBlocksInputs extends RegistrySource{
 		self::register("detector_rail", fn(BID $id) => new DetectorRail($id, "Detector Rail", $railBreakInfo));
 		self::register("dispenser", fn(BID $id) => new Dispenser($id, "Dispenser", new Info(BreakInfo::pickaxe(3.5, ToolTier::WOOD, 17.5))), TileDispenser::class);
 		self::register("dropper", fn(BID $id) => new Dropper($id, "Dropper", new Info(BreakInfo::pickaxe(3.5, ToolTier::WOOD, 17.5))), TileDropper::class);
+		self::register("crafter", fn(BID $id) => new Crafter($id, "Crafter", new Info(BreakInfo::pickaxe(1.5, ToolTier::WOOD, 17.5))), TileCrafter::class);
+		self::register("observer", fn(BID $id) => new Observer($id, "Observer", new Info(BreakInfo::pickaxe(3.0, ToolTier::WOOD, 15.0))));
+		self::register("target", fn(BID $id) => new Target($id, "Target", new Info(BreakInfo::axe(0.5, null, 2.5))));
 
 		self::register("diamond", fn(BID $id) => new Opaque($id, "Diamond Block", new Info(BreakInfo::pickaxe(5.0, ToolTier::IRON, 30.0))));
 		self::register("dirt", fn(BID $id) => new Dirt($id, "Dirt", new Info(BreakInfo::shovel(0.5), [Tags::DIRT])));

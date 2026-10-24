@@ -863,8 +863,11 @@ final class BlockTypeIds{
 	public const PISTON_HEAD = 10832;
 	public const MOVING_BLOCK = 10833;
 	public const HONEY_BLOCK = 10834;
+	public const OBSERVER = 10835;
+	public const CRAFTER = 10836;
+	public const TARGET = 10837;
 
-	public const FIRST_UNUSED_BLOCK_ID = 10835;
+	public const FIRST_UNUSED_BLOCK_ID = 10838;
 
 	private static int $nextDynamicId = self::FIRST_UNUSED_BLOCK_ID;
 
