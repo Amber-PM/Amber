@@ -39,6 +39,7 @@ use pocketmine\block\inventory\StonecutterInventory;
 use pocketmine\crafting\FurnaceType;
 use pocketmine\data\bedrock\EnchantmentIdMap;
 use pocketmine\inventory\Inventory;
+use pocketmine\inventory\LlamaInventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
 use pocketmine\item\enchantment\EnchantingOption;
@@ -397,6 +398,9 @@ class InventoryManager{
 				default => WindowTypes::CONTAINER
 			};
 			return [ContainerOpenPacket::blockInv($id, $windowType, $blockPosition)];
+		}
+		if($inv instanceof LlamaInventory){
+			return [ContainerOpenPacket::entityInv($id, WindowTypes::HORSE, $inv->getHolder()->getId())];
 		}
 		return null;
 	}
