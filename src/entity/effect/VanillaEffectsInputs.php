@@ -25,6 +25,7 @@ namespace pocketmine\entity\effect;
 
 use pocketmine\color\Color;
 use pocketmine\lang\KnownTranslationFactory;
+use pocketmine\lang\Translatable;
 use pocketmine\utils\RegistrySource;
 
 /**
@@ -43,7 +44,7 @@ final class VanillaEffectsInputs extends RegistrySource{
 
 	protected function setup() : void{
 		self::register("absorption", new AbsorptionEffect(KnownTranslationFactory::potion_absorption(), new Color(0x25, 0x52, 0xa5)));
-		//TODO: bad_omen
+		self::register("bad_omen", new Effect(new Translatable("%potion.bad_omen", []), new Color(0x0b, 0x61, 0x38), true, 120000, true));
 		self::register("blindness", new Effect(KnownTranslationFactory::potion_blindness(), new Color(0x1f, 0x1f, 0x23), true));
 		self::register("conduit_power", new Effect(KnownTranslationFactory::potion_conduitPower(), new Color(0x1d, 0xc2, 0xd1)));
 		self::register("darkness", new Effect(KnownTranslationFactory::effect_darkness(), new Color(0x29, 0x27, 0x21), true, 600, false));
@@ -68,7 +69,7 @@ final class VanillaEffectsInputs extends RegistrySource{
 		self::register("slowness", new SlownessEffect(KnownTranslationFactory::potion_moveSlowdown(), new Color(0x5a, 0x6c, 0x81), true));
 		self::register("speed", new SpeedEffect(KnownTranslationFactory::potion_moveSpeed(), new Color(0x7c, 0xaf, 0xc6)));
 		self::register("strength", new Effect(KnownTranslationFactory::potion_damageBoost(), new Color(0x93, 0x24, 0x23)));
-		//TODO: village_hero
+		self::register("village_hero", new Effect(new Translatable("%potion.village_hero", []), new Color(0x44, 0xff, 0x44), false, 48000, true));
 		self::register("water_breathing", new Effect(KnownTranslationFactory::potion_waterBreathing(), new Color(0x2e, 0x52, 0x99)));
 		self::register("weakness", new Effect(KnownTranslationFactory::potion_weakness(), new Color(0x48, 0x4d, 0x48), true));
 		self::register("wither", new WitherEffect(KnownTranslationFactory::potion_wither(), new Color(0x35, 0x2a, 0x27), true));
