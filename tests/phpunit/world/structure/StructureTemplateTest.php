@@ -134,4 +134,24 @@ final class StructureTemplateTest extends TestCase{
 		self::assertGreaterThan(20, $placedCount);
 		self::assertLessThan(80, $placedCount);
 	}
+
+	public function testStructureVoidSkippedDuringPlacement() : void{
+		$template = new StructureTemplate(new Vector3(2, 1, 2), new Vector3(0, 0, 0));
+		$voidId = VanillaBlocks::STRUCTURE_VOID()->getStateId();
+		$template->setBlockStateId(0, 0, 0, $voidId);
+
+		$chunk = new Chunk([], false);
+		for($sy = Chunk::MIN_SUBCHUNK_INDEX; $sy <= Chunk::MAX_SUBCHUNK_INDEX; ++$sy){
+			$chunk->setSubChunk($sy, new SubChunk(0, [], new PalettedBlockArray(0)));
+		}
+
+		$stoneId = VanillaBlocks::STONE()->getStateId();
+		$chunk->setBlockStateId(5, 64, 5, $stoneId);
+
+		$settings = new StructurePlacementSettings();
+		$template->placeIntoChunk($chunk, 5, 64, 5, $settings);
+
+		// Stone must NOT be overwritten by structure void
+		self::assertSame($stoneId, $chunk->getBlockStateId(5, 64, 5));
+	}
 }

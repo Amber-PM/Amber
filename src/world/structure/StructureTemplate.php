@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\world\structure;
 
 use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
+use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\LittleEndianNbtSerializer;
 use pocketmine\nbt\tag\CompoundTag;
@@ -282,6 +284,47 @@ class StructureTemplate{
 		return $root;
 	}
 
+	/**
+	 * Pre-computes rotated and filtered state IDs per palette index for O(1) inner-loop throughput.
+	 *
+	 * @return array<int, int> paletteIndex => stateId (-2 represents skip/void)
+	 */
+	private function computeTransformedPalette(StructurePlacementSettings $settings) : array{
+		$transformed = [];
+		$registry = RuntimeBlockStateRegistry::getInstance();
+		$rotation = $settings->rotation;
+
+		foreach($this->palette as $idx => $stateId){
+			if($stateId === Block::EMPTY_STATE_ID){
+				$transformed[$idx] = $settings->ignoreAir ? -2 : Block::EMPTY_STATE_ID;
+				continue;
+			}
+
+			try{
+				$block = $registry->fromStateId($stateId);
+			}catch(\Throwable){
+				$transformed[$idx] = $stateId;
+				continue;
+			}
+
+			if($block->getTypeId() === BlockTypeIds::STRUCTURE_VOID){
+				$transformed[$idx] = -2;
+				continue;
+			}
+
+			if($rotation !== StructureRotation::NONE){
+				if($block instanceof \pocketmine\block\utils\HorizontalFacing || $block instanceof \pocketmine\block\utils\AnyFacing){
+					$newFacing = $rotation->rotateFacing($block->getFacing());
+					$block = (clone $block)->setFacing($newFacing);
+				}
+			}
+
+			$transformed[$idx] = $block->getStateId();
+		}
+
+		return $transformed;
+	}
+
 	public function placeIntoChunk(Chunk $chunk, int $chunkBlockX, int $chunkBlockY, int $chunkBlockZ, StructurePlacementSettings $settings) : void{
 		$sx = (int) $this->size->x;
 		$sy = (int) $this->size->y;
@@ -292,6 +335,7 @@ class StructureTemplate{
 			$rand->setSeed($settings->seed);
 		}
 
+		$paletteMap = $this->computeTransformedPalette($settings);
 		$minY = Chunk::MIN_SUBCHUNK_INDEX << SubChunk::COORD_BIT_SIZE;
 		$maxY = ((Chunk::MAX_SUBCHUNK_INDEX + 1) << SubChunk::COORD_BIT_SIZE) - 1;
 
@@ -317,8 +361,14 @@ class StructureTemplate{
 						continue;
 					}
 
-					$stateId = $this->getBlockStateId($x, $y, $z);
-					if($settings->ignoreAir && $stateId === Block::EMPTY_STATE_ID){
+					$flatIdx = ($x * $sy + $y) * $sz + $z;
+					$pIdx = $this->layer0[$flatIdx] ?? -1;
+					if($pIdx < 0 || !isset($paletteMap[$pIdx])){
+						continue;
+					}
+
+					$stateId = $paletteMap[$pIdx];
+					if($stateId === -2){
 						continue;
 					}
 
@@ -338,6 +388,8 @@ class StructureTemplate{
 			$rand->setSeed($settings->seed);
 		}
 
+		$paletteMap = $this->computeTransformedPalette($settings);
+
 		for($x = 0; $x < $sx; ++$x){
 			for($z = 0; $z < $sz; ++$z){
 				[$mx, $mz] = $settings->mirror->mirrorCoordinate($x, $z, $sx, $sz);
@@ -353,8 +405,14 @@ class StructureTemplate{
 						continue;
 					}
 
-					$stateId = $this->getBlockStateId($x, $y, $z);
-					if($settings->ignoreAir && $stateId === Block::EMPTY_STATE_ID){
+					$flatIdx = ($x * $sy + $y) * $sz + $z;
+					$pIdx = $this->layer0[$flatIdx] ?? -1;
+					if($pIdx < 0 || !isset($paletteMap[$pIdx])){
+						continue;
+					}
+
+					$stateId = $paletteMap[$pIdx];
+					if($stateId === -2){
 						continue;
 					}
 
