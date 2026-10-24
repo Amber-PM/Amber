@@ -214,8 +214,8 @@ final class LootTableParserTest extends TestCase{
 			self::assertInstanceOf(\pocketmine\item\SuspiciousStew::class, $resolved);
 			$type = $resolved->getType();
 			self::assertContains($type, [
-				\pocketmine\item\SuspiciousStewType::POPPY,
-				\pocketmine\item\SuspiciousStewType::ALLIUM,
+				\pocketmine\item\SuspiciousStewType::CORNFLOWER,
+				\pocketmine\item\SuspiciousStewType::TULIP,
 				\pocketmine\item\SuspiciousStewType::AZURE_BLUET
 			]);
 		}
