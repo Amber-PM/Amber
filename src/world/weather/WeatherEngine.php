@@ -144,8 +144,11 @@ class WeatherEngine{
 			? LevelEventPacket::create(LevelEvent::START_THUNDER, $this->duration, new Vector3(0, 0, 0))
 			: LevelEventPacket::create(LevelEvent::STOP_THUNDER, 0, new Vector3(0, 0, 0));
 
-		$this->world->broadcastPacketToViewers(new Vector3(0, 0, 0), $rainPacket);
-		$this->world->broadcastPacketToViewers(new Vector3(0, 0, 0), $thunderPacket);
+		foreach($this->world->getPlayers() as $player){
+			$session = $player->getNetworkSession();
+			$session->sendDataPacket($rainPacket);
+			$session->sendDataPacket($thunderPacket);
+		}
 	}
 
 	public function sendWeather(Player $player) : void{

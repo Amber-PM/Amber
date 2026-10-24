@@ -92,4 +92,41 @@ final class WeatherEngineTest extends TestCase{
 		}
 		self::assertEqualsWithDelta(0.05, $engine->getRainLevel(), 0.01);
 	}
+
+	public function testBroadcastWeatherSendsToAllPlayersInWorld() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+
+		$session1 = $this->createMock(\pocketmine\network\mcpe\NetworkSession::class);
+		$player1 = $this->createMock(\pocketmine\player\Player::class);
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($player1, true);
+		(new \ReflectionProperty(\pocketmine\player\Player::class, "logger"))->setValue($player1, $this->createMock(\Logger::class));
+		$player1->method("getNetworkSession")->willReturn($session1);
+
+		$session2 = $this->createMock(\pocketmine\network\mcpe\NetworkSession::class);
+		$player2 = $this->createMock(\pocketmine\player\Player::class);
+		(new \ReflectionProperty(\pocketmine\entity\Entity::class, "closed"))->setValue($player2, true);
+		(new \ReflectionProperty(\pocketmine\player\Player::class, "logger"))->setValue($player2, $this->createMock(\Logger::class));
+		$player2->method("getNetworkSession")->willReturn($session2);
+
+		$world->method("getPlayers")->willReturn([$player1, $player2]);
+
+		$packetsSent1 = 0;
+		$session1->expects(self::exactly(2))->method("sendDataPacket")->willReturnCallback(function() use (&$packetsSent1) : bool{
+			$packetsSent1++;
+			return true;
+		});
+
+		$packetsSent2 = 0;
+		$session2->expects(self::exactly(2))->method("sendDataPacket")->willReturnCallback(function() use (&$packetsSent2) : bool{
+			$packetsSent2++;
+			return true;
+		});
+
+		$engine = new WeatherEngine($world, DimensionIds::OVERWORLD);
+		$engine->broadcastWeather();
+
+		self::assertSame(2, $packetsSent1);
+		self::assertSame(2, $packetsSent2);
+	}
 }
