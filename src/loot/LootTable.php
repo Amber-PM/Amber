@@ -59,8 +59,13 @@ final class LootTable{
 			return;
 		}
 
-		$size = $inventory->getSize();
-		$availableSlots = range(0, $size - 1);
+		// Only fill empty slots: items inserted before generation (e.g. by hoppers) must never be overwritten
+		$availableSlots = [];
+		foreach(range(0, $inventory->getSize() - 1) as $slot){
+			if($inventory->isSlotEmpty($slot)){
+				$availableSlots[] = $slot;
+			}
+		}
 		shuffle($availableSlots);
 
 		foreach($items as $item){
