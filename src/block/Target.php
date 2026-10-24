@@ -43,7 +43,7 @@ class Target extends Opaque implements RedstoneSource, DelayedRedstoneReceiver{
 	protected int $power = 0;
 
 	protected function describeBlockOnlyState(RuntimeDataDescriber $w) : void{
-		$w->boundedIntAuto(0, 15, $this->power);
+		// NOOP - target block redstone power is runtime signal state in Bedrock edition
 	}
 
 	public function getPower() : int{
