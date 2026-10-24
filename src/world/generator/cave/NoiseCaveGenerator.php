@@ -40,11 +40,17 @@ class NoiseCaveGenerator implements Carver{
 	private AquiferSampler $aquiferSampler;
 
 	public function __construct(int $seed){
-		$this->cheeseNoise = new Simplex(new Random($seed ^ 0x11111111), 3, 0.5, 1 / 96);
-		$this->spaghettiNoise1 = new Simplex(new Random($seed ^ 0x22222222), 2, 0.5, 1 / 64);
-		$this->spaghettiNoise2 = new Simplex(new Random($seed ^ 0x33333333), 2, 0.5, 1 / 64);
-		$this->noodleNoise = new Simplex(new Random($seed ^ 0x44444444), 2, 0.5, 1 / 32);
+		$this->cheeseNoise = new Simplex(self::makeRandom($seed ^ 0x11111111), 3, 0.5, 1 / 96);
+		$this->spaghettiNoise1 = new Simplex(self::makeRandom($seed ^ 0x22222222), 2, 0.5, 1 / 64);
+		$this->spaghettiNoise2 = new Simplex(self::makeRandom($seed ^ 0x33333333), 2, 0.5, 1 / 64);
+		$this->noodleNoise = new Simplex(self::makeRandom($seed ^ 0x44444444), 2, 0.5, 1 / 32);
 		$this->aquiferSampler = new AquiferSampler($seed);
+	}
+
+	private static function makeRandom(int $seed) : Random{
+		$r = new Random(0);
+		$r->setSeed($seed);
+		return $r;
 	}
 
 	public function carve(Chunk $chunk, int $chunkX, int $chunkZ, array $surfaceHeights) : void{

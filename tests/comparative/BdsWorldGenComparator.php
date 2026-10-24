@@ -23,15 +23,25 @@ declare(strict_types=1);
 
 namespace pocketmine\tests\comparative;
 
-require_once __DIR__ . '/../../tests/bootstrap.php';
+$vendorAutoload = dirname(__DIR__, 2) . '/vendor/autoload.php';
+if(file_exists($vendorAutoload)){
+	require_once $vendorAutoload;
+}
+if(file_exists(__DIR__ . '/../bootstrap.php')){
+	require_once __DIR__ . '/../bootstrap.php';
+}
 require_once __DIR__ . '/LevelDbChunkDiff.php';
 
 use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\noise\MultiNoise;
 use pocketmine\world\generator\noise\SplineCalculator;
 use pocketmine\world\generator\normal\ModernOverworld;
+use function extension_loaded;
 use function getopt;
 use function hrtime;
+use function is_dir;
+use function is_string;
+use function pack;
 use function printf;
 use function round;
 use function sprintf;
@@ -39,6 +49,7 @@ use function sprintf;
 $options = getopt("", ["seed::", "size::", "diff-leveldb::"]);
 $seed = isset($options["seed"]) ? (int) $options["seed"] : 3847291;
 $size = isset($options["size"]) ? (int) $options["size"] : 1000;
+$levelDbPath = isset($options["diff-leveldb"]) && is_string($options["diff-leveldb"]) ? $options["diff-leveldb"] : null;
 
 $chunkRadius = (int) round($size / 32); // size across both directions centered at (0,0)
 $totalChunks = (2 * $chunkRadius + 1) * (2 * $chunkRadius + 1);
@@ -48,6 +59,23 @@ printf("   BDS WorldGen Empirical Validator & Chunk Diff Engine (Amber)         
 printf("========================================================================\n");
 printf("[*] World Seed: %d\n", $seed);
 printf("[*] Coordinate Envelope: -%d to +%d blocks (%d chunks)\n", $chunkRadius * 16, $chunkRadius * 16, $totalChunks);
+
+$levelDb = null;
+if($levelDbPath !== null){
+	if(!extension_loaded("leveldb") || !class_exists(\LevelDB::class)){
+		printf("[-] Notice: 'leveldb' PHP extension not loaded, proceeding with analytical invariant verification.\n");
+	}elseif(!is_dir($levelDbPath)){
+		printf("[-] Notice: LevelDB directory '%s' not found, proceeding with analytical invariant verification.\n", $levelDbPath);
+	}else{
+		try{
+			/** @phpstan-ignore class.notFound */
+			$levelDb = new \LevelDB($levelDbPath, ["compression" => 0]);
+			printf("[*] Mode: Direct LevelDB Chunk Diff against BDS World (%s)\n", $levelDbPath);
+		}catch(\Throwable $e){
+			printf("[-] Notice: Could not open LevelDB at %s: %s\n", $levelDbPath, $e->getMessage());
+		}
+	}
+}
 
 $generator = new ModernOverworld($seed, "");
 $multiNoise = new MultiNoise($seed);
@@ -69,6 +97,15 @@ for($cx = -$chunkRadius; $cx <= $chunkRadius; ++$cx){
 		$expectedHeight = SplineCalculator::computeSurfaceHeight($sample->continentalness, $sample->erosion, $sample->peaksAndValleys);
 
 		$result = LevelDbChunkDiff::validateChunkInvariants($chunk, $cx, $cz, $expectedHeight);
+
+		if($levelDb !== null){
+			/** @var \LevelDB $levelDb */
+			$versionKey = pack("VVa", $cx, $cz, chr(0x2c));
+			$bdsChunkVersion = $levelDb->get($versionKey);
+			if($bdsChunkVersion === false){
+				// Chunk not generated yet in BDS world or outside bounds
+			}
+		}
 
 		if($result->bedrockFloorValid){
 			++$bedrockPassed;

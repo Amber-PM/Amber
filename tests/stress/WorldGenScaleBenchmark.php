@@ -23,7 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\tests\stress;
 
-require_once __DIR__ . '/../../tests/bootstrap.php';
+$vendorAutoload = dirname(__DIR__, 2) . '/vendor/autoload.php';
+if(file_exists($vendorAutoload)){
+	require_once $vendorAutoload;
+}
+if(file_exists(__DIR__ . '/../bootstrap.php')){
+	require_once __DIR__ . '/../bootstrap.php';
+}
 require_once __DIR__ . '/../comparative/LevelDbChunkDiff.php';
 
 use pocketmine\tests\comparative\LevelDbChunkDiff;

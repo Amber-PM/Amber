@@ -33,8 +33,14 @@ class DensityFunction{
 	public function __construct(
 		int $seed
 	){
-		$this->detailNoise = new Simplex(new Random($seed ^ 0x5a5a5a5a), 3, 0.5, 1 / 64);
-		$this->cliffNoise = new Simplex(new Random($seed ^ 0x33cc33cc), 2, 0.5, 1 / 128);
+		$this->detailNoise = new Simplex(self::makeRandom($seed ^ 0x5a5a5a5a), 3, 0.5, 1 / 64);
+		$this->cliffNoise = new Simplex(self::makeRandom($seed ^ 0x33cc33cc), 2, 0.5, 1 / 128);
+	}
+
+	private static function makeRandom(int $seed) : Random{
+		$r = new Random(0);
+		$r->setSeed($seed);
+		return $r;
 	}
 
 	/**

@@ -35,7 +35,13 @@ class AquiferSampler{
 	private Simplex $aquiferNoise;
 
 	public function __construct(int $seed){
-		$this->aquiferNoise = new Simplex(new Random($seed ^ 0x0f0f0f0f), 2, 0.5, 1 / 128);
+		$this->aquiferNoise = new Simplex(self::makeRandom($seed ^ 0x0f0f0f0f), 2, 0.5, 1 / 128);
+	}
+
+	private static function makeRandom(int $seed) : Random{
+		$r = new Random(0);
+		$r->setSeed($seed);
+		return $r;
 	}
 
 	/**

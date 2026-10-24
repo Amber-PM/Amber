@@ -59,12 +59,18 @@ class MultiNoise{
 	public function __construct(
 		private readonly int $seed
 	){
-		$this->continentalnessNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_CONTINENTALNESS), 4, 0.5, 1 / 512);
-		$this->erosionNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_EROSION), 3, 0.5, 1 / 256);
-		$this->peaksAndValleysNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_PEAKS_VALLEYS), 5, 0.5, 1 / 128);
-		$this->temperatureNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_TEMPERATURE), 4, 0.5, 1 / 512);
-		$this->humidityNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_HUMIDITY), 4, 0.5, 1 / 512);
-		$this->weirdnessNoise = new Simplex(new Random($this->seed ^ self::SEED_OFFSET_WEIRDNESS), 3, 0.5, 1 / 256);
+		$this->continentalnessNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_CONTINENTALNESS), 4, 0.5, 1 / 512);
+		$this->erosionNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_EROSION), 3, 0.5, 1 / 256);
+		$this->peaksAndValleysNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_PEAKS_VALLEYS), 5, 0.5, 1 / 128);
+		$this->temperatureNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_TEMPERATURE), 4, 0.5, 1 / 512);
+		$this->humidityNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_HUMIDITY), 4, 0.5, 1 / 512);
+		$this->weirdnessNoise = new Simplex(self::makeRandom($this->seed ^ self::SEED_OFFSET_WEIRDNESS), 3, 0.5, 1 / 256);
+	}
+
+	private static function makeRandom(int $seed) : Random{
+		$r = new Random(0);
+		$r->setSeed($seed);
+		return $r;
 	}
 
 	public function sample(int $x, int $y, int $z) : MultiNoiseSample{

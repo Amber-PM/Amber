@@ -102,7 +102,8 @@ class ModernOverworld extends Generator{
 		/** @var int[] $surfaceBiomes */
 		$surfaceBiomes = [];
 
-		$rand = new Random(0xdeadbeef ^ ($chunkX << 8) ^ $chunkZ ^ $this->seed);
+		$rand = new Random(0);
+		$rand->setSeed(0xdeadbeef ^ ($chunkX << 8) ^ $chunkZ ^ $this->seed);
 
 		// 2. Pre-calculate surface heights & column biomes
 		for($x = 0; $x < Chunk::EDGE_LENGTH; ++$x){
@@ -157,8 +158,8 @@ class ModernOverworld extends Generator{
 					$chunk->setBlockStateId($x, $y, $z, $this->stoneId);
 				}
 
-				// Natural 3D surface boundary (intSurface - 2 to intSurface + 3)
-				$topCheck = max($intSurface + 3, self::SEA_LEVEL);
+				// Natural 3D surface boundary (up to max possible 3D noise envelope)
+				$topCheck = min(256, max($intSurface + 12, self::SEA_LEVEL));
 				for($y = max(1, $intSurface - 2); $y <= $topCheck; ++$y){
 					$density = $this->densityFunction->computeDensity($worldX, $y, $worldZ, $targetSurface);
 					if($density > 0.0){
@@ -201,6 +202,11 @@ class ModernOverworld extends Generator{
 					continue;
 				}
 
+				// Stony peaks / shores (remain exposed stone regardless of elevation)
+				if($biomeId === BiomeIds::STONY_PEAKS || $biomeId === BiomeIds::STONE_BEACH){
+					continue;
+				}
+
 				// Mountain snowy peaks
 				if($biomeId === BiomeIds::FROZEN_PEAKS || $biomeId === BiomeIds::JAGGED_PEAKS || $highestY >= 140){
 					$chunk->setBlockStateId($x, $highestY, $z, $this->snowId);
@@ -216,11 +222,6 @@ class ModernOverworld extends Generator{
 					for($d = 1; $d <= 3 && ($highestY - $d) > -60; ++$d){
 						$chunk->setBlockStateId($x, $highestY - $d, $z, $this->sandId);
 					}
-					continue;
-				}
-
-				// Stony peaks / shores
-				if($biomeId === BiomeIds::STONY_PEAKS || $biomeId === BiomeIds::STONE_BEACH){
 					continue;
 				}
 
