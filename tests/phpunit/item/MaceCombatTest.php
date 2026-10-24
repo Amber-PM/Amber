@@ -21,13 +21,30 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\item;
+namespace pmmp\encoding {
+	if(!class_exists(BE::class, false)){
+		class BE{
+			public static function unpackSignedLong(string $bytes) : int{
+				return (int) unpack('J', $bytes)[1];
+			}
+		}
+		class LE{
+			public static function packSignedLong(int $val) : string{
+				return pack('P', $val);
+			}
+		}
+	}
+}
+
+namespace pocketmine\item {
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\block\Block;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\entity\projectile\WindCharge as WindChargeEntity;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\ProjectileHitBlockEvent;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
@@ -159,4 +176,59 @@ final class MaceCombatTest extends TestCase{
 		self::assertTrue($victimKnockedBack);
 		self::assertTrue($windCharge->isFlaggedForDespawn());
 	}
+
+	public function testBreachEnchantmentReducesArmorDamageMitigation() : void{
+		$attacker = $this->createMock(Player::class);
+		$inventory = $this->createMock(\pocketmine\inventory\PlayerInventory::class);
+
+		$mace = VanillaItems::MACE();
+		$breach = new \pocketmine\item\enchantment\EnchantmentInstance(VanillaEnchantments::BREACH(), 4);
+		$mace->addEnchantment($breach);
+
+		$inventory->method("getItemInHand")->willReturn($mace);
+		$attacker->method("getInventory")->willReturn($inventory);
+
+		$victim = $this->getMockBuilder(Living::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["getName", "getInitialSizeInfo", "getNetworkTypeId", "getArmorPoints", "getAbsorption"])
+			->getMock();
+		$victim->method("getArmorPoints")->willReturn(20);
+		$victim->method("getAbsorption")->willReturn(0.0);
+
+		$ev = $this->createMock(EntityDamageByEntityEvent::class);
+		$ev->method("canBeReducedByArmor")->willReturn(true);
+		$ev->method("getDamager")->willReturn($attacker);
+		$ev->method("getFinalDamage")->willReturn(10.0);
+		$ev->method("getCause")->willReturn(EntityDamageEvent::CAUSE_ENTITY_ATTACK);
+
+		$capturedModifier = null;
+		$capturedType = null;
+		$ev->expects(self::atLeastOnce())
+			->method("setModifier")
+			->willReturnCallback(function(float $modifier, int $type) use (&$capturedModifier, &$capturedType) : void{
+				if($type === EntityDamageEvent::MODIFIER_ARMOR){
+					$capturedModifier = $modifier;
+					$capturedType = $type;
+				}
+			});
+
+		// Reflect and set effectManager to prevent null pointer in applyDamageModifiers
+		$effectManager = new \pocketmine\entity\effect\EffectManager($victim);
+		$livingRef = new \ReflectionClass(Living::class);
+		$effectProp = $livingRef->getProperty("effectManager");
+		$effectProp->setAccessible(true);
+		$effectProp->setValue($victim, $effectManager);
+
+		$armorInv = new \pocketmine\inventory\ArmorInventory($victim);
+		$armorProp = $livingRef->getProperty("armorInventory");
+		$armorProp->setAccessible(true);
+		$armorProp->setValue($victim, $armorInv);
+
+		$victim->applyDamageModifiers($ev);
+
+		self::assertSame(EntityDamageEvent::MODIFIER_ARMOR, $capturedType);
+		// 20 armor * 0.40 multiplier * 0.04 = 0.32, so modifier for 10 damage is -3.20
+		self::assertEqualsWithDelta(-3.20, $capturedModifier, 0.001);
+	}
+}
 }
