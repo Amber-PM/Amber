@@ -66,4 +66,41 @@ final class CaveGenerationTest extends TestCase{
 		// Y=-59 must NOT be bedrock
 		self::assertNotSame(VanillaBlocks::BEDROCK()->getStateId(), $chunk->getBlockStateId(0, -59, 0));
 	}
+
+	public function testModernOrePopulatorPlacesStoneAndDeepslateOres() : void{
+		$populator = new \pocketmine\world\generator\populator\ModernOrePopulator();
+		$world = $this->createMock(\pocketmine\world\ChunkManager::class);
+		$random = new \pocketmine\utils\Random(42);
+
+		$blocks = [];
+		$world->method("getBlockAt")->willReturnCallback(function(int $x, int $y, int $z) use (&$blocks) : Block{
+			return $blocks["$x,$y,$z"] ?? ($y < 0 ? VanillaBlocks::DEEPSLATE() : VanillaBlocks::STONE());
+		});
+
+		$world->method("setBlockAt")->willReturnCallback(function(int $x, int $y, int $z, Block $block) use (&$blocks) : bool{
+			$blocks["$x,$y,$z"] = $block;
+			return true;
+		});
+
+		$populator->populate($world, 0, 0, $random);
+
+		// Assert that ores were placed in the mock world
+		self::assertNotEmpty($blocks, "Ores must be placed by ModernOrePopulator");
+
+		$foundStoneOre = false;
+		$foundDeepslateOre = false;
+
+		foreach($blocks as $coord => $block){
+			[$x, $y, $z] = explode(",", $coord);
+			$y = (int) $y;
+			if($y > 0 && str_contains($block->getName(), "Ore")){
+				$foundStoneOre = true;
+			}elseif($y < 0 && str_contains($block->getName(), "Deepslate") && str_contains($block->getName(), "Ore")){
+				$foundDeepslateOre = true;
+			}
+		}
+
+		self::assertTrue($foundStoneOre, "Must place stone ores above Y=0");
+		self::assertTrue($foundDeepslateOre, "Must place deepslate ores below Y=0");
+	}
 }

@@ -36,6 +36,7 @@ use pocketmine\world\generator\Generator;
 use pocketmine\world\generator\noise\DensityFunction;
 use pocketmine\world\generator\noise\MultiNoise;
 use pocketmine\world\generator\noise\SplineCalculator;
+use pocketmine\world\generator\populator\ModernOrePopulator;
 use function max;
 
 class ModernOverworld extends Generator{
@@ -45,6 +46,7 @@ class ModernOverworld extends Generator{
 	private MultiNoise $multiNoise;
 	private DensityFunction $densityFunction;
 	private NoiseCaveGenerator $caveGenerator;
+	private ModernOrePopulator $orePopulator;
 
 	private int $bedrockId;
 	private int $deepslateId;
@@ -63,6 +65,7 @@ class ModernOverworld extends Generator{
 		$this->multiNoise = new MultiNoise($this->seed);
 		$this->densityFunction = new DensityFunction($this->seed);
 		$this->caveGenerator = new NoiseCaveGenerator($this->seed);
+		$this->orePopulator = new ModernOrePopulator();
 
 		$this->bedrockId = VanillaBlocks::BEDROCK()->getStateId();
 		$this->deepslateId = VanillaBlocks::DEEPSLATE()->getStateId();
@@ -235,6 +238,7 @@ class ModernOverworld extends Generator{
 	}
 
 	public function populateChunk(ChunkManager $world, int $chunkX, int $chunkZ) : void{
-		// NOOP for base generator
+		$this->random->setSeed(0xdeadbeef ^ ($chunkX << 8) ^ $chunkZ ^ $this->seed);
+		$this->orePopulator->populate($world, $chunkX, $chunkZ, $this->random);
 	}
 }
