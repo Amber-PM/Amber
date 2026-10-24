@@ -25,7 +25,6 @@ namespace pocketmine\entity;
 
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityRegainHealthEvent;
-use pocketmine\event\entity\EntityTameEvent;
 use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
@@ -425,12 +424,6 @@ abstract class AbstractHorse extends Living implements Ageable{
 	}
 
 	public function tame(Player $player) : bool{
-		$ev = new EntityTameEvent($this, $player);
-		$ev->call();
-		if($ev->isCancelled()){
-			return false;
-		}
-
 		$this->setTamed(true);
 		$this->setOwnerUUID($player->getUniqueId()->toString());
 		$this->setOwnerName($player->getName());
