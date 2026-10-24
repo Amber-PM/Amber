@@ -36,15 +36,14 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\noise\MultiNoise;
 use pocketmine\world\generator\noise\SplineCalculator;
 use pocketmine\world\generator\normal\ModernOverworld;
+use function class_exists;
 use function extension_loaded;
 use function getopt;
 use function hrtime;
 use function is_dir;
 use function is_string;
-use function pack;
 use function printf;
 use function round;
-use function sprintf;
 
 $options = getopt("", ["seed::", "size::", "diff-leveldb::"]);
 $seed = isset($options["seed"]) ? (int) $options["seed"] : 3847291;
@@ -63,18 +62,23 @@ printf("[*] Coordinate Envelope: -%d to +%d blocks (%d chunks)\n", $chunkRadius 
 $levelDb = null;
 if($levelDbPath !== null){
 	if(!extension_loaded("leveldb") || !class_exists(\LevelDB::class)){
-		printf("[-] Notice: 'leveldb' PHP extension not loaded, proceeding with analytical invariant verification.\n");
-	}elseif(!is_dir($levelDbPath)){
-		printf("[-] Notice: LevelDB directory '%s' not found, proceeding with analytical invariant verification.\n", $levelDbPath);
-	}else{
-		try{
-			/** @phpstan-ignore class.notFound */
-			$levelDb = new \LevelDB($levelDbPath, ["compression" => 0]);
-			printf("[*] Mode: Direct LevelDB Chunk Diff against BDS World (%s)\n", $levelDbPath);
-		}catch(\Throwable $e){
-			printf("[-] Notice: Could not open LevelDB at %s: %s\n", $levelDbPath, $e->getMessage());
-		}
+		printf("[-] Error: 'leveldb' PHP extension not loaded, cannot perform Direct LevelDB diff.\n");
+		exit(1);
 	}
+	if(!is_dir($levelDbPath)){
+		printf("[-] Error: LevelDB directory '%s' not found.\n", $levelDbPath);
+		exit(1);
+	}
+	try{
+		/** @phpstan-ignore class.notFound */
+		$levelDb = new \LevelDB($levelDbPath, ["compression" => 0]);
+		printf("[*] Mode: Direct LevelDB Chunk Diff against BDS World (%s)\n", $levelDbPath);
+	}catch(\Throwable $e){
+		printf("[-] Error: Could not open LevelDB at %s: %s\n", $levelDbPath, $e->getMessage());
+		exit(1);
+	}
+}else{
+	printf("[*] Mode: Analytical Invariant Verification (Amber ModernOverworld Engine)\n");
 }
 
 $generator = new ModernOverworld($seed, "");
@@ -84,6 +88,8 @@ $passedCount = 0;
 $totalCaveAir = 0;
 $bedrockPassed = 0;
 $deepslatePassed = 0;
+$bdsChunksCompared = 0;
+$bdsChunksFailed = 0;
 
 $startTime = hrtime(true);
 
@@ -99,11 +105,12 @@ for($cx = -$chunkRadius; $cx <= $chunkRadius; ++$cx){
 		$result = LevelDbChunkDiff::validateChunkInvariants($chunk, $cx, $cz, $expectedHeight);
 
 		if($levelDb !== null){
-			/** @var \LevelDB $levelDb */
-			$versionKey = pack("VVa", $cx, $cz, chr(0x2c));
-			$bdsChunkVersion = $levelDb->get($versionKey);
-			if($bdsChunkVersion === false){
-				// Chunk not generated yet in BDS world or outside bounds
+			$bdsDiff = LevelDbChunkDiff::compareWithReferenceLevelDb($levelDb, $chunk, $cx, $cz);
+			if($bdsDiff !== null){
+				++$bdsChunksCompared;
+				if(!$bdsDiff->passed){
+					++$bdsChunksFailed;
+				}
 			}
 		}
 
@@ -130,11 +137,29 @@ printf("    - Deepslate Stratum Parity: %d / %d (%.2f%%)\n", $deepslatePassed, $
 printf("    - Total Subterranean Cave Air Carved: %d blocks\n", $totalCaveAir);
 printf("    - Overall Chunk Invariant Conformance: %d / %d (%.2f%%)\n", $passedCount, $totalChunks, ($passedCount / $totalChunks) * 100);
 
+if($levelDb !== null){
+	printf("    - BDS Reference Chunks Decoded: %d\n", $bdsChunksCompared);
+	printf("    - BDS Reference Mismatches: %d\n", $bdsChunksFailed);
+
+	if($bdsChunksCompared === 0){
+		printf("\n[FAILURE] Direct LevelDB comparison requested, but 0 reference chunks were found in '%s'!\n", $levelDbPath);
+		exit(1);
+	}
+	if($bdsChunksFailed > 0){
+		printf("\n[FAILURE] Direct LevelDB comparison failed: %d / %d chunks mismatched or had invalid subchunk payloads!\n", $bdsChunksFailed, $bdsChunksCompared);
+		exit(1);
+	}
+	if($passedCount === $totalChunks){
+		printf("\n[SUCCESS] 100%% Direct BDS LevelDB Parity Verified across %d reference chunks (Throughput: %.1f chunks/sec)!\n", $bdsChunksCompared, $chunksPerSec);
+		exit(0);
+	}
+}
+
 if($passedCount === $totalChunks && $chunksPerSec >= 100.0){
-	printf("\n[SUCCESS] 100%% BDS World Generation Parity Verified!\n");
+	printf("\n[SUCCESS] 100%% World Generation Analytical Invariant Parity Verified (High-Throughput: %.1f chunks/sec)!\n", $chunksPerSec);
 	exit(0);
 }elseif($passedCount === $totalChunks){
-	printf("\n[SUCCESS] 100%% BDS Invariant Parity Verified (Throughput: %.1f chunks/sec)!\n", $chunksPerSec);
+	printf("\n[SUCCESS] 100%% World Generation Analytical Invariant Parity Verified (Throughput: %.1f chunks/sec)!\n", $chunksPerSec);
 	exit(0);
 }else{
 	printf("\n[FAILURE] World generation failed to meet 100%% invariant parity!\n");
