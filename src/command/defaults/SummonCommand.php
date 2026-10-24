@@ -114,7 +114,7 @@ class SummonCommand extends VanillaCommand{
 		}
 
 		$entity->spawnToAll();
-		Command::broadcastCommandMessage($sender, new Translatable("commands.summon.success", [], "Object successfully summoned"));
+		Command::broadcastCommandMessage($sender, new Translatable("commands.summon.success", []));
 
 		return true;
 	}

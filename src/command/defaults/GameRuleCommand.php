@@ -107,7 +107,7 @@ class GameRuleCommand extends VanillaCommand{
 
 		$rules->set($canonical, $parsed);
 		$display = is_bool($parsed) ? ($parsed ? "true" : "false") : (string) $parsed;
-		Command::broadcastCommandMessage($sender, new Translatable("commands.gamerule.success", [$canonical, $display], "Game rule $canonical has been updated to $display"));
+		Command::broadcastCommandMessage($sender, new Translatable("commands.gamerule.success", [$canonical, $display]));
 
 		return true;
 	}

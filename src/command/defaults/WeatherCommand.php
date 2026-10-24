@@ -76,7 +76,7 @@ class WeatherCommand extends VanillaCommand{
 
 		$world->setWeather($weatherType, $duration);
 		$weatherName = Weather::toString($weatherType);
-		Command::broadcastCommandMessage($sender, new Translatable("commands.weather.set." . $weatherName, [], "Set the weather to " . $weatherName));
+		Command::broadcastCommandMessage($sender, new Translatable("commands.weather.set." . $weatherName, []));
 
 		return true;
 	}
