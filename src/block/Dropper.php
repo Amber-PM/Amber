@@ -115,6 +115,7 @@ class Dropper extends Opaque implements PoweredByRedstone, DelayedRedstoneReceiv
 			return;
 		}
 
+		$tile->generateLoot();
 		$inventory = $tile->getInventory();
 		$occupiedSlots = [];
 		foreach($inventory->getContents() as $slot => $item){

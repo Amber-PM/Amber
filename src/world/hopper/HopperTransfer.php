@@ -32,6 +32,7 @@ use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\world\World;
 use WeakMap;
+use function method_exists;
 use function min;
 
 final class HopperTransfer{
@@ -105,6 +106,10 @@ final class HopperTransfer{
 			if($above instanceof Hopper && $above->getFacing() === Facing::DOWN){
 				return new HopperTransferResult(0, true);
 			}
+		}
+		if(method_exists($source, 'generateLoot')){
+			// unpack a pending loot table before extracting, as vanilla (Java) does
+			$source->generateLoot();
 		}
 		$inventory = $source->getInventory();
 		$slots = $this->policy->getExtractableSlots($source);

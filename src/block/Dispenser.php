@@ -111,6 +111,7 @@ class Dispenser extends Opaque implements PoweredByRedstone, DelayedRedstoneRece
 			return;
 		}
 
+		$tile->generateLoot();
 		$inventory = $tile->getInventory();
 		$pendingSlot = $tile->getPendingDispenseSlot();
 		if($pendingSlot !== null && !$tile->isPendingDispenseValid()){
