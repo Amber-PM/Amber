@@ -82,6 +82,9 @@ final class DefaultPermissionNames{
 	public const COMMAND_WORLD = "pocketmine.command.world";
 	public const COMMAND_CHECKPERM = "pocketmine.command.checkperm";
 	public const COMMAND_LISTPERMS = "pocketmine.command.listperms";
+	public const COMMAND_GAMERULE = "pocketmine.command.gamerule";
+	public const COMMAND_SUMMON = "pocketmine.command.summon";
+	public const COMMAND_WEATHER = "pocketmine.command.weather";
 	public const COMMAND_WHITELIST_ADD = "pocketmine.command.whitelist.add";
 	public const COMMAND_WHITELIST_DISABLE = "pocketmine.command.whitelist.disable";
 	public const COMMAND_WHITELIST_ENABLE = "pocketmine.command.whitelist.enable";
