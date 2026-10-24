@@ -31,4 +31,7 @@ final class IncompatibleEnchantmentGroups{
 	public const PROTECTION = "protection";
 	public const BOW_INFINITE = "bow_infinite";
 	public const BLOCK_DROPS = "block_drops";
+	public const TRIDENT_RIPTIDE_LOYALTY = "trident_riptide_loyalty";
+	public const TRIDENT_RIPTIDE_CHANNELING = "trident_riptide_channeling";
+	public const MACE_DAMAGE = "mace_damage";
 }

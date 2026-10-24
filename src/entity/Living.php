@@ -44,6 +44,7 @@ use pocketmine\inventory\CallbackInventoryListener;
 use pocketmine\inventory\Inventory;
 use pocketmine\item\Armor;
 use pocketmine\item\Durable;
+use pocketmine\item\enchantment\BreachEnchantment;
 use pocketmine\item\enchantment\Enchantment;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
@@ -455,7 +456,18 @@ abstract class Living extends Entity{
 		}
 		if($source->canBeReducedByArmor()){
 			//MCPE uses the same system as PC did pre-1.9
-			$source->setModifier(-$source->getFinalDamage() * $this->getArmorPoints() * 0.04, EntityDamageEvent::MODIFIER_ARMOR);
+			$effectiveArmor = (float) $this->getArmorPoints();
+			if($source instanceof EntityDamageByEntityEvent){
+				$damager = $source->getDamager();
+				if($damager instanceof Human){
+					$weapon = $damager->getInventory()->getItemInHand();
+					$breach = $weapon->getEnchantment(VanillaEnchantments::BREACH());
+					if($breach !== null && $breach->getType() instanceof BreachEnchantment){
+						$effectiveArmor *= $breach->getType()->getArmorReductionMultiplier($breach->getLevel());
+					}
+				}
+			}
+			$source->setModifier(-$source->getFinalDamage() * $effectiveArmor * 0.04, EntityDamageEvent::MODIFIER_ARMOR);
 		}
 
 		$cause = $source->getCause();
@@ -1015,9 +1027,13 @@ abstract class Living extends Entity{
 	}
 
 	protected function onDispose() : void{
-		$this->armorInventory->removeAllViewers();
-		$this->effectManager->getEffectAddHooks()->clear();
-		$this->effectManager->getEffectRemoveHooks()->clear();
+		if(isset($this->armorInventory)){
+			$this->armorInventory->removeAllViewers();
+		}
+		if(isset($this->effectManager)){
+			$this->effectManager->getEffectAddHooks()->clear();
+			$this->effectManager->getEffectRemoveHooks()->clear();
+		}
 		parent::onDispose();
 	}
 

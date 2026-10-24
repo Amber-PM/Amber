@@ -227,6 +227,7 @@ final class VanillaItems{
 	private static Armor $_mLEATHER_PANTS;
 	private static Armor $_mLEATHER_TUNIC;
 	private static SplashPotion $_mLINGERING_POTION;
+	private static Mace $_mMACE;
 	private static Item $_mMAGMA_CREAM;
 	private static HangingSign $_mMANGROVE_HANGING_SIGN;
 	private static ItemBlockWallOrFloor $_mMANGROVE_SIGN;
@@ -355,6 +356,7 @@ final class VanillaItems{
 	private static Item $_mWHEAT;
 	private static WheatSeeds $_mWHEAT_SEEDS;
 	private static Item $_mWILD_ARMOR_TRIM_SMITHING_TEMPLATE;
+	private static WindCharge $_mWIND_CHARGE;
 	private static SpawnEgg $_mWOLF_SPAWN_EGG;
 	private static Axe $_mWOODEN_AXE;
 	private static Hoe $_mWOODEN_HOE;
@@ -587,6 +589,7 @@ final class VanillaItems{
 			"leather_pants" => fn(Armor $v) => self::$_mLEATHER_PANTS = $v,
 			"leather_tunic" => fn(Armor $v) => self::$_mLEATHER_TUNIC = $v,
 			"lingering_potion" => fn(SplashPotion $v) => self::$_mLINGERING_POTION = $v,
+			"mace" => fn(Mace $v) => self::$_mMACE = $v,
 			"magma_cream" => fn(Item $v) => self::$_mMAGMA_CREAM = $v,
 			"mangrove_hanging_sign" => fn(HangingSign $v) => self::$_mMANGROVE_HANGING_SIGN = $v,
 			"mangrove_sign" => fn(ItemBlockWallOrFloor $v) => self::$_mMANGROVE_SIGN = $v,
@@ -715,6 +718,7 @@ final class VanillaItems{
 			"wheat" => fn(Item $v) => self::$_mWHEAT = $v,
 			"wheat_seeds" => fn(WheatSeeds $v) => self::$_mWHEAT_SEEDS = $v,
 			"wild_armor_trim_smithing_template" => fn(Item $v) => self::$_mWILD_ARMOR_TRIM_SMITHING_TEMPLATE = $v,
+			"wind_charge" => fn(WindCharge $v) => self::$_mWIND_CHARGE = $v,
 			"wolf_spawn_egg" => fn(SpawnEgg $v) => self::$_mWOLF_SPAWN_EGG = $v,
 			"wooden_axe" => fn(Axe $v) => self::$_mWOODEN_AXE = $v,
 			"wooden_hoe" => fn(Hoe $v) => self::$_mWOODEN_HOE = $v,
@@ -1707,6 +1711,11 @@ final class VanillaItems{
 		return clone self::$_mLINGERING_POTION;
 	}
 
+	public static function MACE() : Mace{
+		if(!isset(self::$_mMACE)){ self::init(); }
+		return clone self::$_mMACE;
+	}
+
 	public static function MAGMA_CREAM() : Item{
 		if(!isset(self::$_mMAGMA_CREAM)){ self::init(); }
 		return clone self::$_mMAGMA_CREAM;
@@ -2345,6 +2354,11 @@ final class VanillaItems{
 	public static function WILD_ARMOR_TRIM_SMITHING_TEMPLATE() : Item{
 		if(!isset(self::$_mWILD_ARMOR_TRIM_SMITHING_TEMPLATE)){ self::init(); }
 		return clone self::$_mWILD_ARMOR_TRIM_SMITHING_TEMPLATE;
+	}
+
+	public static function WIND_CHARGE() : WindCharge{
+		if(!isset(self::$_mWIND_CHARGE)){ self::init(); }
+		return clone self::$_mWIND_CHARGE;
 	}
 
 	public static function WOLF_SPAWN_EGG() : SpawnEgg{

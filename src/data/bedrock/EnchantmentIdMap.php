@@ -71,5 +71,14 @@ final class EnchantmentIdMap{
 		$this->register(EnchantmentIds::MULTISHOT, VanillaEnchantments::MULTISHOT());
 		$this->register(EnchantmentIds::PIERCING, VanillaEnchantments::PIERCING());
 		$this->register(EnchantmentIds::QUICK_CHARGE, VanillaEnchantments::QUICK_CHARGE());
+
+		$this->register(EnchantmentIds::IMPALING, VanillaEnchantments::IMPALING());
+		$this->register(EnchantmentIds::RIPTIDE, VanillaEnchantments::RIPTIDE());
+		$this->register(EnchantmentIds::LOYALTY, VanillaEnchantments::LOYALTY());
+		$this->register(EnchantmentIds::CHANNELING, VanillaEnchantments::CHANNELING());
+
+		$this->register(EnchantmentIds::DENSITY, VanillaEnchantments::DENSITY());
+		$this->register(EnchantmentIds::BREACH, VanillaEnchantments::BREACH());
+		$this->register(EnchantmentIds::WIND_BURST, VanillaEnchantments::WIND_BURST());
 	}
 }

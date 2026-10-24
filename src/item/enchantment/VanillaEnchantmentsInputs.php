@@ -306,6 +306,57 @@ final class VanillaEnchantmentsInputs extends RegistrySource{
 			fn(int $level) : int => 20 * ($level - 1) + 12,
 			50
 		));
+
+		self::register("LOYALTY", new LoyaltyEnchantment(
+			KnownTranslationFactory::enchantment_tridentLoyalty(),
+			Rarity::UNCOMMON,
+			0,
+			0,
+			3
+		));
+		self::register("RIPTIDE", new RiptideEnchantment(
+			KnownTranslationFactory::enchantment_tridentRiptide(),
+			Rarity::RARE,
+			0,
+			0,
+			3
+		));
+		self::register("CHANNELING", new ChannelingEnchantment(
+			KnownTranslationFactory::enchantment_tridentChanneling(),
+			Rarity::MYTHIC,
+			0,
+			0,
+			1
+		));
+		self::register("IMPALING", new ImpalingEnchantment(
+			KnownTranslationFactory::enchantment_tridentImpaling(),
+			Rarity::RARE,
+			0,
+			0,
+			5
+		));
+
+		self::register("DENSITY", new DensityEnchantment(
+			KnownTranslationFactory::enchantment_heavy_weapon_density(),
+			Rarity::COMMON,
+			0,
+			0,
+			5
+		));
+		self::register("BREACH", new BreachEnchantment(
+			KnownTranslationFactory::enchantment_heavy_weapon_breach(),
+			Rarity::RARE,
+			0,
+			0,
+			4
+		));
+		self::register("WIND_BURST", new WindBurstEnchantment(
+			KnownTranslationFactory::enchantment_heavy_weapon_windburst(),
+			Rarity::MYTHIC,
+			0,
+			0,
+			3
+		));
 	}
 
 	protected function register(string $name, Enchantment $member) : void{

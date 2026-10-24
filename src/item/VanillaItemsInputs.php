@@ -336,6 +336,8 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("torchflower_seeds", fn(IID $id) => new TorchflowerSeeds($id, "Torchflower Seeds"));
 		self::register("totem", fn(IID $id) => new Totem($id, "Totem of Undying"));
 		self::register("trident", fn(IID $id) => new Trident($id, "Trident"));
+		self::register("mace", fn(IID $id) => new Mace($id, "Mace"));
+		self::register("wind_charge", fn(IID $id) => new WindCharge($id, "Wind Charge"));
 		self::registerDelayed("warped_sign", fn(string $name) : ItemBlockWallOrFloor => new ItemBlockWallOrFloor(self::makeIID($name), Blocks::WARPED_SIGN(), Blocks::WARPED_WALL_SIGN()));
 		self::registerDelayed("warped_hanging_sign", fn(string $name) : HangingSign => new HangingSign(self::makeIID($name), "Warped Hanging Sign", Blocks::WARPED_CEILING_CENTER_HANGING_SIGN(), Blocks::WARPED_CEILING_EDGES_HANGING_SIGN(), Blocks::WARPED_WALL_HANGING_SIGN()));
 		self::registerDelayed("water_bucket", fn(string $name) : LiquidBucket => new LiquidBucket(self::makeIID($name), "Water Bucket", Blocks::WATER()));
