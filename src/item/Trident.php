@@ -24,10 +24,16 @@ declare(strict_types=1);
 namespace pocketmine\item;
 
 use pocketmine\block\Block;
+use pocketmine\block\BlockTypeIds;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Living;
 use pocketmine\entity\Location;
 use pocketmine\entity\projectile\Trident as TridentEntity;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\ProjectileLaunchEvent;
+use pocketmine\item\enchantment\ImpalingEnchantment;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\player\Player;
 use pocketmine\world\sound\TridentThrowSound;
 use function min;
@@ -43,8 +49,41 @@ class Trident extends Tool implements Releasable{
 		$location = $player->getLocation();
 
 		$diff = $player->getItemUseDuration();
-		if($diff < 14){
+		if($diff < 10){
 			return ItemUseResult::FAIL;
+		}
+
+		$riptide = $this->getEnchantment(VanillaEnchantments::RIPTIDE());
+		if($riptide !== null){
+			$inWaterOrRain = $player->isUnderwater() ||
+				$player->getWorld()->getBlock($player->getPosition())->getTypeId() === BlockTypeIds::WATER ||
+				$player->getWorld()->isRaining();
+			if(!$inWaterOrRain){
+				return ItemUseResult::FAIL;
+			}
+			if($player->hasFiniteResources()){
+				$this->applyDamage(self::DAMAGE_ON_THROW);
+			}
+			$speed = 0.75 * $riptide->getLevel() + 1.25;
+			$motion = $player->getDirectionVector()->multiply($speed);
+			$player->setMotion($motion);
+			$player->resetFallDistance();
+
+			$meleeDamage = (float) $this->getAttackPoints();
+			$impaling = $this->getEnchantment(VanillaEnchantments::IMPALING());
+			foreach($player->getWorld()->getNearbyEntities($player->getBoundingBox()->expandedCopy(1.5, 1.5, 1.5), $player) as $nearby){
+				if($nearby instanceof Living && $nearby->isAlive()){
+					$damage = $meleeDamage;
+					if($impaling !== null && $impaling->getType() instanceof ImpalingEnchantment && $impaling->getType()->isApplicableTo($nearby)){
+						$damage += $impaling->getType()->getDamageBonus($impaling->getLevel());
+					}
+					$ev = new EntityDamageByEntityEvent($player, $nearby, EntityDamageEvent::CAUSE_ENTITY_ATTACK, $damage);
+					$nearby->attack($ev);
+				}
+			}
+
+			$location->getWorld()->addSound($location, new TridentThrowSound());
+			return ItemUseResult::SUCCESS;
 		}
 
 		$item = $this->pop();
@@ -52,8 +91,6 @@ class Trident extends Tool implements Releasable{
 			$item->applyDamage(self::DAMAGE_ON_THROW);
 		}
 		if($item->isNull()){
-			//canStartUsingItem() will normally prevent this, but it's possible the item might've been modified between
-			//the start action and the release, so it's best to account for this anyway
 			return ItemUseResult::FAIL;
 		}
 		$entity = new TridentEntity(Location::fromObject(

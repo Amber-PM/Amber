@@ -27,7 +27,10 @@ use pocketmine\block\Block;
 use pocketmine\entity\Entity;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\entity\object\LightningBolt;
 use pocketmine\event\entity\EntityItemPickupEvent;
+use pocketmine\item\enchantment\ImpalingEnchantment;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
 use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
@@ -55,6 +58,10 @@ class Trident extends Projectile{
 	protected bool $canCollide = true;
 
 	protected bool $spawnedInCreative = false;
+
+	protected int $loyaltyDelayTicks = 0;
+
+	protected bool $returningToOwner = false;
 
 	public function __construct(
 		Location $location,
@@ -99,7 +106,39 @@ class Trident extends Projectile{
 		if($this->closed){
 			return false;
 		}
-		//TODO: Loyalty enchantment.
+
+		$loyalty = $this->item->getEnchantment(VanillaEnchantments::LOYALTY());
+		if($loyalty !== null && ($this->blockHit !== null || !$this->canCollide)){
+			$this->loyaltyDelayTicks += $tickDiff;
+			if($this->loyaltyDelayTicks >= 10){
+				$this->returningToOwner = true;
+			}
+		}
+
+		if($this->returningToOwner){
+			$owner = $this->getOwningEntity();
+			if(!($owner instanceof Player) || !$owner->isAlive() || $owner->isClosed() || $owner->getWorld() !== $this->getWorld()){
+				$this->getWorld()->dropItem($this->location, $this->getItem());
+				$this->flagForDespawn();
+				return false;
+			}
+
+			$targetPos = $owner->getEyePos();
+			$dist = $this->location->distance($targetPos);
+			if($dist <= 1.5){
+				$this->pickup($owner);
+				$this->flagForDespawn();
+				return true;
+			}
+
+			$level = $loyalty !== null ? $loyalty->getLevel() : 1;
+			$speed = 0.05 * ($level * 2 + 1) * 3.0;
+			$dir = $targetPos->subtractVector($this->location)->normalize();
+			$this->setMotion($dir->multiply($speed));
+			$this->move($this->motion->x, $this->motion->y, $this->motion->z);
+			$this->updateMovement();
+			return true;
+		}
 
 		return parent::entityBaseTick($tickDiff);
 	}
@@ -109,10 +148,21 @@ class Trident extends Projectile{
 	}
 
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
+		$impaling = $this->item->getEnchantment(VanillaEnchantments::IMPALING());
+		if($impaling !== null && $impaling->getType() instanceof ImpalingEnchantment && $impaling->getType()->isApplicableTo($entityHit)){
+			$this->damage += $impaling->getType()->getDamageBonus($impaling->getLevel());
+		}
+
 		parent::onHitEntity($entityHit, $hitResult);
 
 		if($this->hitBlocked){
 			return;
+		}
+
+		$channeling = $this->item->getEnchantment(VanillaEnchantments::CHANNELING());
+		if($channeling !== null && $this->getWorld()->isThundering()){
+			$lightning = new LightningBolt($entityHit->getLocation());
+			$lightning->spawnToAll();
 		}
 
 		$this->canCollide = false;
@@ -124,6 +174,12 @@ class Trident extends Projectile{
 		parent::onHitBlock($blockHit, $hitResult);
 		$this->canCollide = true;
 		$this->broadcastSound(new TridentHitBlockSound());
+
+		$channeling = $this->item->getEnchantment(VanillaEnchantments::CHANNELING());
+		if($channeling !== null && $this->getWorld()->isThundering()){
+			$lightning = new LightningBolt(Location::fromObject($hitResult->getHitVector(), $this->getWorld()));
+			$lightning->spawnToAll();
+		}
 	}
 
 	public function getItem() : Item{

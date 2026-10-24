@@ -1679,8 +1679,12 @@ abstract class Entity{
 	protected function onDispose() : void{
 		$this->detachShapes();
 		$this->despawnFromAll();
-		if($this->location->isValid()){
-			$this->getWorld()->removeEntity($this);
+		try{
+			if($this->location->isValid()){
+				$this->getWorld()->removeEntity($this);
+			}
+		}catch(\Error){
+			//property may not be initialized if an unconstructed mock was destroyed
 		}
 	}
 

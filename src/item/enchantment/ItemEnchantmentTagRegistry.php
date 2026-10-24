@@ -64,9 +64,11 @@ final class ItemEnchantmentTagRegistry{
 		$this->register(Tags::MASK);
 		$this->register(Tags::ELYTRA);
 		$this->register(Tags::BRUSH);
+		$this->register(Tags::MACE);
 		$this->register(Tags::WEAPONS, [
 			Tags::SWORD,
 			Tags::TRIDENT,
+			Tags::MACE,
 			Tags::BOW,
 			Tags::CROSSBOW,
 			Tags::BLOCK_TOOLS,

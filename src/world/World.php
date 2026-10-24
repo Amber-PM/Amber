@@ -1998,6 +1998,28 @@ class World implements ChunkManager{
 		return $this->sunAnglePercentage * 360.0;
 	}
 
+	private bool $raining = false;
+	private bool $thundering = false;
+
+	public function isRaining() : bool{
+		return $this->raining;
+	}
+
+	public function setRaining(bool $raining) : void{
+		$this->raining = $raining;
+	}
+
+	public function isThundering() : bool{
+		return $this->thundering;
+	}
+
+	public function setThundering(bool $thundering) : void{
+		$this->thundering = $thundering;
+		if($thundering){
+			$this->raining = true;
+		}
+	}
+
 	/**
 	 * Computes how many points of sky light is subtracted based on the current time. Used to offset raw chunk sky light
 	 * to get a real light value.

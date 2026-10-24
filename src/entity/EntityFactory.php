@@ -31,6 +31,8 @@ use pocketmine\data\bedrock\LegacyEntityIdToStringIdMap;
 use pocketmine\data\bedrock\PotionTypeIdMap;
 use pocketmine\data\bedrock\PotionTypeIds;
 use pocketmine\data\SavedDataLoadingException;
+use pocketmine\entity\boss\EnderDragon;
+use pocketmine\entity\boss\Wither;
 use pocketmine\entity\EntityDataHelper as Helper;
 use pocketmine\entity\object\AreaEffectCloud;
 use pocketmine\entity\object\ArmorStand;
@@ -38,6 +40,7 @@ use pocketmine\entity\object\EndCrystal;
 use pocketmine\entity\object\ExperienceOrb;
 use pocketmine\entity\object\FallingBlock;
 use pocketmine\entity\object\ItemEntity;
+use pocketmine\entity\object\LightningBolt;
 use pocketmine\entity\object\Painting;
 use pocketmine\entity\object\PaintingMotive;
 use pocketmine\entity\object\PrimedTNT;
@@ -49,6 +52,7 @@ use pocketmine\entity\projectile\IceBomb;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
+use pocketmine\entity\projectile\WindCharge;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -204,6 +208,22 @@ final class EntityFactory{
 			'Trident', //backwards compat for people who used #4547 before it was merged, since it was sitting around for 4 years...
 			'ThrownTrident' //as above
 		]);
+
+		$this->register(WindCharge::class, function(World $world, CompoundTag $nbt) : WindCharge{
+			return new WindCharge(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['WindCharge', 'minecraft:wind_charge_projectile']);
+
+		$this->register(LightningBolt::class, function(World $world, CompoundTag $nbt) : LightningBolt{
+			return new LightningBolt(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['LightningBolt', 'minecraft:lightning_bolt']);
+
+		$this->register(EnderDragon::class, function(World $world, CompoundTag $nbt) : EnderDragon{
+			return new EnderDragon(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['EnderDragon', 'minecraft:ender_dragon']);
+
+		$this->register(Wither::class, function(World $world, CompoundTag $nbt) : Wither{
+			return new Wither(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Wither', 'minecraft:wither']);
 
 		$this->register(Cat::class, function(World $world, CompoundTag $nbt) : Cat{
 			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
