@@ -97,6 +97,16 @@ class LootEntry{
 		}
 
 		if($item === null){
+			// bedrock ids without a parser alias (e.g. music discs, fireball, lingering_potion)
+			try{
+				$upgraded = GlobalItemDataHandlers::getUpgrader()->upgradeItemTypeDataString($this->name, 0, 1, null);
+				$item = GlobalItemDataHandlers::getDeserializer()->deserializeStack($upgraded);
+			}catch(\Throwable){
+				$item = null;
+			}
+		}
+
+		if($item === null){
 			// Skip unsupported items to avoid saving unregistered item entities
 			return [];
 		}
