@@ -42,6 +42,7 @@ use pocketmine\block\CaveVines;
 use pocketmine\block\ChiseledBookshelf;
 use pocketmine\block\ChorusFlower;
 use pocketmine\block\CocoaBlock;
+use pocketmine\block\Composter;
 use pocketmine\block\Copper;
 use pocketmine\block\CopperLantern;
 use pocketmine\block\DaylightSensor;
@@ -60,6 +61,7 @@ use pocketmine\block\FloorCoralFan;
 use pocketmine\block\Froglight;
 use pocketmine\block\FrostedIce;
 use pocketmine\block\GlazedTerracotta;
+use pocketmine\block\Grindstone;
 use pocketmine\block\Hopper;
 use pocketmine\block\Lantern;
 use pocketmine\block\Leaves;
@@ -1295,6 +1297,13 @@ final class VanillaBlockMappings{
 			BoolProperty::unused(StateNames::TOGGLE_BIT, false),
 			new ValueFromStringProperty(StateNames::ATTACHMENT, ValueMappings::getInstance()->bellAttachmentType, fn(Bell $b) => $b->getAttachmentType(), fn(Bell $b, BellAttachmentType $v) => $b->setAttachmentType($v)),
 			$commonProperties->horizontalFacingSWNE
+		]));
+		$reg->mapModel(Model::create(Blocks::GRINDSTONE(), Ids::GRINDSTONE)->properties([
+			new ValueFromStringProperty(StateNames::ATTACHMENT, ValueMappings::getInstance()->bellAttachmentType, fn(Grindstone $b) => $b->getAttachmentType(), fn(Grindstone $b, BellAttachmentType $v) => $b->setAttachmentType($v)),
+			$commonProperties->horizontalFacingSWNE
+		]));
+		$reg->mapModel(Model::create(Blocks::COMPOSTER(), Ids::COMPOSTER)->properties([
+			new IntProperty(StateNames::COMPOSTER_FILL_LEVEL, 0, 8, fn(Composter $b) => $b->getFillLevel(), fn(Composter $b, int $v) => $b->setFillLevel($v))
 		]));
 		$reg->mapModel(Model::create(Blocks::BONE_BLOCK(), Ids::BONE_BLOCK)->properties([
 			IntProperty::unused(StateNames::DEPRECATED, 0),
