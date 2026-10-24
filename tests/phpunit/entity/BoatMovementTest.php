@@ -128,7 +128,11 @@ final class BoatMovementTest extends TestCase{
 		$player = $this->createMock(\pocketmine\player\Player::class);
 		$player->method("isCreative")->willReturn(true);
 
-		$creativeEv = new \pocketmine\event\entity\EntityDamageByEntityEvent($player, $boat, \pocketmine\event\entity\EntityDamageEvent::CAUSE_ENTITY_ATTACK, 1.0);
+		$creativeEv = $this->createMock(\pocketmine\event\entity\EntityDamageByEntityEvent::class);
+		$creativeEv->method("getDamager")->willReturn($player);
+		$creativeEv->method("isCancelled")->willReturn(false);
+		$creativeEv->method("getFinalDamage")->willReturn(1.0);
+
 		$boat->attack($creativeEv);
 		self::assertTrue($boat->isFlaggedForDespawn());
 	}
