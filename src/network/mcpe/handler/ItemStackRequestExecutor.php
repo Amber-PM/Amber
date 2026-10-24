@@ -24,15 +24,22 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\handler;
 
 use pocketmine\block\inventory\AnvilInventory;
+use pocketmine\block\inventory\BeaconInventory;
 use pocketmine\block\inventory\EnchantInventory;
+use pocketmine\block\inventory\GrindstoneInventory;
+use pocketmine\block\inventory\SmithingTableInventory;
+use pocketmine\block\tile\Beacon as TileBeacon;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\CreateItemAction;
 use pocketmine\inventory\transaction\action\DestroyItemAction;
 use pocketmine\inventory\transaction\action\DropItemAction;
 use pocketmine\inventory\transaction\AnvilTransaction;
+use pocketmine\inventory\transaction\BeaconTransaction;
 use pocketmine\inventory\transaction\CraftingTransaction;
 use pocketmine\inventory\transaction\EnchantingTransaction;
+use pocketmine\inventory\transaction\GrindstoneTransaction;
 use pocketmine\inventory\transaction\InventoryTransaction;
+use pocketmine\inventory\transaction\SmithingTransaction;
 use pocketmine\inventory\transaction\TransactionBuilder;
 use pocketmine\inventory\transaction\TransactionBuilderInventory;
 use pocketmine\item\Durable;
@@ -42,6 +49,7 @@ use pocketmine\network\mcpe\InventoryManager;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\inventory\ContainerUIIds;
 use pocketmine\network\mcpe\protocol\types\inventory\FullContainerName;
+use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\BeaconPaymentStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\CraftingConsumeInputStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\CraftingCreateSpecificResultStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\CraftRecipeAutoStackRequestAction;
@@ -51,6 +59,7 @@ use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\CreativeCreate
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\DeprecatedCraftingResultsStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\DestroyStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\DropStackRequestAction;
+use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\GrindstoneStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\ItemStackRequest;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\ItemStackRequestAction;
 use pocketmine\network\mcpe\protocol\types\inventory\stackrequest\ItemStackRequestSlotInfo;
@@ -301,6 +310,71 @@ class ItemStackRequestExecutor{
 		$this->setNextCreatedItem($this->specialTransaction->getResult());
 	}
 
+	protected function beginGrindstoneTransaction() : void{
+		$this->assertFirstSpecialTransaction();
+		$currentWindow = $this->player->getCurrentWindow();
+		if(!$currentWindow instanceof GrindstoneInventory){
+			throw new ItemStackRequestProcessException("Player's current window is not a grindstone inventory");
+		}
+
+		$this->specialTransaction = new GrindstoneTransaction(
+			$this->player,
+			$this->player->getWorld()->getBlock($currentWindow->getHolder()),
+			clone $currentWindow->getItem(GrindstoneInventory::SLOT_INPUT_FIRST),
+			clone $currentWindow->getItem(GrindstoneInventory::SLOT_INPUT_SECOND),
+			[]
+		);
+		$this->setNextCreatedItem($this->specialTransaction->getResult());
+	}
+
+	protected function beginSmithingCrafting(int $recipeId) : void{
+		$this->assertFirstSpecialTransaction();
+		$currentWindow = $this->player->getCurrentWindow();
+		if(!$currentWindow instanceof SmithingTableInventory){
+			throw new ItemStackRequestProcessException("Player's current window is not a smithing table inventory");
+		}
+
+		$craftingManager = $this->player->getServer()->getCraftingManager();
+		$recipeIndex = $recipeId - CraftingDataCache::RECIPE_ID_OFFSET;
+		$recipe = $craftingManager->getCraftingRecipeFromIndex($recipeIndex);
+		if($recipe === null){
+			throw new ItemStackRequestProcessException("No such crafting recipe index: $recipeIndex");
+		}
+
+		$this->specialTransaction = new SmithingTransaction(
+			$this->player,
+			$this->player->getWorld()->getBlock($currentWindow->getHolder()),
+			$recipe,
+			clone $currentWindow->getItem(SmithingTableInventory::SLOT_TEMPLATE),
+			clone $currentWindow->getItem(SmithingTableInventory::SLOT_INPUT),
+			clone $currentWindow->getItem(SmithingTableInventory::SLOT_MATERIAL),
+			[]
+		);
+		$this->setNextCreatedItem($this->specialTransaction->getResult());
+	}
+
+	protected function beginBeaconTransaction(int $primaryEffectId, int $secondaryEffectId) : void{
+		$this->assertFirstSpecialTransaction();
+		$currentWindow = $this->player->getCurrentWindow();
+		if(!$currentWindow instanceof BeaconInventory){
+			throw new ItemStackRequestProcessException("Player's current window is not a beacon inventory");
+		}
+
+		$tile = $this->player->getWorld()->getTile($currentWindow->getHolder());
+		if(!$tile instanceof TileBeacon){
+			throw new ItemStackRequestProcessException("Beacon block has no tile");
+		}
+
+		$this->specialTransaction = new BeaconTransaction(
+			$this->player,
+			$tile,
+			clone $currentWindow->getItem(BeaconInventory::SLOT_PAYMENT),
+			$primaryEffectId,
+			$secondaryEffectId,
+			[]
+		);
+	}
+
 	/**
 	 * @throws ItemStackRequestProcessException
 	 */
@@ -387,17 +461,33 @@ class ItemStackRequestExecutor{
 					$this->specialTransaction = new EnchantingTransaction($this->player, $option, $optionId + 1);
 					$this->setNextCreatedItem($window->getOutput($optionId));
 				}
+			}elseif($window instanceof SmithingTableInventory){
+				$this->beginSmithingCrafting($action->getRecipeId());
 			}else{
 				$this->beginCrafting($action->getRecipeId(), $this->player->getNetworkSession()->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_20 ? $action->getRepetitions() : 1);
 			}
 		}elseif($action instanceof CraftRecipeAutoStackRequestAction){
-			$this->beginCrafting($action->getRecipeId(), $action->getRepetitions());
+			$window = $this->player->getCurrentWindow();
+			if($window instanceof SmithingTableInventory){
+				$this->beginSmithingCrafting($action->getRecipeId());
+			}else{
+				$this->beginCrafting($action->getRecipeId(), $action->getRepetitions());
+			}
 		}elseif($action instanceof CraftRecipeOptionalStackRequestAction){
 			$filterStrings = $this->request->getFilterStrings();
 			$filterStringIndex = $action->getFilterStringIndex();
 			$this->beginAnvilTransaction($filterStringIndex >= 0 ? ($filterStrings[$filterStringIndex] ?? null) : null);
+		}elseif($action instanceof GrindstoneStackRequestAction){
+			$this->beginGrindstoneTransaction();
+		}elseif($action instanceof BeaconPaymentStackRequestAction){
+			$this->beginBeaconTransaction($action->getPrimaryEffectId(), $action->getSecondaryEffectId());
 		}elseif($action instanceof CraftingConsumeInputStackRequestAction){
-			if(!$this->specialTransaction instanceof AnvilTransaction){
+			if(
+				!$this->specialTransaction instanceof AnvilTransaction &&
+				!$this->specialTransaction instanceof GrindstoneTransaction &&
+				!$this->specialTransaction instanceof SmithingTransaction &&
+				!$this->specialTransaction instanceof BeaconTransaction
+			){
 				$this->assertDoingCrafting();
 			}
 			$this->removeItemFromSlot($action->getSource(), $action->getCount()); //output discarded - we allow the transaction to verify the balance
