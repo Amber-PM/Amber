@@ -37,6 +37,7 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\world\Explosion;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\Position;
 
 class PrimedTNT extends Entity implements Explosive{
@@ -117,6 +118,10 @@ class PrimedTNT extends Entity implements Explosive{
 	}
 
 	public function explode() : void{
+		if(!$this->getWorld()->getGameRules()->getBool(GameRules::TNT_EXPLODES)){
+			return;
+		}
+
 		$ev = new EntityPreExplodeEvent($this, 4);
 		$ev->call();
 		if(!$ev->isCancelled()){
