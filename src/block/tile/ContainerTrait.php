@@ -33,6 +33,7 @@ use pocketmine\nbt\tag\StringTag;
 use pocketmine\nbt\UnexpectedTagTypeException;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\player\Player;
+use pocketmine\utils\Limits;
 use pocketmine\world\Position;
 use WeakReference;
 use function spl_object_id;
@@ -158,7 +159,12 @@ trait ContainerTrait{
 		if($this->lootTable !== null){
 			$tag->setString("LootTable", $this->lootTable);
 			if($this->lootTableSeed !== null){
-				$tag->setInt("LootTableSeed", $this->lootTableSeed);
+				// Seeds read from LongTag (e.g. converted Java worlds) may not fit in an IntTag
+				if($this->lootTableSeed >= Limits::INT32_MIN && $this->lootTableSeed <= Limits::INT32_MAX){
+					$tag->setInt("LootTableSeed", $this->lootTableSeed);
+				}else{
+					$tag->setLong("LootTableSeed", $this->lootTableSeed);
+				}
 			}
 		}
 	}
