@@ -133,6 +133,7 @@ abstract class Living extends Entity{
 	protected bool $sneaking = false;
 	protected bool $gliding = false;
 	protected bool $swimming = false;
+	protected bool $crawling = false;
 
 	private ?int $frostWalkerLevel = null;
 
@@ -292,9 +293,21 @@ abstract class Living extends Entity{
 		$this->recalculateSize();
 	}
 
+	public function isCrawling() : bool{
+		return $this->crawling;
+	}
+
+	public function setCrawling(bool $value = true) : void{
+		$this->crawling = $value;
+		$this->networkPropertiesDirty = true;
+		$this->recalculateSize();
+	}
+
 	private function recalculateSize() : void{
 		$size = $this->getInitialSizeInfo();
-		if($this->isSwimming() || $this->isGliding()){
+		if($this->isCrawling()){
+			$this->setSize((new EntitySizeInfo(0.6, $size->getWidth(), 0.4))->scale($this->getScale()));
+		}elseif($this->isSwimming() || $this->isGliding()){
 			$width = $size->getWidth();
 			$this->setSize((new EntitySizeInfo($width, $width, $width * 0.9))->scale($this->getScale()));
 		}elseif($this->isSneaking()){
@@ -1011,13 +1024,17 @@ abstract class Living extends Entity{
 		$properties->setGenericFlag(EntityMetadataFlags::SNEAKING, $this->sneaking);
 		$properties->setGenericFlag(EntityMetadataFlags::SPRINTING, $this->sprinting);
 		$properties->setGenericFlag(EntityMetadataFlags::GLIDING, $this->gliding);
-		$properties->setGenericFlag(EntityMetadataFlags::SWIMMING, $this->swimming);
+		$properties->setGenericFlag(EntityMetadataFlags::SWIMMING, $this->swimming || $this->crawling);
 	}
 
 	protected function onDispose() : void{
-		$this->armorInventory->removeAllViewers();
-		$this->effectManager->getEffectAddHooks()->clear();
-		$this->effectManager->getEffectRemoveHooks()->clear();
+		if(isset($this->armorInventory)){
+			$this->armorInventory->removeAllViewers();
+		}
+		if(isset($this->effectManager)){
+			$this->effectManager->getEffectAddHooks()->clear();
+			$this->effectManager->getEffectRemoveHooks()->clear();
+		}
 		parent::onDispose();
 	}
 

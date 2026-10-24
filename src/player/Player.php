@@ -2404,6 +2404,37 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	public function toggleCrawl(bool $crawl) : bool{
+		if($crawl === $this->crawling){
+			return true;
+		}
+
+		if(!$crawl && !$this->hasStandingClearance()){
+			return false;
+		}
+
+		$this->setCrawling($crawl);
+		return true;
+	}
+
+	public function hasStandingClearance() : bool{
+		$world = $this->getWorld();
+		$bb = $this->getBoundingBox();
+		$standingBB = new \pocketmine\math\AxisAlignedBB(
+			$bb->minX,
+			$bb->minY,
+			$bb->minZ,
+			$bb->maxX,
+			$bb->minY + 1.8,
+			$bb->maxZ
+		);
+
+		return empty($world->getCollisionBlocks($standingBB));
+	}
+
+	public function handlePushedIntoLowCeiling() : bool{
+		if(!$this->crawling && !$this->hasStandingClearance()){
+			return $this->toggleCrawl(true);
+		}
 		return false;
 	}
 
@@ -2939,9 +2970,15 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 	protected function onDispose() : void{
 		$this->discardGlideBoosts();
-		$this->disconnect("Player destroyed");
-		$this->cursorInventory->removeAllViewers();
-		$this->craftingGrid->removeAllViewers();
+		if(isset($this->networkSession)){
+			$this->disconnect("Player destroyed");
+		}
+		if(isset($this->cursorInventory)){
+			$this->cursorInventory->removeAllViewers();
+		}
+		if(isset($this->craftingGrid)){
+			$this->craftingGrid->removeAllViewers();
+		}
 		parent::onDispose();
 	}
 
@@ -2964,7 +3001,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 	public function __destruct(){
 		parent::__destruct();
-		$this->logger->debug("Destroyed by garbage collector");
+		try{
+			$this->logger->debug("Destroyed by garbage collector");
+		}catch(\Error){
+			// Uninitialized in unit test mocks
+		}
 	}
 
 	public function canSaveWithChunk() : bool{

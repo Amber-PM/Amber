@@ -1679,7 +1679,7 @@ abstract class Entity{
 	protected function onDispose() : void{
 		$this->detachShapes();
 		$this->despawnFromAll();
-		if($this->location->isValid()){
+		if(isset($this->location) && $this->location->isValid()){
 			$this->getWorld()->removeEntity($this);
 		}
 	}
