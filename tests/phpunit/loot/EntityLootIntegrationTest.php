@@ -21,7 +21,28 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\loot;
+namespace pmmp\encoding {
+	if(!class_exists(BE::class, false)){
+		class BE{
+			public static function unpackSignedLong(string $bytes) : int{
+				return (int) unpack('J', $bytes)[1];
+			}
+		}
+		class LE{
+			public static function packSignedLong(int $val) : string{
+				return pack('P', $val);
+			}
+		}
+	}
+}
+
+namespace pmmp\thread {
+	if(!class_exists(Runnable::class, false)){
+		class Runnable{}
+	}
+}
+
+namespace pocketmine\loot {
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\entity\Entity;
@@ -33,14 +54,17 @@ use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\player\Player;
+use pocketmine\Server;
 use pocketmine\world\World;
 use ReflectionProperty;
 
 final class EntityLootIntegrationTest extends TestCase{
 
 	private function createMockWorld() : World{
+		$server = $this->createMock(Server::class);
 		$world = $this->createMock(World::class);
 		$world->method('isLoaded')->willReturn(true);
+		$world->method('getServer')->willReturn($server);
 		return $world;
 	}
 
@@ -122,4 +146,5 @@ final class EntityLootIntegrationTest extends TestCase{
 		}
 		self::assertNotEmpty($dropsWithPlayer);
 	}
+}
 }

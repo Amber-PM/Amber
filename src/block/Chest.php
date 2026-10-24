@@ -83,6 +83,11 @@ class Chest extends Transparent implements HorizontalFacing{
 					return true;
 				}
 
+				$chest->generateLoot($player);
+				if(($pair = $chest->getPair()) !== null){
+					$pair->generateLoot($player);
+				}
+
 				$player->setCurrentWindow($chest->getInventory());
 			}
 		}

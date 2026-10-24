@@ -23,7 +23,12 @@ declare(strict_types=1);
 
 namespace pocketmine\loot;
 
+use pocketmine\inventory\Inventory;
 use pocketmine\item\Item;
+use function array_pop;
+use function count;
+use function range;
+use function shuffle;
 
 final class LootTable{
 
@@ -46,5 +51,24 @@ final class LootTable{
 			}
 		}
 		return $items;
+	}
+
+	public function fillInventory(Inventory $inventory, LootContext $context) : void{
+		$items = $this->roll($context);
+		if(count($items) === 0){
+			return;
+		}
+
+		$size = $inventory->getSize();
+		$availableSlots = range(0, $size - 1);
+		shuffle($availableSlots);
+
+		foreach($items as $item){
+			if(count($availableSlots) === 0){
+				break;
+			}
+			$slot = array_pop($availableSlots);
+			$inventory->setItem($slot, $item);
+		}
 	}
 }

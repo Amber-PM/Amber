@@ -283,11 +283,15 @@ final class LootTableRegistry{
 	 * @param array<string, mixed> $funcData
 	 */
 	private function parseFunction(array $funcData) : ?LootFunction{
-		$type = self::asString($funcData["function"] ?? "", "");
+		$type = preg_replace('/^minecraft:/', '', self::asString($funcData["function"] ?? "", ""));
 		$func = match($type){
 			"set_count" => $this->parseSetCount($funcData),
 			"set_damage" => $this->parseSetDamage($funcData),
 			"set_data" => new SetDataFunction(self::asInt($funcData["data"] ?? 0, 0)),
+			"set_name" => new SetNameFunction(self::asString($funcData["name"] ?? "", "")),
+			"set_lore" => $this->parseSetLore($funcData),
+			"furnace_smelt" => new FurnaceSmeltFunction(),
+			"specific_enchants" => $this->parseSpecificEnchants($funcData),
 			"looting_enchant" => $this->parseLootingEnchant($funcData),
 			"enchant_randomly" => new EnchantRandomlyFunction(),
 			"enchant_with_levels" => $this->parseEnchantWithLevels($funcData),
@@ -381,5 +385,45 @@ final class LootTableRegistry{
 		}
 		$treasure = self::asBool($funcData["treasure"] ?? false, false);
 		return new EnchantWithLevelsFunction($min, $max, $treasure);
+	}
+
+	/**
+	 * @param array<string, mixed> $funcData
+	 */
+	private function parseSetLore(array $funcData) : SetLoreFunction{
+		$lore = [];
+		$loreRaw = $funcData["lore"] ?? null;
+		if(is_array($loreRaw)){
+			foreach($loreRaw as $line){
+				if(is_string($line)){
+					$lore[] = $line;
+				}
+			}
+		}elseif(is_string($loreRaw)){
+			$lore[] = $loreRaw;
+		}
+		return new SetLoreFunction($lore);
+	}
+
+	/**
+	 * @param array<string, mixed> $funcData
+	 */
+	private function parseSpecificEnchants(array $funcData) : SpecificEnchantsFunction{
+		$enchants = [];
+		$enchantsRaw = $funcData["enchants"] ?? null;
+		if(is_array($enchantsRaw)){
+			foreach($enchantsRaw as $key => $val){
+				if(is_array($val)){
+					$id = self::asString($val["id"] ?? "", "");
+					$level = self::asInt($val["level"] ?? 1, 1);
+					if($id !== ""){
+						$enchants[$id] = $level;
+					}
+				}elseif(is_numeric($val)){
+					$enchants[$key] = self::asInt($val, 1);
+				}
+			}
+		}
+		return new SpecificEnchantsFunction($enchants);
 	}
 }

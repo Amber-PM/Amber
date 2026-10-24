@@ -21,7 +21,22 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\loot;
+namespace pmmp\encoding {
+	if(!class_exists(BE::class, false)){
+		class BE{
+			public static function unpackSignedLong(string $bytes) : int{
+				return (int) unpack('J', $bytes)[1];
+			}
+		}
+		class LE{
+			public static function packSignedLong(int $val) : string{
+				return pack('P', $val);
+			}
+		}
+	}
+}
+
+namespace pocketmine\loot {
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\entity\Entity;
@@ -250,4 +265,58 @@ final class LootTableParserTest extends TestCase{
 		self::assertCount(1, $items);
 		self::assertSame(1, $items[0]->getCount(), "Count should remain 1 when function condition fails");
 	}
+
+	public function testSetNameAndLoreFunctions() : void{
+		$reg = LootTableRegistry::getInstance();
+		$json = [
+			"pools" => [
+				[
+					"rolls" => 1,
+					"entries" => [
+						[
+							"type" => "item",
+							"name" => "minecraft:apple",
+							"functions" => [
+								[
+									"function" => "set_name",
+									"name" => "Golden Core Apple"
+								],
+								[
+									"function" => "set_lore",
+									"lore" => ["Legendary Item", "Restores vitality"]
+								]
+							]
+						]
+					]
+				]
+			]
+		];
+
+		$reg->register("test/name_lore", $reg->parseTable("test/name_lore", $json));
+		$table = $reg->get("test/name_lore");
+		self::assertNotNull($table);
+		$items = $table->roll($this->createTestContext());
+		self::assertCount(1, $items);
+		self::assertSame("Golden Core Apple", $items[0]->getCustomName());
+		self::assertSame(["Legendary Item", "Restores vitality"], $items[0]->getLore());
+	}
+
+	public function testFurnaceSmeltFunctionTransformsRawItems() : void{
+		$victim = $this->createMock(Entity::class);
+		$victim->method("isOnFire")->willReturn(true);
+
+		$world = $this->createMock(World::class);
+		$context = new LootContext(
+			position: new Position(0, 64, 0, $world),
+			victim: $victim
+		);
+
+		$func = new FurnaceSmeltFunction();
+		$rawBeef = VanillaItems::RAW_BEEF()->setCount(3);
+		$cookedBeef = $func->apply($rawBeef, $context);
+
+		self::assertSame(VanillaItems::STEAK()->getTypeId(), $cookedBeef->getTypeId());
+		self::assertSame(3, $cookedBeef->getCount());
+	}
+}
 }

@@ -43,12 +43,41 @@ use function spl_object_id;
 trait ContainerTrait{
 	/** @var string|null */
 	private $lock = null;
+	protected ?string $lootTable = null;
+	protected ?int $lootTableSeed = null;
 
 	private array $pendingMovementCloses = [];
 
 	abstract public function getRealInventory() : Inventory;
 
 	abstract public function getInventory() : Inventory;
+
+	public function getLootTable() : ?string{
+		return $this->lootTable;
+	}
+
+	public function setLootTable(?string $lootTable, ?int $seed = null) : void{
+		$this->lootTable = $lootTable;
+		$this->lootTableSeed = $seed;
+	}
+
+	public function generateLoot(?Player $player = null) : void{
+		if($this->lootTable !== null){
+			$tablePath = $this->lootTable;
+			$this->lootTable = null;
+			$this->lootTableSeed = null;
+
+			$registry = \pocketmine\loot\LootTableRegistry::getInstance();
+			$table = $registry->get($tablePath);
+			if($table !== null){
+				$context = new \pocketmine\loot\LootContext(
+					position: $this->getPosition(),
+					killer: $player
+				);
+				$table->fillInventory($this->getRealInventory(), $context);
+			}
+		}
+	}
 
 	private function trackMovementClose(Player $viewer) : void{
 		$session = $viewer->getNetworkSession();
@@ -103,6 +132,15 @@ trait ContainerTrait{
 		if(($lockTag = $tag->getTag(Container::TAG_LOCK)) instanceof StringTag){
 			$this->lock = $lockTag->getValue();
 		}
+
+		if(($lootTableTag = $tag->getTag("LootTable")) instanceof StringTag && $lootTableTag->getValue() !== ""){
+			$this->lootTable = $lootTableTag->getValue();
+			if(($seedTag = $tag->getTag("LootTableSeed")) instanceof \pocketmine\nbt\tag\IntTag){
+				$this->lootTableSeed = $seedTag->getValue();
+			}elseif(($seedTag = $tag->getTag("LootTableSeed")) instanceof \pocketmine\nbt\tag\LongTag){
+				$this->lootTableSeed = (int) $seedTag->getValue();
+			}
+		}
 	}
 
 	protected function saveItems(CompoundTag $tag) : void{
@@ -115,6 +153,13 @@ trait ContainerTrait{
 
 		if($this->lock !== null){
 			$tag->setString(Container::TAG_LOCK, $this->lock);
+		}
+
+		if($this->lootTable !== null){
+			$tag->setString("LootTable", $this->lootTable);
+			if($this->lootTableSeed !== null){
+				$tag->setInt("LootTableSeed", $this->lootTableSeed);
+			}
 		}
 	}
 
@@ -134,6 +179,7 @@ trait ContainerTrait{
 	 * @see Tile::onBlockDestroyedHook()
 	 */
 	protected function onBlockDestroyedHook() : void{
+		$this->generateLoot();
 		$inv = $this->getRealInventory();
 		$pos = $this->getPosition();
 
