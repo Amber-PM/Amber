@@ -314,6 +314,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("cracked_nether_bricks", fn() => Blocks::CRACKED_NETHER_BRICKS());
 		$result->registerBlock("cracked_polished_blackstone_bricks", fn() => Blocks::CRACKED_POLISHED_BLACKSTONE_BRICKS());
 		$result->registerBlock("cracked_stone_bricks", fn() => Blocks::CRACKED_STONE_BRICKS());
+		$result->registerBlock("crafter", fn() => Blocks::CRAFTER());
 		$result->registerBlock("crafting_table", fn() => Blocks::CRAFTING_TABLE());
 		$result->registerBlock("creeper_head", fn() => Blocks::MOB_HEAD()->setMobHeadType(MobHeadType::CREEPER));
 		$result->registerBlock("crimson_button", fn() => Blocks::CRIMSON_BUTTON());
@@ -898,6 +899,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("oak_wood", fn() => Blocks::OAK_WOOD()->setStripped(false));
 		$result->registerBlock("oak_wood_stairs", fn() => Blocks::OAK_STAIRS());
 		$result->registerBlock("oak_wooden_stairs", fn() => Blocks::OAK_STAIRS());
+		$result->registerBlock("observer", fn() => Blocks::OBSERVER());
 		$result->registerBlock("obsidian", fn() => Blocks::OBSIDIAN());
 		$result->registerBlock("orange_tulip", fn() => Blocks::ORANGE_TULIP());
 		$result->registerBlock("oxeye_daisy", fn() => Blocks::OXEYE_DAISY());
@@ -1154,6 +1156,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("sweet_berry_bush", fn() => Blocks::SWEET_BERRY_BUSH());
 		$result->registerBlock("tall_grass", fn() => Blocks::TALL_GRASS());
 		$result->registerBlock("tallgrass", fn() => Blocks::FERN());
+		$result->registerBlock("target", fn() => Blocks::TARGET());
 		$result->registerBlock("terracotta", fn() => Blocks::STAINED_CLAY());
 		$result->registerBlock("tinted_glass", fn() => Blocks::TINTED_GLASS());
 		$result->registerBlock("tnt", fn() => Blocks::TNT());

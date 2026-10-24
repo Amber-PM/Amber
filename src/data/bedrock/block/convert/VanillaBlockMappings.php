@@ -44,6 +44,7 @@ use pocketmine\block\ChorusFlower;
 use pocketmine\block\CocoaBlock;
 use pocketmine\block\Copper;
 use pocketmine\block\CopperLantern;
+use pocketmine\block\Crafter;
 use pocketmine\block\DaylightSensor;
 use pocketmine\block\DetectorRail;
 use pocketmine\block\Dirt;
@@ -70,6 +71,7 @@ use pocketmine\block\MobHead;
 use pocketmine\block\NetherPortal;
 use pocketmine\block\NetherVines;
 use pocketmine\block\NetherWartPlant;
+use pocketmine\block\Observer;
 use pocketmine\block\PinkPetals;
 use pocketmine\block\PistonHead;
 use pocketmine\block\PitcherCrop;
@@ -88,6 +90,7 @@ use pocketmine\block\Sponge;
 use pocketmine\block\StraightOnlyRail;
 use pocketmine\block\Sugarcane;
 use pocketmine\block\SweetBerryBush;
+use pocketmine\block\Target;
 use pocketmine\block\TNT;
 use pocketmine\block\TorchflowerCrop;
 use pocketmine\block\Tripwire;
@@ -449,6 +452,7 @@ final class VanillaBlockMappings{
 		$reg->mapSimple(Blocks::STONE_BRICKS(), Ids::STONE_BRICKS);
 		$reg->mapSimple(Blocks::STRUCTURE_VOID(), Ids::STRUCTURE_VOID);
 		$reg->mapSimple(Blocks::TALL_GRASS(), Ids::SHORT_GRASS);  //no, this is not a typo - tall_grass is now the double block, just to be confusing :(
+		$reg->mapSimple(Blocks::TARGET(), Ids::TARGET);
 		$reg->mapSimple(Blocks::TINTED_GLASS(), Ids::TINTED_GLASS);
 		$reg->mapSimple(Blocks::TORCHFLOWER(), Ids::TORCHFLOWER);
 		$reg->mapSimple(Blocks::TUFF(), Ids::TUFF);
@@ -1360,6 +1364,10 @@ final class VanillaBlockMappings{
 			new BoolProperty(StateNames::TRIGGERED_BIT, fn(PoweredByRedstone $b) => $b->isPowered(), fn(PoweredByRedstone $b, bool $v) => $b->setPowered($v)),
 			new ValueFromIntProperty(StateNames::FACING_DIRECTION, ValueMappings::getInstance()->facing, fn(Dropper $b) => $b->getFacing(), fn(Dropper $b, int $v) => $b->setFacing($v)),
 		]));
+		$reg->mapModel(Model::create(Blocks::CRAFTER(), Ids::CRAFTER)->properties([
+			new BoolProperty(StateNames::TRIGGERED_BIT, fn(PoweredByRedstone $b) => $b->isPowered(), fn(PoweredByRedstone $b, bool $v) => $b->setPowered($v)),
+			new ValueFromIntProperty(StateNames::FACING_DIRECTION, ValueMappings::getInstance()->facing, fn(Crafter $b) => $b->getFacing(), fn(Crafter $b, int $v) => $b->setFacing($v)),
+		]));
 
 		//E
 		$reg->mapModel(Model::create(Blocks::ENDER_CHEST(), Ids::ENDER_CHEST)->properties([$commonProperties->horizontalFacingCardinal]));
@@ -1428,6 +1436,12 @@ final class VanillaBlockMappings{
 		]));
 		$reg->mapModel(Model::create(Blocks::NETHER_PORTAL(), Ids::PORTAL)->properties([
 			new ValueFromStringProperty(StateNames::PORTAL_AXIS, ValueMappings::getInstance()->portalAxis, fn(NetherPortal $b) => $b->getAxis(), fn(NetherPortal $b, int $v) => $b->setAxis($v))
+		]));
+
+		//O
+		$reg->mapModel(Model::create(Blocks::OBSERVER(), Ids::OBSERVER)->properties([
+			new BoolProperty(StateNames::POWERED_BIT, fn(PoweredByRedstone $b) => $b->isPowered(), fn(PoweredByRedstone $b, bool $v) => $b->setPowered($v)),
+			new ValueFromIntProperty(StateNames::FACING_DIRECTION, ValueMappings::getInstance()->facing, fn(Observer $b) => $b->getFacing(), fn(Observer $b, int $v) => $b->setFacing($v)),
 		]));
 
 		//P

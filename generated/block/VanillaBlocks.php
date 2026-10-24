@@ -221,6 +221,7 @@ final class VanillaBlocks{
 	private static Opaque $_mCRACKED_NETHER_BRICKS;
 	private static Opaque $_mCRACKED_POLISHED_BLACKSTONE_BRICKS;
 	private static Opaque $_mCRACKED_STONE_BRICKS;
+	private static Crafter $_mCRAFTER;
 	private static CraftingTable $_mCRAFTING_TABLE;
 	private static WoodenButton $_mCRIMSON_BUTTON;
 	private static CeilingCenterHangingSign $_mCRIMSON_CEILING_CENTER_HANGING_SIGN;
@@ -603,6 +604,7 @@ final class VanillaBlocks{
 	private static WallHangingSign $_mOAK_WALL_HANGING_SIGN;
 	private static WallSign $_mOAK_WALL_SIGN;
 	private static Wood $_mOAK_WOOD;
+	private static Observer $_mOBSERVER;
 	private static Opaque $_mOBSIDIAN;
 	private static OminousFloorBanner $_mOMINOUS_BANNER;
 	private static OminousWallBanner $_mOMINOUS_WALL_BANNER;
@@ -795,6 +797,7 @@ final class VanillaBlocks{
 	private static DoublePlant $_mSUNFLOWER;
 	private static SweetBerryBush $_mSWEET_BERRY_BUSH;
 	private static TallGrass $_mTALL_GRASS;
+	private static Target $_mTARGET;
 	private static TintedGlass $_mTINTED_GLASS;
 	private static TNT $_mTNT;
 	private static Torch $_mTORCH;
@@ -1062,6 +1065,7 @@ final class VanillaBlocks{
 			"cracked_nether_bricks" => fn(Opaque $v) => self::$_mCRACKED_NETHER_BRICKS = $v,
 			"cracked_polished_blackstone_bricks" => fn(Opaque $v) => self::$_mCRACKED_POLISHED_BLACKSTONE_BRICKS = $v,
 			"cracked_stone_bricks" => fn(Opaque $v) => self::$_mCRACKED_STONE_BRICKS = $v,
+			"crafter" => fn(Crafter $v) => self::$_mCRAFTER = $v,
 			"crafting_table" => fn(CraftingTable $v) => self::$_mCRAFTING_TABLE = $v,
 			"crimson_button" => fn(WoodenButton $v) => self::$_mCRIMSON_BUTTON = $v,
 			"crimson_ceiling_center_hanging_sign" => fn(CeilingCenterHangingSign $v) => self::$_mCRIMSON_CEILING_CENTER_HANGING_SIGN = $v,
@@ -1444,6 +1448,7 @@ final class VanillaBlocks{
 			"oak_wall_hanging_sign" => fn(WallHangingSign $v) => self::$_mOAK_WALL_HANGING_SIGN = $v,
 			"oak_wall_sign" => fn(WallSign $v) => self::$_mOAK_WALL_SIGN = $v,
 			"oak_wood" => fn(Wood $v) => self::$_mOAK_WOOD = $v,
+			"observer" => fn(Observer $v) => self::$_mOBSERVER = $v,
 			"obsidian" => fn(Opaque $v) => self::$_mOBSIDIAN = $v,
 			"ominous_banner" => fn(OminousFloorBanner $v) => self::$_mOMINOUS_BANNER = $v,
 			"ominous_wall_banner" => fn(OminousWallBanner $v) => self::$_mOMINOUS_WALL_BANNER = $v,
@@ -1636,6 +1641,7 @@ final class VanillaBlocks{
 			"sunflower" => fn(DoublePlant $v) => self::$_mSUNFLOWER = $v,
 			"sweet_berry_bush" => fn(SweetBerryBush $v) => self::$_mSWEET_BERRY_BUSH = $v,
 			"tall_grass" => fn(TallGrass $v) => self::$_mTALL_GRASS = $v,
+			"target" => fn(Target $v) => self::$_mTARGET = $v,
 			"tinted_glass" => fn(TintedGlass $v) => self::$_mTINTED_GLASS = $v,
 			"tnt" => fn(TNT $v) => self::$_mTNT = $v,
 			"torch" => fn(Torch $v) => self::$_mTORCH = $v,
@@ -2637,6 +2643,11 @@ final class VanillaBlocks{
 	public static function CRACKED_STONE_BRICKS() : Opaque{
 		if(!isset(self::$_mCRACKED_STONE_BRICKS)){ self::init(); }
 		return clone self::$_mCRACKED_STONE_BRICKS;
+	}
+
+	public static function CRAFTER() : Crafter{
+		if(!isset(self::$_mCRAFTER)){ self::init(); }
+		return clone self::$_mCRAFTER;
 	}
 
 	public static function CRAFTING_TABLE() : CraftingTable{
@@ -4549,6 +4560,11 @@ final class VanillaBlocks{
 		return clone self::$_mOAK_WOOD;
 	}
 
+	public static function OBSERVER() : Observer{
+		if(!isset(self::$_mOBSERVER)){ self::init(); }
+		return clone self::$_mOBSERVER;
+	}
+
 	public static function OBSIDIAN() : Opaque{
 		if(!isset(self::$_mOBSIDIAN)){ self::init(); }
 		return clone self::$_mOBSIDIAN;
@@ -5507,6 +5523,11 @@ final class VanillaBlocks{
 	public static function TALL_GRASS() : TallGrass{
 		if(!isset(self::$_mTALL_GRASS)){ self::init(); }
 		return clone self::$_mTALL_GRASS;
+	}
+
+	public static function TARGET() : Target{
+		if(!isset(self::$_mTARGET)){ self::init(); }
+		return clone self::$_mTARGET;
 	}
 
 	public static function TINTED_GLASS() : TintedGlass{

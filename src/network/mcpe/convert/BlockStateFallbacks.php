@@ -43,6 +43,8 @@ final class BlockStateFallbacks{
 	 * @phpstan-var array<string, string>
 	 */
 	private const RULES = [
+		//1.21.0 crafter
+		'/^crafter$/' => 'dropper',
 		//1.21.0 copper blocks
 		'/^(waxed_)?(exposed_|weathered_|oxidized_)?copper_door$/' => 'iron_door',
 		'/^(waxed_)?(exposed_|weathered_|oxidized_)?copper_trapdoor$/' => 'iron_trapdoor',

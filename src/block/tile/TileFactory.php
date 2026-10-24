@@ -89,6 +89,7 @@ final class TileFactory{
 		//TODO: Conduit
 		$this->register(Dispenser::class, ["Dispenser", "Trap", "minecraft:dispenser"]);
 		$this->register(Dropper::class, ["Dropper", "minecraft:dropper"]);
+		$this->register(Crafter::class, ["Crafter", "minecraft:crafter"]);
 		//TODO: EndGateway
 		//TODO: EndPortal
 		//TODO: JigsawBlock
