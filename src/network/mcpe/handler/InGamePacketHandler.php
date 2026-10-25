@@ -29,6 +29,8 @@ use pocketmine\block\tile\Sign;
 use pocketmine\block\utils\SignText;
 use pocketmine\entity\Attribute;
 use pocketmine\entity\InvalidSkinException;
+use pocketmine\entity\vehicle\Boat;
+use pocketmine\entity\vehicle\Vehicle;
 use pocketmine\event\player\PlayerEditBookEvent;
 use pocketmine\inventory\transaction\action\DropItemAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
@@ -128,7 +130,6 @@ use const JSON_THROW_ON_ERROR;
 #[SilentDiscard(MovePlayerPacket::class, comment: "Not needed, noisy debug when landing on ground")]
 #[SilentDiscard(NetworkStackLatencyPacket::class, comment: "Not used, noisy debug")]
 #[SilentDiscard(PlayerHotbarPacket::class, comment: "Not needed")]
-#[SilentDiscard(PlayerInputPacket::class, comment: "Not needed")]
 #[SilentDiscard(SetActorMotionPacket::class, comment: "Not needed, erroneously sent by client when in a vehicle")]
 #[SilentDiscard(SpawnExperienceOrbPacket::class, comment: "XP drops should be server-calculated")]
 class InGamePacketHandler extends PacketHandler{
@@ -664,6 +665,13 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	public function handleInteract(InteractPacket $packet) : bool{
+		if($packet->action === InteractPacket::ACTION_LEAVE_VEHICLE){
+			$vehicle = Vehicle::getVehicleOf($this->player);
+			if($vehicle !== null){
+				$vehicle->removePassenger($this->player);
+			}
+			return true;
+		}
 		if($packet->action === InteractPacket::ACTION_MOUSEOVER){
 			//TODO HACK: silence useless spam (MCPE 1.8)
 			//due to some messy Mojang hacks, it sends this when changing the held item now, which causes us to think
@@ -758,7 +766,36 @@ class InGamePacketHandler extends PacketHandler{
 		return true;
 	}
 
+	public function handlePlayerInput(PlayerInputPacket $packet) : bool{
+		$vehicle = Vehicle::getVehicleOf($this->player);
+		if($vehicle === null){
+			return true;
+		}
+
+		if($packet->sneaking){
+			$vehicle->removePassenger($this->player);
+			return true;
+		}
+
+		if($vehicle instanceof Boat && $vehicle->getRider() === $this->player){
+			$left = $packet->motionX > 0.0 || $packet->motionY > 0.0;
+			$right = $packet->motionX < 0.0 || $packet->motionY > 0.0;
+			if($left || $right){
+				$vehicle->onPaddleTick($left, $right);
+			}
+		}
+
+		return true;
+	}
+
 	public function handleAnimate(AnimatePacket $packet) : bool{
+		if($packet->action === AnimatePacket::ACTION_ROW_RIGHT || $packet->action === AnimatePacket::ACTION_ROW_LEFT){
+			$vehicle = Vehicle::getVehicleOf($this->player);
+			if($vehicle instanceof Boat && $vehicle->getRider() === $this->player){
+				$vehicle->onPaddleTick($packet->action === AnimatePacket::ACTION_ROW_LEFT, $packet->action === AnimatePacket::ACTION_ROW_RIGHT);
+			}
+			return true;
+		}
 		//this spams harder than a firehose on left click if "Improved Input Response" is enabled, and we don't even
 		//use it anyway :<
 		throw new FilterNoisyPacketException();
