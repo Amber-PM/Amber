@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
- *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -34,6 +34,15 @@ use pocketmine\world\World;
 
 final class MinecartRailTest extends TestCase{
 
+	private function createMockPassenger(World $world) : Living{
+		return new class(new Location(0, 64, 0, $world, 0, 0)) extends Living{
+			public function getName() : string{ return "Zombie"; }
+			public static function getNetworkTypeId() : string{ return "minecraft:zombie"; }
+			protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(1.8, 0.6); }
+			protected function onDispose() : void{}
+		};
+	}
+
 	public function testPoweredRailAcceleratesAndBrakesMinecart() : void{
 		$world = $this->createMock(World::class);
 		$world->method("isLoaded")->willReturn(true);
@@ -60,8 +69,7 @@ final class MinecartRailTest extends TestCase{
 		$loc = new Location(0, 64, 0, $world, 0, 0);
 
 		$cart = new Minecart($loc);
-		$rider = $this->createMock(Living::class);
-		$rider->method("isAlive")->willReturn(true);
+		$rider = $this->createMockPassenger($world);
 
 		$cart->addPassenger($rider);
 		self::assertSame($rider, $cart->getRider());
@@ -99,5 +107,55 @@ final class MinecartRailTest extends TestCase{
 		$hopperCart = new HopperMinecart($loc);
 		self::assertSame(5, $hopperCart->getInventory()->getSize());
 		self::assertSame(0, $hopperCart->getMaxPassengers());
+	}
+
+	public function testCompositeVehicleDrops() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$loc = new Location(0, 64, 0, $world, 0, 0);
+
+		$chestCart = new ChestMinecart($loc);
+		$chestDrops = $chestCart->getDrops();
+		self::assertCount(2, $chestDrops);
+
+		$hopperCart = new HopperMinecart($loc);
+		$hopperDrops = $hopperCart->getDrops();
+		self::assertCount(2, $hopperDrops);
+
+		$tntCart = new TNTMinecart($loc);
+		$tntDrops = $tntCart->getDrops();
+		self::assertCount(2, $tntDrops);
+	}
+
+	public function testTNTMinecartFuseSerialization() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$loc = new Location(0, 64, 0, $world, 0, 0);
+
+		$tntCart = new TNTMinecart($loc);
+		$tntCart->prime(55);
+		$nbt = $tntCart->saveNBT();
+		self::assertSame(55, $nbt->getShort(TNTMinecart::TAG_TNT_FUSE));
+
+		$loadedCart = new TNTMinecart($loc, $nbt);
+		self::assertTrue($loadedCart->isPrimed());
+	}
+
+	public function testChestMinecartCargoNBTSerialization() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$loc = new Location(0, 64, 0, $world, 0, 0);
+
+		$chestCart = new ChestMinecart($loc);
+		$item = \pocketmine\item\VanillaItems::DIAMOND()->setCount(5);
+		$chestCart->getInventory()->setItem(3, $item);
+
+		$nbt = $chestCart->saveNBT();
+		self::assertTrue($nbt->getTag(ChestMinecart::TAG_ITEMS) !== null);
+
+		$loadedCart = new ChestMinecart($loc, $nbt);
+		$loadedItem = $loadedCart->getInventory()->getItem(3);
+		self::assertSame($item->getTypeId(), $loadedItem->getTypeId());
+		self::assertSame(5, $loadedItem->getCount());
 	}
 }

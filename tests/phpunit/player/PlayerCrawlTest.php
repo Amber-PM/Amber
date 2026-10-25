@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
- *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,6 +25,7 @@ namespace pocketmine\player;
 
 use PHPUnit\Framework\TestCase;
 use pocketmine\entity\Location;
+use pocketmine\event\player\PlayerToggleCrawlEvent;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
@@ -44,6 +45,8 @@ final class PlayerCrawlTest extends TestCase{
 				$this->crawling = false;
 				$this->networkPropertiesDirty = false;
 			}
+
+			protected function onDispose() : void{}
 		};
 
 		self::assertFalse($player->isCrawling());
@@ -75,6 +78,8 @@ final class PlayerCrawlTest extends TestCase{
 			public function hasStandingClearance() : bool{
 				return $this->mockClearance;
 			}
+
+			protected function onDispose() : void{}
 		};
 
 		// Start crawl
@@ -90,5 +95,29 @@ final class PlayerCrawlTest extends TestCase{
 		$player->mockClearance = true;
 		self::assertTrue($player->toggleCrawl(false));
 		self::assertFalse($player->isCrawling());
+	}
+
+	public function testToggleCrawlEventCancellable() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$location = new Location(0, 64, 0, $world, 0, 0);
+
+		$player = new class($location) extends Player{
+			public function __construct(Location $location){
+				$this->location = $location;
+				$this->crawling = false;
+			}
+
+			public function hasStandingClearance() : bool{
+				return true;
+			}
+
+			protected function onDispose() : void{}
+		};
+
+		$ev = new PlayerToggleCrawlEvent($player, true);
+		self::assertFalse($ev->isCancelled());
+		$ev->cancel();
+		self::assertTrue($ev->isCancelled());
 	}
 }

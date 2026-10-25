@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
- *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,12 +25,20 @@ namespace pocketmine\entity\vehicle;
 
 use pocketmine\block\ActivatorRail;
 use pocketmine\block\Block;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Location;
+use pocketmine\event\entity\EntityPreExplodeEvent;
+use pocketmine\item\Item;
+use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\world\Explosion;
+use pocketmine\world\Position;
 
 class TNTMinecart extends Minecart{
+
+	public const TAG_FUSE = "Fuse";
+	public const TAG_TNT_FUSE = "TNTFuse";
 
 	protected int $fuse = -1;
 
@@ -41,6 +49,16 @@ class TNTMinecart extends Minecart{
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::TNT_MINECART;
+	}
+
+	/**
+	 * @return Item[]
+	 */
+	public function getDrops() : array{
+		return [
+			VanillaItems::MINECART(),
+			VanillaBlocks::TNT()->asItem()
+		];
 	}
 
 	public function prime(int $fuseTicks = 80) : void{
@@ -77,8 +95,34 @@ class TNTMinecart extends Minecart{
 
 	public function explode(float $yield = 4.0) : void{
 		$this->flagForDespawn();
-		$explosion = new Explosion($this->location, $yield, $this);
-		$explosion->explodeA();
-		$explosion->explodeB();
+		$ev = new EntityPreExplodeEvent($this, $yield);
+		$ev->call();
+		if(!$ev->isCancelled()){
+			$explosion = new Explosion(
+				Position::fromObject($this->location->add(0, $this->size->getHeight() / 2, 0), $this->getWorld()),
+				$ev->getRadius(),
+				$this,
+				$ev->getFireChance()
+			);
+			if($ev->isBlockBreaking()){
+				$explosion->explodeA();
+			}
+			$explosion->explodeB();
+		}
+	}
+
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
+		if($nbt->getTag(self::TAG_TNT_FUSE) !== null){
+			$this->fuse = $nbt->getShort(self::TAG_TNT_FUSE, -1);
+		}elseif($nbt->getTag(self::TAG_FUSE) !== null){
+			$this->fuse = $nbt->getShort(self::TAG_FUSE, -1);
+		}
+	}
+
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
+		$nbt->setShort(self::TAG_TNT_FUSE, $this->fuse);
+		return $nbt;
 	}
 }

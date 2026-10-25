@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
- *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -28,11 +28,15 @@ use pocketmine\block\BaseRail;
 use pocketmine\block\Block;
 use pocketmine\block\DetectorRail;
 use pocketmine\block\PoweredRail;
+use pocketmine\data\bedrock\block\BlockLegacyMetadata;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\item\Item;
+use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\player\Player;
 use function min;
 use function sqrt;
 
@@ -64,8 +68,8 @@ class Minecart extends Vehicle{
 		return $this->minecartType;
 	}
 
-	public function getDropItem() : ?\pocketmine\item\Item{
-		return \pocketmine\item\VanillaItems::MINECART();
+	public function getDropItem() : ?Item{
+		return VanillaItems::MINECART();
 	}
 
 	public function getSeatOffset(int $seat) : Vector3{
@@ -82,7 +86,11 @@ class Minecart extends Vehicle{
 					$this->motion = new Vector3($this->motion->x * $factor, $this->motion->y, $this->motion->z * $factor);
 				}else{
 					// Boost along track
-					$this->motion = new Vector3(0.08, $this->motion->y, 0.08);
+					if($rail->getShape() === BlockLegacyMetadata::RAIL_STRAIGHT_EAST_WEST){
+						$this->motion = new Vector3(0.08, $this->motion->y, 0.0);
+					}else{
+						$this->motion = new Vector3(0.0, $this->motion->y, 0.08);
+					}
 				}
 			}else{
 				// Brake friction
@@ -101,6 +109,7 @@ class Minecart extends Vehicle{
 				$rail->setActivated(true);
 				$this->getWorld()->setBlock($rail->getPosition(), $rail);
 			}
+			$this->getWorld()->scheduleDelayedBlockUpdate($rail->getPosition(), 20);
 		}else{
 			// Normal rail friction
 			$this->motion = new Vector3($this->motion->x * 0.96, $this->motion->y, $this->motion->z * 0.96);
@@ -126,7 +135,14 @@ class Minecart extends Vehicle{
 				$this->removePassenger($rider);
 			}else{
 				$offset = $this->getSeatOffset(0);
-				$rider->teleport($this->location->add($offset->x, $offset->y, $offset->z));
+				$targetPos = $this->location->add($offset->x, $offset->y, $offset->z);
+				if($rider instanceof Player){
+					if($rider->getPosition()->distanceSquared($targetPos) > 16.0){
+						$rider->teleport(Location::fromObject($targetPos, $this->getWorld(), $this->location->yaw, $this->location->pitch));
+					}
+				}else{
+					$rider->teleport(Location::fromObject($targetPos, $this->getWorld(), $this->location->yaw, $this->location->pitch));
+				}
 			}
 		}
 

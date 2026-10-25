@@ -51,6 +51,7 @@ use pocketmine\entity\object\FireworkRocket as FireworkEntity;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\entity\projectile\Arrow;
 use pocketmine\entity\Skin;
+use pocketmine\entity\vehicle\Vehicle;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityExtinguishEvent;
@@ -82,6 +83,7 @@ use pocketmine\event\player\PlayerMoveEvent;
 use pocketmine\event\player\PlayerPostChunkSendEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\player\PlayerRespawnEvent;
+use pocketmine\event\player\PlayerToggleCrawlEvent;
 use pocketmine\event\player\PlayerToggleFlightEvent;
 use pocketmine\event\player\PlayerToggleGlideEvent;
 use pocketmine\event\player\PlayerToggleSneakEvent;
@@ -2384,6 +2386,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 		$this->setSneaking($sneak);
+		if($sneak && ($vehicle = Vehicle::getVehicleOf($this)) !== null){
+			$vehicle->removePassenger($this);
+		}
 		return true;
 	}
 
@@ -2412,6 +2417,12 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			return false;
 		}
 
+		$ev = new PlayerToggleCrawlEvent($this, $crawl);
+		$ev->call();
+		if($ev->isCancelled()){
+			return false;
+		}
+
 		$this->setCrawling($crawl);
 		return true;
 	}
@@ -2424,7 +2435,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$bb->minY,
 			$bb->minZ,
 			$bb->maxX,
-			$bb->minY + 1.8,
+			$bb->minY + 1.8 * $this->scale,
 			$bb->maxZ
 		);
 
@@ -3057,6 +3068,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	protected function onDeath() : void{
 		$this->discardGlideBoosts();
 		$this->setGliding(false);
+		$this->setCrawling(false);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the
 		//main inventory and drops the rest on the ground.
 		$this->removeCurrentWindow();
@@ -3146,6 +3158,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 				$this->setSprinting(false);
 				$this->setSneaking(false);
 				$this->setFlying(false);
+				$this->setCrawling(false);
 
 				$this->extinguish(EntityExtinguishEvent::CAUSE_RESPAWN);
 				$this->setAirSupplyTicks($this->getMaxAirSupplyTicks());

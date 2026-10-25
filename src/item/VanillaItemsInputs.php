@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -28,6 +28,7 @@ use pocketmine\block\VanillaBlocks as Blocks;
 use pocketmine\entity\Cat;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
+use pocketmine\entity\vehicle\BoatType;
 use pocketmine\entity\Skeleton;
 use pocketmine\entity\Spider;
 use pocketmine\entity\Squid;
@@ -343,6 +344,17 @@ final class VanillaItemsInputs extends RegistrySource{
 		self::register("wheat_seeds", fn(IID $id) => new WheatSeeds($id, "Wheat Seeds"));
 		self::register("writable_book", fn(IID $id) => new WritableBook($id, "Book & Quill"));
 		self::register("written_book", fn(IID $id) => new WrittenBook($id, "Written Book"));
+
+		foreach(BoatType::cases() as $type){
+			//boat type is static, because different types of wood may have different properties
+			$boatKey = $type === BoatType::BAMBOO ? "bamboo_raft" : strtolower($type->name) . "_boat";
+			$boatName = $type === BoatType::BAMBOO ? "Bamboo Raft" : $type->getDisplayName() . " Boat";
+			self::register($boatKey, fn(IID $id) => new Boat($id, $boatName, $type));
+
+			$chestBoatKey = $type === BoatType::BAMBOO ? "bamboo_chest_raft" : strtolower($type->name) . "_chest_boat";
+			$chestBoatName = $type === BoatType::BAMBOO ? "Bamboo Chest Raft" : $type->getDisplayName() . " Boat with Chest";
+			self::register($chestBoatKey, fn(IID $id) => new ChestBoat($id, $chestBoatName, $type));
+		}
 
 	}
 

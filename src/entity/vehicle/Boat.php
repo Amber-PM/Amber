@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
- *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,16 +27,25 @@ use pocketmine\block\BlockTypeIds;
 use pocketmine\block\Water;
 use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
+use pocketmine\item\Item;
+use pocketmine\item\StringToItemParser;
 use pocketmine\math\Vector3;
+use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\IntTag;
+use pocketmine\nbt\tag\ShortTag;
+use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
+use pocketmine\player\Player;
 use function cos;
 use function deg2rad;
 use function sin;
 
 class Boat extends Vehicle{
+
+	public const TAG_TYPE = "Type";
 
 	protected float $gravity = 0.04;
 	protected float $drag = 0.05;
@@ -65,9 +74,9 @@ class Boat extends Vehicle{
 		return $this->boatType;
 	}
 
-	public function getDropItem() : ?\pocketmine\item\Item{
+	public function getDropItem() : ?Item{
 		$name = $this->boatType->isRaft() ? "bamboo_raft" : ($this->boatType->value . "_boat");
-		return \pocketmine\item\StringToItemParser::getInstance()->parse($name);
+		return StringToItemParser::getInstance()->parse($name);
 	}
 
 	public function getSeatOffset(int $seat) : Vector3{
@@ -86,6 +95,10 @@ class Boat extends Vehicle{
 	}
 
 	public function getFriction() : float{
+		if(!$this->onGround && !$this->isInWater()){
+			return 1.0 - $this->drag;
+		}
+
 		$blockUnder = $this->getWorld()->getBlock($this->location->floor()->down());
 		$id = $blockUnder->getTypeId();
 
@@ -105,6 +118,27 @@ class Boat extends Vehicle{
 	public function isInWater() : bool{
 		$block = $this->getWorld()->getBlock($this->location->floor());
 		return $block instanceof Water;
+	}
+
+	public function getWaterSurfaceY() : ?float{
+		$floor = $this->location->floor();
+		$world = $this->getWorld();
+		$block = $world->getBlock($floor);
+		if(!($block instanceof Water)){
+			return null;
+		}
+
+		$topY = $floor->y;
+		while($topY < $world->getMaxY()){
+			$above = $world->getBlockAt($floor->x, $topY + 1, $floor->z);
+			if($above instanceof Water){
+				$topY++;
+			}else{
+				break;
+			}
+		}
+
+		return $topY + 0.8;
 	}
 
 	public function onPaddleTick(bool $left, bool $right) : void{
@@ -134,12 +168,25 @@ class Boat extends Vehicle{
 		$this->networkPropertiesDirty = true;
 	}
 
+	protected function tryChangeMovement() : void{
+		$friction = $this->getFriction();
+		$mY = $this->motion->y;
+
+		if($this->gravityEnabled){
+			$mY -= $this->gravity;
+		}
+
+		$mY *= (1.0 - $this->drag);
+
+		$this->motion = new Vector3($this->motion->x * $friction, $mY, $this->motion->z * $friction);
+	}
+
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
-		if($this->isInWater()){
+		$surfaceY = $this->getWaterSurfaceY();
+		if($surfaceY !== null){
 			// Buoyant surface levitation
-			$surfaceY = $this->location->floor()->y + 0.8;
 			$diff = $surfaceY - $this->location->y;
 			if($diff > 0.0){
 				$this->motion = new Vector3($this->motion->x, $diff * 0.1, $this->motion->z);
@@ -148,10 +195,6 @@ class Boat extends Vehicle{
 			}
 		}
 
-		// Apply surface friction
-		$friction = $this->getFriction();
-		$this->motion = new Vector3($this->motion->x * $friction, $this->motion->y, $this->motion->z * $friction);
-
 		// Synchronize passenger positions
 		foreach($this->passengers as $seat => $passenger){
 			if(!$passenger->isAlive() || $passenger->isClosed()){
@@ -159,14 +202,39 @@ class Boat extends Vehicle{
 				continue;
 			}
 			$offset = $this->getTransformedSeatOffset($seat);
-			$passenger->teleport($this->location->add($offset->x, $offset->y, $offset->z));
+			$targetPos = $this->location->add($offset->x, $offset->y, $offset->z);
+			if($passenger instanceof Player){
+				if($passenger->getPosition()->distanceSquared($targetPos) > 16.0){
+					$passenger->teleport(Location::fromObject($targetPos, $this->getWorld(), $this->location->yaw, $this->location->pitch));
+				}
+			}else{
+				$passenger->teleport(Location::fromObject($targetPos, $this->getWorld(), $this->location->yaw, $this->location->pitch));
+			}
 		}
 
 		return $hasUpdate || $this->motion->lengthSquared() > 0.0001;
 	}
 
+	protected function initEntity(CompoundTag $nbt) : void{
+		parent::initEntity($nbt);
+		if(($typeTag = $nbt->getTag(self::TAG_TYPE)) !== null){
+			if($typeTag instanceof StringTag){
+				$this->boatType = BoatType::tryFrom($typeTag->getValue()) ?? BoatType::OAK;
+			}elseif($typeTag instanceof IntTag || $typeTag instanceof ByteTag || $typeTag instanceof ShortTag){
+				$this->boatType = BoatType::fromVariantId($typeTag->getValue());
+			}
+		}
+	}
+
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
+		$nbt->setString(self::TAG_TYPE, $this->boatType->value);
+		return $nbt;
+	}
+
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
+		$properties->setInt(EntityMetadataProperties::VARIANT, $this->boatType->getVariantId());
 		$properties->setFloat(EntityMetadataProperties::PADDLE_TIME_LEFT, $this->paddleTimeLeft);
 		$properties->setFloat(EntityMetadataProperties::PADDLE_TIME_RIGHT, $this->paddleTimeRight);
 	}
