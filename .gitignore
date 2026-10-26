@@ -57,3 +57,6 @@ Documentation/*
 
 # install-local-protocol.sh
 /composer-local-protocol.*
+
+# Native release build inputs and products
+/.native-webrtc/

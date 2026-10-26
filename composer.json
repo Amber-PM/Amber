@@ -49,7 +49,9 @@
       "pocketmine/raklib-ipc": "~1.0.0",
       "pocketmine/snooze": "^0.5.0",
       "ramsey/uuid": "~4.9.0",
-      "symfony/filesystem": "~6.4.0"
+      "symfony/filesystem": "~6.4.0",
+      "amber-pm/nethernet": "dev-main",
+      "php-zts": "*"
    },
    "require-dev": {
       "phpstan/phpstan": "2.1.46",
@@ -88,7 +90,7 @@
    "scripts": {
       "make-devtools": "@php -dphar.readonly=0 tests/plugins/DevTools/src/ConsoleScript.php --make ./ --relative tests/plugins/DevTools --out plugins/DevTools.phar",
       "make-server": [
-         "@composer install --no-dev --classmap-authoritative --ignore-platform-reqs",
+         "@composer install --no-dev --classmap-authoritative",
          "@php -dphar.readonly=0 build/server-phar.php"
       ],
       "update-codegen": [
@@ -99,16 +101,47 @@
          "@php build/codegen/known-translation-apis.php",
          "@php build/codegen/pocketmine-yml-property-consts.php",
          "@php build/codegen/registry-interface.php src generated"
-      ]
+      ],
+      "package-nethernet": "@php build/package-nethernet.php",
+      "test:nethernet-native": "@php vendor/bin/phpunit --configuration vendor/amber-pm/nethernet/phpunit.native.xml.dist --bootstrap tests/phpunit/nethernet-native-bootstrap.php --fail-on-skipped --do-not-cache-result"
    },
    "repositories": [
       {
-         "type": "vcs",
-         "url":  "https://github.com/Amber-PM/BedrockProtocol.git"
+         "type": "package",
+         "package": {
+            "name": "amber-pm/nethernet",
+            "description": "Transport-only NetherNet library for PHP",
+            "type": "library",
+            "license": "LGPL-3.0-only",
+            "require": {
+               "php": "^8.1",
+               "ext-openssl": "*",
+               "ext-rtc": "^0.1"
+            },
+            "suggest": {
+               "ext-webrtc": "0.3.0 for the legacy ExtWebRtcPeer backend, never load it together with ext-rtc"
+            },
+            "autoload": {
+               "psr-4": {
+                  "amber\\nethernet\\": "src/"
+               }
+            },
+            "version": "dev-main",
+            "dist": {
+               "type": "zip",
+               "url": "packages/nethernet-582727ef1a03c187da81517872e9ee4e5abaaa638ee899fd3f1593db75adcaf6.zip",
+               "reference": "582727ef1a03c187da81517872e9ee4e5abaaa638ee899fd3f1593db75adcaf6",
+               "shasum": "ee6633185b8a16775628ef818f74875a1d09612a"
+            }
+         }
       },
       {
          "type": "vcs",
-         "url":  "https://github.com/Amber-PM/BedrockData.git"
+         "url": "https://github.com/Amber-PM/BedrockProtocol.git"
+      },
+      {
+         "type": "vcs",
+         "url": "https://github.com/Amber-PM/BedrockData.git"
       }
    ]
 }

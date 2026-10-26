@@ -1401,6 +1401,13 @@ class Server{
 			$this->network->registerInterface(new UPnPNetworkInterface($this->logger, Internet::getInternalIP(), $this->getPort()));
 		}
 
+		try{
+			\pocketmine\network\mcpe\nethernet\NetherNetBootstrap::register($this, $packetBroadcaster, $entityEventBroadcaster, $typeConverter);
+		}catch(NetworkInterfaceStartException $e){
+			$this->logger->emergency('Required NetherNet interface did not start: ' . $e->getMessage());
+			return false;
+		}
+
 		return true;
 	}
 

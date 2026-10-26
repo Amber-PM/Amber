@@ -70,6 +70,21 @@ memory:
     chunk-radius: 4
 
 network:
+  #Required for 26.60+!
+  nethernet:
+    enabled: true
+    #TCP signaling follows server-port and server-ip in server.properties.
+    #Uncomment only to use a different signaling port.
+    #signaling-port: 19132
+    #Allow this bounded UDP range through the firewall for WebRTC.
+    ice-port-range: [20000, 20127]
+    #Share one UDP port for every player (ICE UDP mux). Needs a single-port range, e.g. [20000, 20000].
+    #On Windows also set ice-bind-address to this machine's LAN IPv4; wildcard addresses are rejected.
+    #ice-udp-mux: false
+    max-connections: 128
+    max-per-ip: 4
+    max-http-connections: 64
+    max-pending-negotiations: 32
   #Threshold for batching packets, in bytes. Only these packets will be compressed
   #Set to 0 to compress everything, -1 to disable.
   batch-threshold: 256
