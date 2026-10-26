@@ -10,12 +10,12 @@ foreach(['require-dev', 'autoload-dev', 'scripts', 'config'] as $key){
 	unset($package[$key]);
 }
 $files = [
-	'composer.json', 'LICENSE', 'phpunit.native.xml.dist',
+	'composer.json', 'LICENSE', 'phpunit.rtc.xml.dist',
 	'tests/phpunit/identity/IdentityFixture.php', 'tests/phpunit/identity/openssl.cnf',
 	'tests/phpunit/signaling/AnswerSignatures.php', 'tests/phpunit/transport/RecordingListener.php',
 	'tests/phpunit/transport/FakePeer.php'
 ];
-foreach(['src', 'tests/native'] as $directory){
+foreach(['src', 'tests/rtc'] as $directory){
 	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($library . '/' . $directory, FilesystemIterator::SKIP_DOTS));
 	foreach($iterator as $file){
 		if($file->isFile() && $file->getExtension() === 'php'){

@@ -164,8 +164,24 @@ final class NetherNetConfig{
 			if(!flock($lock, LOCK_EX)){ throw new \RuntimeException('Cannot lock nethernet.key'); }
 			if(is_link($path)){ throw new \InvalidArgumentException('Existing nethernet.key must not be a symbolic link'); }
 			if(!file_exists($path)){
-				$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
-				if($key === false || !openssl_pkey_export($key, $pem)){ throw new \RuntimeException('Cannot generate NetherNet P-384 identity'); }
+				// generating and exporting a key needs an openssl config file
+				// linux runtime ships none
+				$opensslConfig = tempnam(dirname($path), '.nethernet-openssl-');
+				if($opensslConfig === false || file_put_contents($opensslConfig, "[req]\ndefault_bits = 2048\ndistinguished_name = dn\n[dn]\n") === false){
+					throw new \RuntimeException('Cannot prepare NetherNet identity generation; check data directory permissions');
+				}
+				try{
+					$options = ['config' => $opensslConfig];
+					while(openssl_error_string() !== false); // report only this gen errors
+					$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1'] + $options);
+					if($key === false || !openssl_pkey_export($key, $pem, null, $options)){
+						$errors = [];
+						while(($error = openssl_error_string()) !== false){ $errors[] = $error; }
+						throw new \RuntimeException('Cannot generate NetherNet P-384 identity' . ($errors !== [] ? ': ' . implode('; ', $errors) : ''));
+					}
+				}finally{
+					@unlink($opensslConfig);
+				}
 				$temporary = tempnam(dirname($path), '.nethernet-key-');
 				if($temporary === false){
 					throw new \RuntimeException('Cannot restrict nethernet.key permissions');

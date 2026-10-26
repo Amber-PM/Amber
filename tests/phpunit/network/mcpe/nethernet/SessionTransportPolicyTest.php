@@ -53,7 +53,7 @@ final class SessionTransportPolicyTest extends TestCase{
 	}
 
 	private static function key() : string{
-		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
+		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
 		self::assertNotFalse($key);
 		return JwtUtils::emitDerPublicKey($key);
 	}
@@ -103,7 +103,7 @@ final class SessionTransportPolicyTest extends TestCase{
 
 	public function testAuthenticatedPolicyBindsLoginWithoutGameEncryption() : void{
 		self::assertTrue(class_exists(NetherNetSessionPolicy::class), 'NetherNet needs an explicit per-session policy');
-		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
+		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
 		self::assertNotFalse($key);
 		$der = JwtUtils::emitDerPublicKey($key);
 		$policy = new NetherNetSessionPolicy(new PeerIdentity('trusted', $der));
@@ -120,7 +120,7 @@ final class SessionTransportPolicyTest extends TestCase{
 	}
 
 	public function testWrongCurveTransportKeyFailsClosed() : void{
-		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', 'config' => __DIR__ . '/openssl.cnf']);
 		self::assertNotFalse($key);
 		$details = openssl_pkey_get_details($key);
 		self::assertNotFalse($details);

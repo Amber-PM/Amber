@@ -81,9 +81,9 @@ final class NetherNetInterfaceTest extends TestCase{
 		Timings::init();
 		$this->directory = sys_get_temp_dir() . '/amber-interface-' . bin2hex(random_bytes(6));
 		mkdir($this->directory);
-		$operator = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
-		$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
-		openssl_pkey_export($operator, $private);
+		$operator = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
+		$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048, 'config' => __DIR__ . '/openssl.cnf']);
+		openssl_pkey_export($operator, $private, null, ['config' => __DIR__ . '/openssl.cnf']);
 		file_put_contents($this->directory . '/operator.pem', $private);
 		file_put_contents($this->directory . '/issuer.pem', openssl_pkey_get_details($issuer)['key']);
 		$public = openssl_pkey_get_details($operator)['key'];

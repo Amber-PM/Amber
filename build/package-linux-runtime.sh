@@ -15,16 +15,18 @@ mkdir -p "$prefix/bin" "$prefix/lib/php/extensions" "$stage/licenses"
 cp "$php_prefix/bin/php" "$prefix/bin/php.real"
 patchelf --set-rpath '$ORIGIN/../lib' "$prefix/bin/php.real"
 cp -a "$php_prefix"/lib/*.so* "$prefix/lib/"
-cp -a "$native"/install/lib/libdatachannel.so* "$prefix/lib/"
+rtc="$native/ext-rtc/.build/rtc"
+cp -a "$rtc"/install/lib/libdatachannel.so* "$prefix/lib/"
 while IFS= read -r -d '' library; do
     patchelf --set-rpath '$ORIGIN' "$library"
 done < <(find "$prefix/lib" -maxdepth 1 -type f -name '*.so*' -print0)
-extension_dir=$(PHPRC="$native/php.ini" LD_LIBRARY_PATH="$native/install/lib:$php_prefix/lib" "$php_prefix/bin/php" -r 'echo ini_get("extension_dir");')
-cp "$extension_dir/opcache.so" "$prefix/lib/php/extensions/"
-cp "$native/ext-webrtc/modules/webrtc.so" "$prefix/lib/php/extensions/"
-patchelf --set-rpath '$ORIGIN/../..' "$prefix/lib/php/extensions/webrtc.so"
-sed -E '/^[[:space:]]*extension_dir[[:space:]]*=/d; /^[[:space:]]*extension[[:space:]]*=.*webrtc/d' "$native/php.ini" > "$prefix/bin/php.ini"
-printf '\nextension_dir=${AMBER_PHP_EXTENSION_DIR}\nextension=webrtc.so\n' >> "$prefix/bin/php.ini"
+extension_dir=$(PHPRC="$native/php.ini" LD_LIBRARY_PATH="$rtc/install/lib:$php_prefix/lib" "$php_prefix/bin/php" -r 'echo ini_get("extension_dir");')
+# every shared extension the ini may load (opcache, quiche, ...), never a leftover ext-webrtc
+find "$extension_dir" -maxdepth 1 -name '*.so' ! -name 'webrtc.so' -exec cp {} "$prefix/lib/php/extensions/" \;
+cp "$rtc/extension/modules/rtc.so" "$prefix/lib/php/extensions/"
+patchelf --set-rpath '$ORIGIN/../..' "$prefix/lib/php/extensions/rtc.so"
+sed -E '/^[[:space:]]*extension_dir[[:space:]]*=/d; /^[[:space:]]*extension[[:space:]]*=.*(webrtc|rtc\.so)/d' "$native/php.ini" > "$prefix/bin/php.ini"
+printf '\nextension_dir=${AMBER_PHP_EXTENSION_DIR}\nextension=rtc.so\n' >> "$prefix/bin/php.ini"
 cat > "$prefix/bin/php" <<'PHP_WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -37,15 +39,19 @@ exec "$prefix/bin/php.real" "$@"
 PHP_WRAPPER
 chmod 0755 "$prefix/bin/php"
 cp "$native/php-src/LICENSE" "$stage/licenses/PHP-LICENSE"
-cp "$native/ext-webrtc/LICENSE" "$stage/licenses/ext-webrtc-LICENSE"
-cp "$native/libdatachannel/LICENSE" "$stage/licenses/libdatachannel-LICENSE"
+cp "$native/ext-rtc/LICENSE" "$stage/licenses/ext-rtc-LICENSE"
+cp "$native/ext-rtc/third-party/NOTICES.md" "$stage/licenses/ext-rtc-NOTICES.md"
+cp "$native/ext-rtc/third-party/licenses/"*.txt "$stage/licenses/"
+cp "$rtc/libdatachannel/LICENSE" "$stage/licenses/libdatachannel-LICENSE"
 # Retain source dependency licenses, including statically linked ICE/SCTP code.
-(cd "$native/libdatachannel"; find deps -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' \) -exec cp --parents '{}' "$stage/licenses/" \;)
+(cd "$rtc/libdatachannel"; find deps -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' \) -exec cp --parents '{}' "$stage/licenses/" \;)
 env -u PHPRC -u LD_LIBRARY_PATH -u PHP_INI_SCAN_DIR "$prefix/bin/php" -r '
-foreach(["webrtc", "pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension){
+foreach(["rtc", "openssl", "pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension){
     if(!extension_loaded($extension)){fwrite(STDERR, "Missing extension: $extension\n"); exit(1);}
 }
-if(!PHP_ZTS || phpversion("webrtc") !== "0.3.0" || constant("pmmp\\webrtc\\WEBRTC_VERSION") !== "0.24.5"){exit(1);}
+if(!PHP_ZTS || extension_loaded("webrtc") || \amber\rtc\RtcRuntime::getApiVersion() !== 1){exit(1);}
+// libdatachannel resolves the bundled libssl, which must not predate the OpenSSL 3.5 it was built against
+if(OPENSSL_VERSION_NUMBER < 0x30500000){fwrite(STDERR, "Bundled OpenSSL " . OPENSSL_VERSION_TEXT . " predates the 3.5 build of libdatachannel\n"); exit(1);}
 '
 printf 'Staged Linux x86_64 runtime; compatibility floor depends on build host.\nNot a published distribution. Audit all bundled dependency licenses before release.\n' > "$stage/RUNTIME.txt"
 tar -czf "$output/amber-php-linux-x86_64-staging.tar.gz" -C "$stage" .

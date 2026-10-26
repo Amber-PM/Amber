@@ -59,4 +59,4 @@ Documentation/*
 /composer-local-protocol.*
 
 # Native release build inputs and products
-/.native-webrtc/
+/.native-rtc/

@@ -19,7 +19,7 @@ final class NetherNetLoggingTest extends TestCase{
 
 	public function testRejectedLoginDebugCannotExposeCredentials() : void{
 		Timings::init();
-		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
+		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
 		$policy = new NetherNetSessionPolicy(new PeerIdentity('verified', JwtUtils::emitDerPublicKey($key)));
 		$session = (new \ReflectionClass(NetworkSession::class))->newInstanceWithoutConstructor();
 		$messages = [];

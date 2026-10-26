@@ -24,8 +24,8 @@ final class MinecraftIdentityHandlerTest extends TestCase{
 	private const FINGERPRINTS = '{"fingerprint":[{"algorithm":"sha-256","digest":"AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"}]}';
 
 	public static function setUpBeforeClass() : void{
-		self::$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
-		self::$client = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
+		self::$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048, 'config' => __DIR__ . '/openssl.cnf']);
+		self::$client = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
 	}
 
 	/** @return array<string, mixed> */

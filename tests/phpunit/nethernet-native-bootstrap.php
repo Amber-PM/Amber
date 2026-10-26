@@ -6,5 +6,8 @@ $loader = require $root . '/vendor/autoload.php';
 if(!PHP_ZTS){
 	throw new RuntimeException('Amber native tests require PHP ZTS');
 }
-\amber\nethernet\backend\ExtWebRtcPeer::assertAvailable();
+if(extension_loaded('webrtc')){
+	throw new RuntimeException('ext-webrtc is not supported and must not be loaded with ext-rtc');
+}
+\amber\nethernet\backend\ExtRtcPeer::assertAvailable();
 $loader->addPsr4('amber\\nethernet\\tests\\', $root . '/vendor/amber-pm/nethernet/tests/phpunit');

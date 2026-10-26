@@ -91,11 +91,11 @@ final class NetherNetConfigTest extends TestCase{
 		$directory = sys_get_temp_dir() . '/amber-nethernet-' . bin2hex(random_bytes(6));
 		mkdir($directory);
 		try{
-			$operator = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1']);
-			$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+			$operator = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'config' => __DIR__ . '/openssl.cnf']);
+			$issuer = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048, 'config' => __DIR__ . '/openssl.cnf']);
 			self::assertNotFalse($operator);
 			self::assertNotFalse($issuer);
-			self::assertTrue(openssl_pkey_export($operator, $private));
+			self::assertTrue(openssl_pkey_export($operator, $private, null, ['config' => __DIR__ . '/openssl.cnf']));
 			file_put_contents($directory . '/operator.pem', $private);
 			file_put_contents($directory . '/issuer.pem', openssl_pkey_get_details($issuer)['key']);
 			$config = NetherNetConfig::fromArray($this->settings(), $directory);
