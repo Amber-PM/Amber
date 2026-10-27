@@ -14,7 +14,7 @@ You are helping a Minecraft Bedrock server owner set up **NetherNet** on **Amber
 
 ## Facts
 
-- Minecraft 26.60+ clients join over NetherNet. Older clients join over RakNet. AmberPM runs both.
+- Minecraft 26.50+ clients join over NetherNet, 26.60+ only over NetherNet. Clients older than 26.50 join over RakNet. AmberPM runs both.
 - NetherNet needs **TCP** on `server-port` (signaling) and **UDP** for game traffic, `20000-20127` by default.
 - RakNet needs **UDP** on `server-port`, or on `network.raknet-port` when set.
 - A UDP port can belong to only one of them. TCP and UDP with the same number do not conflict.
@@ -26,7 +26,7 @@ You are helping a Minecraft Bedrock server owner set up **NetherNet** on **Amber
 
 1. Where does the server run: VPS or dedicated, home PC, or a hosting panel (Pterodactyl or similar)?
 2. If it is a panel: how many ports does it give you, and are they TCP and UDP?
-3. Do you still need players on versions older than 26.60?
+3. Do you still need players on versions older than 26.50?
 4. Is the server on Linux or Windows?
 
 ## Cases
@@ -56,7 +56,7 @@ network:
 ```
 
 ### D. Panel with one port P
-Only 26.60+ clients can join. If older versions matter, tell the owner to ask the host for a second port and use case C.
+Only 26.50+ clients can join. If older versions matter, tell the owner to ask the host for a second port and use case C.
 ```yaml
 network:
   raknet-port: -1
