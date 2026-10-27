@@ -30,6 +30,36 @@ final class NetherNetConfigTest extends TestCase{
 		NetherNetConfig::fromArray(['enabled' => true, 'private-key-file' => 'missing-identity.pem'], sys_get_temp_dir())->createIdentityHandler();
 	}
 
+	public function testEnvironmentSetsOnePortMuxAndPublicAddress() : void{
+		$previous = [getenv('AMBER_NETHERNET_PORT'), getenv('AMBER_NETHERNET_PUBLIC_IP')];
+		try{
+			putenv('AMBER_NETHERNET_PORT=25058');
+			putenv('AMBER_NETHERNET_PUBLIC_IP=203.0.113.7');
+			$config = NetherNetConfig::fromArray(['ice-port-range' => [20000, 20127], 'ice-bind-address' => '127.0.0.1'], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+			self::assertSame('25058', $config->describeUdp());
+			self::assertSame('203.0.113.7', $config->getAdvertisedAddress());
+			putenv('AMBER_NETHERNET_PORT=');
+			putenv('AMBER_NETHERNET_PUBLIC_IP=');
+			$config = NetherNetConfig::fromArray([], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+			self::assertSame('20000-20127', $config->describeUdp());
+			self::assertNull($config->getAdvertisedAddress());
+			foreach(['0', '65536', '25058 ', 'abc'] as $invalid){
+				putenv('AMBER_NETHERNET_PORT=' . $invalid);
+				try{
+					NetherNetConfig::fromArray([], sys_get_temp_dir());
+					self::fail('Invalid AMBER_NETHERNET_PORT accepted: ' . $invalid);
+				}catch(\InvalidArgumentException){}
+			}
+			putenv('AMBER_NETHERNET_PORT');
+			putenv('AMBER_NETHERNET_PUBLIC_IP=0.0.0.0');
+			$this->expectException(\InvalidArgumentException::class);
+			NetherNetConfig::fromArray([], sys_get_temp_dir());
+		}finally{
+			putenv($previous[0] === false ? 'AMBER_NETHERNET_PORT' : 'AMBER_NETHERNET_PORT=' . $previous[0]);
+			putenv($previous[1] === false ? 'AMBER_NETHERNET_PUBLIC_IP' : 'AMBER_NETHERNET_PUBLIC_IP=' . $previous[1]);
+		}
+	}
+
 	public function testBackendDefaultsToExtRtcAndAcceptsOnlyKnownOptIn() : void{
 		$previous = getenv('AMBER_NETHERNET_BACKEND');
 		try{

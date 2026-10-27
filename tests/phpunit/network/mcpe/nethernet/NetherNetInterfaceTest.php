@@ -317,6 +317,15 @@ final class NetherNetInterfaceTest extends TestCase{
 		self::assertSame(450, $bandwidth->getReceive()->getTotalBytes());
 	}
 
+	public function testStartupNamesThePortsToOpen() : void{
+		$messages = [];
+		$this->logger->method('info')->willReturnCallback(static function(string $message) use (&$messages) : void{ $messages[] = $message; });
+		$this->make();
+		$ports = array_values(array_filter($messages, static fn(string $message) : bool => str_contains($message, 'needs TCP')));
+		self::assertCount(1, $ports);
+		self::assertMatchesRegularExpression('/needs TCP \d+ and UDP 20000-20127 open, set advertised-address/', $ports[0]);
+	}
+
 	public function testFailedNegotiationsAreLoggedWithRateLimit() : void{
 		$this->logger->expects(self::once())->method('warning')->with(self::stringContains('connect_timeout'));
 		$interface = $this->make();

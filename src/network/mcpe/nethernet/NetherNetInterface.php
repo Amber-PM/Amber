@@ -115,6 +115,11 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192, admit: static function(string $ip) use ($reference) : bool{
 				return $reference->get()?->admits($ip) ?? false;
 			});
+			// most join failures are closed ports so say which ones up front
+			$address = $this->http->getAddress();
+			$tcp = substr($address, (int) strrpos($address, ':') + 1);
+			$advertised = $this->config->getAdvertisedAddress();
+			$this->logger->info('NetherNet (26.60+) needs TCP ' . $tcp . ' and UDP ' . $this->config->describeUdp() . ' open' . ($advertised !== null ? ', public address ' . $advertised : ', set advertised-address when behind NAT or in a container'));
 		}catch(\Throwable $e){
 			$this->shutdown();
 			throw new NetworkInterfaceStartException('NetherNet initialization failed: ' . $e->getMessage(), 0, $e);

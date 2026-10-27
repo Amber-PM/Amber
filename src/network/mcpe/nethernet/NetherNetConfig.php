@@ -70,6 +70,15 @@ final class NetherNetConfig{
 			}
 		}
 		$settings['trusted-key-files'] = $keys;
+		// panels and containers pass the forwarded port and public ip as env
+		$envPort = getenv('AMBER_NETHERNET_PORT');
+		if($envPort !== false && $envPort !== ''){
+			if(preg_match('/^[1-9][0-9]{0,4}$/D', $envPort) !== 1 || (int) $envPort > 65535){ throw new \InvalidArgumentException('AMBER_NETHERNET_PORT must be a UDP port between 1 and 65535'); }
+			$settings['ice-port-range'] = [(int) $envPort, (int) $envPort];
+			$settings['ice-udp-mux'] = true;
+		}
+		$envAddress = getenv('AMBER_NETHERNET_PUBLIC_IP');
+		if($envAddress !== false && $envAddress !== ''){ $settings['advertised-address'] = $envAddress; }
 		$range = $settings['ice-port-range'] ?? [20000, 20127];
 		if(!is_array($range) || !array_is_list($range) || count($range) !== 2 || !is_int($range[0]) || !is_int($range[1]) || $range[0] < 1 || $range[1] > 65535 || $range[0] > $range[1]){
 			throw new \InvalidArgumentException('NetherNet ice-port-range must contain an ordered pair of UDP ports between 1 and 65535');
@@ -115,6 +124,11 @@ final class NetherNetConfig{
 
 	public function getBind() : string{ return $this->settings['bind']; }
 	public function getMaxPerIp() : int{ return $this->settings['max-per-ip']; }
+	public function describeUdp() : string{
+		[$begin, $end] = $this->settings['ice-port-range'];
+		return $begin === $end ? (string) $begin : $begin . '-' . $end;
+	}
+	public function getAdvertisedAddress() : ?string{ return $this->settings['advertised-address']; }
 	public function createPeer() : WebRtcPeer{
 		[$begin, $end] = $this->settings['ice-port-range'];
 		if($this->settings['backend'] === 'ext-rtc'){

@@ -84,6 +84,7 @@ network:
     #Public IP offered to players when the server sits behind port forwarding (containers and most hosting).
     #The forwarded UDP port must match the ICE port so use it with ice-udp-mux.
     #advertised-address: 203.0.113.7
+    #Containers and panels can set AMBER_NETHERNET_PORT (one UDP port with mux) and AMBER_NETHERNET_PUBLIC_IP instead.
     max-connections: 128
     max-per-ip: 4
     max-http-connections: 64
