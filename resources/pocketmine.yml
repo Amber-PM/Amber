@@ -80,6 +80,9 @@ network:
   #Threshold for async compression, in bytes. Only packets larger than this will be compressed asynchronously
   #Due to large overhead of AsyncTask, async compression isn't worth it except for large packets
   async-compression-threshold: 10000
+  #UDP port for RakNet which clients before 26.60 and Query use. 0 uses server-port and server-portv6.
+  #Set another port when the host forwards one port that NetherNet needs. -1 turns RakNet and Query off.
+  raknet-port: 0
   #Experimental. Use UPnP to automatically port forward
   upnp-forwarding: false
   #Maximum size in bytes of packets sent over the network (default 1492 bytes). Packets larger than this will be

@@ -1372,6 +1372,21 @@ class Server{
 		return true;
 	}
 
+	/**
+	 * @return int[]|null
+	 * @phpstan-return array{int, int}|null
+	 * @throws \InvalidArgumentException
+	 * @internal
+	 */
+	public static function resolveRakNetPorts(int $configured, int $port, int $portV6) : ?array{
+		return match(true){
+			$configured === -1 => null,
+			$configured === 0 => [$port, $portV6],
+			$configured >= 1 && $configured <= 65535 => [$configured, $configured],
+			default => throw new \InvalidArgumentException("network.raknet-port must be -1, 0 or a port between 1 and 65535, got $configured")
+		};
+	}
+
 	private function startupPrepareNetworkInterfaces() : bool{
 		$useQuery = $this->configGroup->getConfigBool(ServerProperties::ENABLE_QUERY, true);
 
@@ -1379,11 +1394,21 @@ class Server{
 		$packetBroadcaster = $this->getPacketBroadcaster(ProtocolInfo::CURRENT_PROTOCOL);
 		$entityEventBroadcaster = $this->getEntityEventBroadcaster($packetBroadcaster, $typeConverter);
 
-		if(
-			!$this->startupPrepareConnectableNetworkInterfaces($this->getIp(), $this->getPort(), false, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter) ||
+		try{
+			$rakNetPorts = self::resolveRakNetPorts($this->configGroup->getPropertyInt(Yml::NETWORK_RAKNET_PORT, 0), $this->getPort(), $this->getPortV6());
+		}catch(\InvalidArgumentException $e){
+			$this->logger->emergency($e->getMessage());
+			return false;
+		}
+		if($rakNetPorts === null){
+			//query travels over the raknet socket so it goes too
+			$useQuery = false;
+			$this->logger->notice("RakNet is disabled by network.raknet-port, clients that need RakNet and Query cannot connect");
+		}elseif(
+			!$this->startupPrepareConnectableNetworkInterfaces($this->getIp(), $rakNetPorts[0], false, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter) ||
 			(
 				$this->configGroup->getConfigBool(ServerProperties::ENABLE_IPV6, true) &&
-				!$this->startupPrepareConnectableNetworkInterfaces($this->getIpV6(), $this->getPortV6(), true, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter)
+				!$this->startupPrepareConnectableNetworkInterfaces($this->getIpV6(), $rakNetPorts[1], true, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter)
 			)
 		){
 			return false;
