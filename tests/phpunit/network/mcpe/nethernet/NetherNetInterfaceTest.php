@@ -8,6 +8,7 @@ require_once dirname(__DIR__, 3) . '/nethernet-bootstrap.php';
 use amber\nethernet\Channel;
 use amber\nethernet\Connection;
 use amber\nethernet\ConnectionState;
+use amber\nethernet\ConnectionStats;
 use amber\nethernet\identity\PeerIdentity;
 use amber\nethernet\SendResult;
 use amber\nethernet\SignalingPeerAddress;
@@ -46,6 +47,8 @@ final class InterfaceConnection implements SignalingPeerConnection{
 		if($accepted !== null){ $this->nativeCallbacks[] = $accepted; if($this->completeImmediately){ $accepted(true); } }
 		return SendResult::ACCEPTED;
 	}
+	public ?ConnectionStats $stats = null;
+	public function getStats() : ?ConnectionStats{ return $this->stats; }
 	public function close(string $reason = 'local close') : void{ ++$this->closes; $this->state = ConnectionState::CLOSED; $this->onClose?->__invoke(); }
 }
 
@@ -292,6 +295,26 @@ final class NetherNetInterfaceTest extends TestCase{
 		$interface->onOpen($late);
 		self::assertSame(1, $late->closes);
 		self::assertSame(1, $this->network->getConnectionCount());
+	}
+
+	public function testNativeStatsUpdatePingAndBandwidthByDifference() : void{
+		$interface = $this->make();
+		$connection = $this->connection(1);
+		$interface->onOpen($connection);
+		$connection->stats = new ConnectionStats(37, 1000, 400, 0, 0);
+		$interface->tick();
+		self::assertSame(37, $this->created[0]->getPing());
+		$bandwidth = $this->network->getBandwidthTracker();
+		self::assertSame(1000, $bandwidth->getSend()->getTotalBytes());
+		self::assertSame(400, $bandwidth->getReceive()->getTotalBytes());
+		$connection->stats = new ConnectionStats(null, 1500, 450, 0, 0);
+		$interface->tick();
+		self::assertSame(1000, $bandwidth->getSend()->getTotalBytes());
+		(new \ReflectionProperty(NetherNetInterface::class, 'nextStatsAt'))->setValue($interface, 0.0);
+		$interface->tick();
+		self::assertSame(37, $this->created[0]->getPing());
+		self::assertSame(1500, $bandwidth->getSend()->getTotalBytes());
+		self::assertSame(450, $bandwidth->getReceive()->getTotalBytes());
 	}
 
 	public function testFailedNegotiationsAreLoggedWithRateLimit() : void{

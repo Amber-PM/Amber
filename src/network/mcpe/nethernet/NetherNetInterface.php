@@ -65,6 +65,9 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 	private array $blocked = [];
 	/** @var array<string, float> */
 	private array $lastWarnings = [];
+	/** @var array<int, array{int, int}> */
+	private array $lastBytes = [];
+	private float $nextStatsAt = 0.0;
 
 	/**
 	 * @param \Closure(Connection, NetherNetPacketSender, SignalingPeerAddress): NetworkSession|null $sessionFactory
@@ -130,12 +133,32 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			foreach($this->blocked as $ip => $until){ if($until <= $now){ unset($this->blocked[$ip]); } }
 			$this->transport?->poll();
 			$this->http?->poll(0); // never wait on the server tick
+			if($now >= $this->nextStatsAt){
+				$this->nextStatsAt = $now + 1;
+				$this->sampleStats();
+			}
 		}catch(\Throwable $e){
 			$this->shutdown();
 			throw new \RuntimeException('Required NetherNet transport stopped after polling failure (' . get_class($e) . ')', 0, $e);
 		}finally{
 			$this->polling = false;
 		}
+	}
+
+	private function sampleStats() : void{
+		$sent = $received = 0;
+		foreach($this->clients as $id => $entry){
+			if($entry['session'] === null){ continue; }
+			$stats = $entry['connection']->getStats();
+			if($stats === null){ continue; }
+			if($stats->rttMs !== null){ $entry['session']->updatePing($stats->rttMs); }
+			// native counters are cumulative per connection
+			[$lastSent, $lastReceived] = $this->lastBytes[$id] ?? [0, 0];
+			$sent += max(0, $stats->bytesSent - $lastSent);
+			$received += max(0, $stats->bytesReceived - $lastReceived);
+			$this->lastBytes[$id] = [$stats->bytesSent, $stats->bytesReceived];
+		}
+		if($sent > 0 || $received > 0){ $this->network->getBandwidthTracker()->add($sent, $received); }
 	}
 
 	public function onAnswer(int $id, string $answerSdp) : void{ // signaling owns the answer
@@ -244,7 +267,7 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 	private function release(int $id, string $reason) : void{
 		$entry = $this->clients[$id] ?? null;
 		if($entry === null){ return; }
-		unset($this->clients[$id]); // detach before close can reenter
+		unset($this->clients[$id], $this->lastBytes[$id]); // detach before close can reenter
 		$ip = $entry['address']->ip;
 		if(--$this->connectionsByIp[$ip] === 0){ unset($this->connectionsByIp[$ip]); }
 		try{ $entry['session']?->onClientDisconnect($reason); }finally{

@@ -8,6 +8,7 @@ require_once dirname(__DIR__, 3) . '/nethernet-bootstrap.php';
 use amber\nethernet\Channel;
 use amber\nethernet\Connection;
 use amber\nethernet\ConnectionState;
+use amber\nethernet\ConnectionStats;
 use amber\nethernet\identity\PeerIdentity;
 use amber\nethernet\SendResult;
 use PHPUnit\Framework\TestCase;
@@ -30,6 +31,7 @@ final class SenderTestConnection implements Connection{
 	public function getNetworkId() : string{ return 'peer'; }
 	public function getIdentity() : PeerIdentity{ throw new \LogicException('Unused'); }
 	public function getState() : ConnectionState{ return ConnectionState::OPEN; }
+	public function getStats() : ?ConnectionStats{ return null; }
 	public function send(string $payload, Channel $channel = Channel::RELIABLE, bool $immediate = false, ?\Closure $accepted = null) : SendResult{
 		$this->sent[] = [$payload, $channel, $immediate];
 		if($accepted !== null){

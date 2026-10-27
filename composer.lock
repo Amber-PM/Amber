@@ -71,12 +71,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Amber-PM/NetherNet.git",
-                "reference": "c836d6576fc8328e01228bb0fc38bfd36d8042cb"
+                "reference": "04056e904d008522ba865d7527a7e026765e0629"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Amber-PM/NetherNet/zipball/c836d6576fc8328e01228bb0fc38bfd36d8042cb",
-                "reference": "c836d6576fc8328e01228bb0fc38bfd36d8042cb",
+                "url": "https://api.github.com/repos/Amber-PM/NetherNet/zipball/04056e904d008522ba865d7527a7e026765e0629",
+                "reference": "04056e904d008522ba865d7527a7e026765e0629",
                 "shasum": ""
             },
             "require": {
@@ -133,7 +133,7 @@
                 "source": "https://github.com/Amber-PM/NetherNet/tree/main",
                 "issues": "https://github.com/Amber-PM/NetherNet/issues"
             },
-            "time": "2026-10-27T04:55:44+00:00"
+            "time": "2026-10-27T07:36:33+00:00"
         },
         {
             "name": "brick/math",
