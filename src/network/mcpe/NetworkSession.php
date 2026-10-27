@@ -77,6 +77,7 @@ use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\PlayerStartItemCooldownPacket;
 use pocketmine\network\mcpe\protocol\PlayStatusPacket;
+use pocketmine\network\mcpe\protocol\ResourcePackChunkDataPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\serializer\AvailableCommandsPacketAssembler;
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
@@ -206,7 +207,9 @@ class NetworkSession{
 	 */
 	private array $sendBufferAckPromises = [];
 
-	/** @phpstan-var \SplQueue<array{CompressBatchPromise|string, list<PromiseResolver<true>>, bool}> */
+	private ?LocalSendCompletion $resourcePackSendCompletion = null;
+	private ?LocalSendCompletion $sendBufferLocalCompletion = null;
+	/** @phpstan-var \SplQueue<array{CompressBatchPromise|string, list<PromiseResolver<true>>, bool, LocalSendCompletion|null}> */
 	private \SplQueue $compressedQueue;
 	private bool $forceAsyncCompression = true;
 	private bool $spawnResponseReceivedEarly = false;
@@ -247,7 +250,8 @@ class NetworkSession{
 		private Compressor $compressor,
 		private TypeConverter $typeConverter,
 		private string $ip,
-		private int $port
+		private int $port,
+		private ?SessionTransportPolicy $transportPolicy = null
 	){
 		$this->logger = new \PrefixedLogger($this->server->getLogger(), $this->getLogPrefix());
 
@@ -385,6 +389,7 @@ class NetworkSession{
 	}
 
 	public function setHandler(?PacketHandler $handler) : void{
+		if($this->handler !== $handler){ $this->cancelLocalResourcePackSend(); }
 		if($this->connected){ //TODO: this is fine since we can't handle anything from a disconnected session, but it might produce surprises in some cases
 			$this->handler = $handler;
 			if($this->handler !== null){
@@ -447,7 +452,7 @@ class NetworkSession{
 				try{
 					$payload = $this->cipher->decrypt($payload);
 				}catch(DecryptionException $e){
-					$this->logger->debug("Encrypted packet: " . base64_encode($payload));
+					$this->logger->debug("Encrypted packet: " . $this->formatRawPacketDebug($payload));
 					throw PacketHandlingException::wrap($e, "Packet decryption error");
 				}finally{
 					Timings::$playerNetworkReceiveDecrypt->stopTiming();
@@ -469,7 +474,7 @@ class NetworkSession{
 							Timings::$playerNetworkReceiveDecompress->startTiming();
 							$decompressed = $this->compressor->decompress($compressed);
 						}catch(DecompressionException $e){
-							$this->logger->debug("Failed to decompress packet: " . base64_encode($compressed));
+							$this->logger->debug("Failed to decompress packet: " . $this->formatRawPacketDebug($compressed));
 							throw PacketHandlingException::wrap($e, "Compressed packet batch decode error");
 						}finally{
 							Timings::$playerNetworkReceiveDecompress->stopTiming();
@@ -482,7 +487,7 @@ class NetworkSession{
 						Timings::$playerNetworkReceiveDecompress->startTiming();
 						$decompressed = $this->compressor->decompress($payload);
 					}catch(DecompressionException $e){
-						$this->logger->debug("Failed to decompress packet: " . base64_encode($payload));
+						$this->logger->debug("Failed to decompress packet: " . $this->formatRawPacketDebug($payload));
 						throw PacketHandlingException::wrap($e, "Compressed packet batch decode error");
 					}finally{
 						Timings::$playerNetworkReceiveDecompress->stopTiming();
@@ -510,7 +515,7 @@ class NetworkSession{
 					$this->gamePacketLimiter->decrement();
 					$packet = $this->packetPool->getPacket($buffer);
 					if($packet === null){
-						$this->logger->debug("Unknown packet: " . base64_encode($buffer));
+						$this->logger->debug("Unknown packet: " . $this->formatRawPacketDebug($buffer));
 						throw new PacketHandlingException("Unknown packet received");
 					}
 					try{
@@ -528,7 +533,8 @@ class NetworkSession{
 					}
 				}
 			}catch(PacketDecodeException|DataDecodeException $e){
-				$this->logger->logException($e);
+				if($this->transportPolicy?->allowsRawPacketLogging() ?? true){ $this->logger->logException($e); }
+				else{ $this->logger->debug('Packet batch decode failed (' . get_class($e) . ')'); }
 				throw PacketHandlingException::wrap($e, "Packet batch decode error");
 			}
 		}finally{
@@ -537,11 +543,20 @@ class NetworkSession{
 	}
 
 	private function unhandledPacketDebug(Packet $packet, string $buffer, string $label) : void{
+		if(!($this->transportPolicy?->allowsRawPacketLogging() ?? true)){
+			$this->logger->debug($label . ': ' . $packet->getName() . ' (' . strlen($buffer) . ' bytes; payload omitted)');
+			return;
+		}
 		$debugSegment = substr($buffer, 0, 1024);
 		$debugSegmentLength = strlen($debugSegment);
 		$fullLength = strlen($buffer);
 		$truncatedLabel = $debugSegmentLength === $fullLength ? "" : " ... (" . ($fullLength - $debugSegmentLength) . " bytes not shown)";
 		$this->logger->debug($label . ": " . $packet->getName() . " ($fullLength bytes): " . base64_encode($debugSegment) . $truncatedLabel);
+	}
+
+	private function formatRawPacketDebug(string $buffer, bool $hex = false) : string{
+		if(!($this->transportPolicy?->allowsRawPacketLogging() ?? true)){ return '[payload omitted]'; }
+		return $hex ? bin2hex($buffer) : base64_encode($buffer);
 	}
 
 	/**
@@ -597,7 +612,7 @@ class NetworkSession{
 				}
 				if($stream->getUnreadLength() > 0){
 					$remains = substr($stream->getData(), $stream->getOffset());
-					$this->logger->debug("Still " . strlen($remains) . " bytes unread in " . $packet->getName() . ": " . bin2hex($remains));
+					$this->logger->debug("Still " . strlen($remains) . " bytes unread in " . $packet->getName() . ": " . $this->formatRawPacketDebug($remains, true));
 				}
 			}finally{
 				$decodeTimings->stopTiming();
@@ -640,7 +655,7 @@ class NetworkSession{
 	/**
 	 * @phpstan-param PromiseResolver<true>|null $ackReceiptResolver
 	 */
-	private function sendDataPacketInternal(ClientboundPacket $packet, bool $immediate, ?PromiseResolver $ackReceiptResolver) : bool{
+	private function sendDataPacketInternal(ClientboundPacket $packet, bool $immediate, ?PromiseResolver $ackReceiptResolver, ?LocalSendCompletion $localCompletion = null) : bool{
 		if(!$this->connected){
 			return false;
 		}
@@ -662,6 +677,9 @@ class NetworkSession{
 			}else{
 				$packets = [$packet];
 			}
+			if($localCompletion !== null && (!$localCompletion->isPending() || count($packets) === 0)){
+				return false;
+			}
 
 			if($ackReceiptResolver !== null){
 				$this->sendBufferAckPromises[] = $ackReceiptResolver;
@@ -671,6 +689,7 @@ class NetworkSession{
 				$writer->clear(); //memory reuse let's gooooo
 				$this->addToSendBuffer(self::encodePacketTimed($writer, $this->getProtocolId(), $evPacket));
 			}
+			if($localCompletion !== null){ $this->sendBufferLocalCompletion = $localCompletion; }
 			if($immediate){
 				$this->flushGamePacketQueue();
 			}
@@ -691,12 +710,55 @@ class NetworkSession{
 	public function sendDataPacketWithReceipt(ClientboundPacket $packet, bool $immediate = false) : Promise{
 		/** @phpstan-var PromiseResolver<true> $resolver */
 		$resolver = new PromiseResolver();
+		// local completion cannot resolve remote receipts
+		if($this->usesLocalResourcePackSendCompletion()){
+			$resolver->reject();
+			return $resolver->getPromise();
+		}
 
 		if(!$this->sendDataPacketInternal($packet, $immediate, $resolver)){
 			$resolver->reject();
 		}
 
 		return $resolver->getPromise();
+	}
+
+	public function usesLocalResourcePackSendCompletion() : bool{
+		return $this->sender instanceof LocalCompletionPacketSender;
+	}
+
+	/**
+	 * @return Promise<true>
+	 */
+	public function sendResourcePackChunk(ResourcePackChunkDataPacket $packet) : Promise{
+		if(!$this->usesLocalResourcePackSendCompletion()){
+			return $this->sendDataPacketWithReceipt($packet);
+		}
+		$operation = new LocalSendCompletion(hrtime(true) / 1_000_000_000 + 15.0);
+		if(!$this->connected || $this->disconnectGuard || $this->resourcePackSendCompletion?->isPending()){
+			$operation->cancel();
+			return $operation->getPromise();
+		}
+		$this->resourcePackSendCompletion = $operation;
+		try{
+			if(!$this->sendDataPacketInternal($packet, false, null, $operation)){ $operation->cancel(); }
+		}catch(\Throwable $e){
+			$operation->cancel();
+			throw $e;
+		}
+		return $operation->getPromise();
+	}
+
+	private function cancelLocalResourcePackSend() : void{
+		if(!$this->usesLocalResourcePackSendCompletion()){ return; }
+		if($this->handler instanceof ResourcePacksPacketHandler){ $this->handler->cancelPendingLocalTransfers(); }
+		$operation = $this->resourcePackSendCompletion;
+		$this->resourcePackSendCompletion = null;
+		if($this->sendBufferLocalCompletion !== null){
+			$this->sendBufferLocalCompletion = null;
+			$this->sendBuffer = [];
+		}
+		$operation?->cancel();
 	}
 
 	/**
@@ -740,9 +802,10 @@ class NetworkSession{
 				$this->sendBuffer = [];
 				$ackPromises = $this->sendBufferAckPromises;
 				$this->sendBufferAckPromises = [];
-				//these packets were already potentially buffered for up to 50ms - make sure the transport layer doesn't
-				//delay them any longer
-				$this->queueCompressedNoGamePacketFlush($batch, networkFlush: true, ackPromises: $ackPromises);
+				$localCompletion = $this->sendBufferLocalCompletion;
+				$this->sendBufferLocalCompletion = null;
+				// avoid another delay after up to 50ms of batching
+				$this->queueCompressedNoGamePacketFlush($batch, networkFlush: true, ackPromises: $ackPromises, localCompletion: $localCompletion);
 			}finally{
 				Timings::$playerNetworkSend->stopTiming();
 			}
@@ -776,17 +839,17 @@ class NetworkSession{
 	 *
 	 * @phpstan-param list<PromiseResolver<true>> $ackPromises
 	 */
-	private function queueCompressedNoGamePacketFlush(CompressBatchPromise|string $batch, bool $networkFlush = false, array $ackPromises = []) : void{
+	private function queueCompressedNoGamePacketFlush(CompressBatchPromise|string $batch, bool $networkFlush = false, array $ackPromises = [], ?LocalSendCompletion $localCompletion = null) : void{
 		Timings::$playerNetworkSend->startTiming();
 		try{
-			$this->compressedQueue->enqueue([$batch, $ackPromises, $networkFlush]);
+			$this->compressedQueue->enqueue([$batch, $ackPromises, $networkFlush, $localCompletion]);
 			if(is_string($batch)){
 				$this->flushCompressedQueue();
 			}else{
-				$batch->onResolve(function() : void{
-					if($this->connected){
-						$this->flushCompressedQueue();
-					}
+				$reference = \WeakReference::create($this);
+				$batch->onResolve(static function() use ($reference) : void{
+					$session = $reference->get();
+					if($session !== null && $session->connected){ $session->flushCompressedQueue(); }
 				});
 			}
 		}finally{
@@ -799,14 +862,18 @@ class NetworkSession{
 		try{
 			while(!$this->compressedQueue->isEmpty()){
 				/** @var CompressBatchPromise|string $current */
-				[$current, $ackPromises, $networkFlush] = $this->compressedQueue->bottom();
+				[$current, $ackPromises, $networkFlush, $localCompletion] = $this->compressedQueue->bottom();
+				if($localCompletion !== null && !$localCompletion->isPending()){
+					$this->compressedQueue->dequeue();
+					continue;
+				}
 				if(is_string($current)){
 					$this->compressedQueue->dequeue();
-					$this->sendEncoded($current, $networkFlush, $ackPromises);
+					$this->sendEncoded($current, $networkFlush, $ackPromises, $localCompletion);
 
 				}elseif($current->hasResult()){
 					$this->compressedQueue->dequeue();
-					$this->sendEncoded($current->getResult(), $networkFlush, $ackPromises);
+					$this->sendEncoded($current->getResult(), $networkFlush, $ackPromises, $localCompletion);
 
 				}else{
 					//can't send any more queued until this one is ready
@@ -822,7 +889,7 @@ class NetworkSession{
 	 * @param PromiseResolver[] $ackPromises
 	 * @phpstan-param list<PromiseResolver<true>> $ackPromises
 	 */
-	private function sendEncoded(string $payload, bool $immediate, array $ackPromises) : void{
+	private function sendEncoded(string $payload, bool $immediate, array $ackPromises, ?LocalSendCompletion $localCompletion = null) : void{
 		if($this->cipher !== null){
 			Timings::$playerNetworkSendEncrypt->startTiming();
 			$payload = $this->cipher->encrypt($payload);
@@ -835,6 +902,10 @@ class NetworkSession{
 		}else{
 			$ackReceiptId = null;
 		}
+		if($localCompletion !== null && $this->sender instanceof LocalCompletionPacketSender){
+			$localCompletion->submit($this->sender, $payload, $immediate);
+			return;
+		}
 		$this->sender->send($payload, $immediate, $ackReceiptId);
 	}
 
@@ -844,20 +915,33 @@ class NetworkSession{
 	private function tryDisconnect(\Closure $func, Translatable|string $reason) : void{
 		if($this->connected && !$this->disconnectGuard){
 			$this->disconnectGuard = true;
-			$func();
+			try{
+				$this->cancelLocalResourcePackSend();
+				$func();
+				(new SessionDisconnectEvent($this))->call();
+			}catch(\Throwable $e){
+				// plugin failures must not skip cleanup
+				$this->logger->error('Session disconnect callback failed (' . get_class($e) . ')');
+			}
 
-			$event = new SessionDisconnectEvent($this);
-			$event->call();
-
-			$this->disconnectGuard = false;
+			// synchronous close can reenter this session
+			// keep the guard through synchronous cleanup
+			if(!($this->transportPolicy?->hasSynchronousClose() ?? false)){ $this->disconnectGuard = false; }
 			$this->flushGamePacketQueue();
 			$this->sender->close("");
 			foreach($this->disposeHooks as $callback){
-				$callback();
+				try{ $callback(); }catch(\Throwable $e){
+					$this->logger->error('Session disposal hook failed (' . get_class($e) . ')');
+				}
 			}
 			$this->disposeHooks->clear();
 			$this->setHandler(null);
 			$this->connected = false;
+			if($this->transportPolicy?->hasSynchronousClose() ?? false){
+				$this->compressedQueue = new \SplQueue();
+				$this->sendBuffer = [];
+				$this->dispose();
+			}
 
 			$ackPromisesByReceiptId = $this->ackPromisesByReceiptId;
 			$this->ackPromisesByReceiptId = [];
@@ -873,6 +957,7 @@ class NetworkSession{
 			}
 
 			$this->logger->info($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_network_session_close($reason)));
+			$this->disconnectGuard = false;
 		}
 	}
 
@@ -967,6 +1052,9 @@ class NetworkSession{
 			return;
 		}
 		if($error === null){
+			$error = $this->transportPolicy?->validateLogin($authenticated, $clientPubKey);
+		}
+		if($error === null){
 			if($authenticated && !($this->info instanceof XboxLivePlayerInfo)){
 				$error = "Expected XUID but none found";
 			}elseif($clientPubKey === null){
@@ -1044,7 +1132,7 @@ class NetworkSession{
 			}
 		}
 
-		if(EncryptionContext::$ENABLED){
+		if(EncryptionContext::$ENABLED && ($this->transportPolicy?->usesGameEncryption() ?? true)){
 			$this->server->getAsyncPool()->submitTask(new PrepareEncryptionTask($clientPubKey, function(string $encryptionKey, string $handshakeJwt) : void{
 				if(!$this->connected){
 					return;
@@ -1590,6 +1678,10 @@ class NetworkSession{
 	}
 
 	public function tick() : void{
+		$this->resourcePackSendCompletion?->checkTimeout(hrtime(true) / 1_000_000_000);
+		if($this->handler instanceof ResourcePacksPacketHandler){
+			$this->handler->checkLocalTimeout(hrtime(true) / 1_000_000_000);
+		}
 		if(!$this->isConnected()){
 			$this->dispose();
 			return;
