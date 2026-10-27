@@ -100,6 +100,15 @@ final class YmlServerProperties{
 	public const NETWORK_DISABLED_PROTOCOLS = 'network.disabled-protocols';
 	public const NETWORK_ENABLE_ENCRYPTION = 'network.enable-encryption';
 	public const NETWORK_MAX_MTU_SIZE = 'network.max-mtu-size';
+	public const NETWORK_NETHERNET = 'network.nethernet';
+	public const NETWORK_NETHERNET_ENABLED = 'network.nethernet.enabled';
+	public const NETWORK_NETHERNET_ICE_PORT_RANGE = 'network.nethernet.ice-port-range';
+	public const NETWORK_NETHERNET_ICE_PORT_RANGE_0 = 'network.nethernet.ice-port-range.0';
+	public const NETWORK_NETHERNET_ICE_PORT_RANGE_1 = 'network.nethernet.ice-port-range.1';
+	public const NETWORK_NETHERNET_MAX_CONNECTIONS = 'network.nethernet.max-connections';
+	public const NETWORK_NETHERNET_MAX_HTTP_CONNECTIONS = 'network.nethernet.max-http-connections';
+	public const NETWORK_NETHERNET_MAX_PENDING_NEGOTIATIONS = 'network.nethernet.max-pending-negotiations';
+	public const NETWORK_NETHERNET_MAX_PER_IP = 'network.nethernet.max-per-ip';
 	public const NETWORK_RAKNET_PORT = 'network.raknet-port';
 	public const NETWORK_UPNP_FORWARDING = 'network.upnp-forwarding';
 	public const PLAYER = 'player';

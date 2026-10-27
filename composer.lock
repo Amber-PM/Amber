@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "32c43039d4668e061ecf2419176fe1c9",
+    "content-hash": "68bf67470f527b509b55de4c552a9a25",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -64,6 +64,76 @@
                 }
             ],
             "time": "2022-10-02T11:22:07+00:00"
+        },
+        {
+            "name": "amber-pm/nethernet",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Amber-PM/NetherNet.git",
+                "reference": "04056e904d008522ba865d7527a7e026765e0629"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Amber-PM/NetherNet/zipball/04056e904d008522ba865d7527a7e026765e0629",
+                "reference": "04056e904d008522ba865d7527a7e026765e0629",
+                "shasum": ""
+            },
+            "require": {
+                "ext-openssl": "*",
+                "ext-rtc": "^0.1",
+                "php": "^8.1"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2.1.46",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "phpunit/phpunit": "^10.5.24"
+            },
+            "suggest": {
+                "ext-webrtc": "0.3.0 for the legacy ExtWebRtcPeer backend, never load it together with ext-rtc"
+            },
+            "default-branch": true,
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "amber\\nethernet\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "amber\\nethernet\\tests\\": "tests/phpunit/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "@php vendor/bin/phpunit --configuration phpunit.xml.dist"
+                ],
+                "test:native": [
+                    "@php vendor/bin/phpunit --configuration phpunit.native.xml.dist"
+                ],
+                "analyse": [
+                    "@php vendor/bin/phpstan analyse --configuration phpstan.neon.dist --no-progress --memory-limit=1G"
+                ],
+                "bench:check": [
+                    "@php benchmarks/bootstrap.php"
+                ],
+                "check": [
+                    "@composer validate --strict",
+                    "@composer check-platform-reqs",
+                    "@test",
+                    "@analyse",
+                    "@bench:check"
+                ]
+            },
+            "license": [
+                "LGPL-3.0-only"
+            ],
+            "description": "Transport-only NetherNet library for PHP",
+            "support": {
+                "source": "https://github.com/Amber-PM/NetherNet/tree/main",
+                "issues": "https://github.com/Amber-PM/NetherNet/issues"
+            },
+            "time": "2026-10-27T07:36:33+00:00"
         },
         {
             "name": "brick/math",
@@ -181,12 +251,12 @@
             "version": "5.2.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/pmmp/BedrockBlockUpgradeSchema.git",
+                "url": "https://github.com/opencollab-incubator/BedrockBlockUpgradeSchema.git",
                 "reference": "5d7889c9a1cdf9e3cd814d2a104ad69b75116ec7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pmmp/BedrockBlockUpgradeSchema/zipball/5d7889c9a1cdf9e3cd814d2a104ad69b75116ec7",
+                "url": "https://api.github.com/repos/opencollab-incubator/BedrockBlockUpgradeSchema/zipball/5d7889c9a1cdf9e3cd814d2a104ad69b75116ec7",
                 "reference": "5d7889c9a1cdf9e3cd814d2a104ad69b75116ec7",
                 "shasum": ""
             },
@@ -207,12 +277,12 @@
             "version": "1.17.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/pmmp/BedrockItemUpgradeSchema.git",
+                "url": "https://github.com/opencollab-incubator/BedrockItemUpgradeSchema.git",
                 "reference": "e19685d2e7e76eb7446115c556df34e5d627d072"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pmmp/BedrockItemUpgradeSchema/zipball/e19685d2e7e76eb7446115c556df34e5d627d072",
+                "url": "https://api.github.com/repos/opencollab-incubator/BedrockItemUpgradeSchema/zipball/e19685d2e7e76eb7446115c556df34e5d627d072",
                 "reference": "e19685d2e7e76eb7446115c556df34e5d627d072",
                 "shasum": ""
             },
@@ -876,12 +946,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Amber-PM/BedrockData.git",
-                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b"
+                "reference": "c62461647b95abb3b8bea5ee773278113c7e7986"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Amber-PM/BedrockData/zipball/436cbbefe62a1cf8eae3d940a339c431d7ba969b",
-                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockData/zipball/c62461647b95abb3b8bea5ee773278113c7e7986",
+                "reference": "c62461647b95abb3b8bea5ee773278113c7e7986",
                 "shasum": ""
             },
             "default-branch": true,
@@ -894,7 +964,7 @@
                 "source": "https://github.com/Amber-PM/BedrockData/tree/main",
                 "issues": "https://github.com/Amber-PM/BedrockData/issues"
             },
-            "time": "2026-09-16T19:58:02+00:00"
+            "time": "2026-10-27T09:37:27+00:00"
         },
         {
             "name": "vapebw/bedrock-protocol",
@@ -902,12 +972,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Amber-PM/BedrockProtocol.git",
-                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab"
+                "reference": "4ae2f97479d02b79b998039ac96bde1ae6ae26f0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Amber-PM/BedrockProtocol/zipball/cbd3997144cfdc454dec7b163d412212dd8899ab",
-                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockProtocol/zipball/4ae2f97479d02b79b998039ac96bde1ae6ae26f0",
+                "reference": "4ae2f97479d02b79b998039ac96bde1ae6ae26f0",
                 "shasum": ""
             },
             "require": {
@@ -955,7 +1025,7 @@
                 "source": "https://github.com/Amber-PM/BedrockProtocol/tree/main",
                 "issues": "https://github.com/Amber-PM/BedrockProtocol/issues"
             },
-            "time": "2026-10-22T22:15:19+00:00"
+            "time": "2026-10-27T09:36:04+00:00"
         }
     ],
     "packages-dev": [
@@ -2792,6 +2862,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
+        "amber-pm/nethernet": 20,
         "vapebw/bedrock-data": 20,
         "vapebw/bedrock-protocol": 20
     },
@@ -2824,7 +2895,8 @@
         "ext-yaml": ">=2.0.0",
         "ext-zip": "*",
         "ext-zlib": ">=1.2.11",
-        "composer-runtime-api": "^2.0"
+        "composer-runtime-api": "^2.0",
+        "php-zts": "*"
     },
     "platform-dev": {},
     "platform-overrides": {

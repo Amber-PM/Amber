@@ -43,6 +43,10 @@ final class BlockTranslator{
 	public const BLOCK_STATE_META_MAP_PATH = 1;
 
 	private const PATHS = [
+		ProtocolInfo::PROTOCOL_1_26_60 => [
+			self::CANONICAL_BLOCK_STATES_PATH => '-1.26.60',
+			self::BLOCK_STATE_META_MAP_PATH => '-1.26.60',
+		],
 		ProtocolInfo::PROTOCOL_1_26_51 => [
 			self::CANONICAL_BLOCK_STATES_PATH => '-1.26.50',
 			self::BLOCK_STATE_META_MAP_PATH => '-1.26.50',
@@ -205,7 +209,7 @@ final class BlockTranslator{
 		$metaMappingRaw = Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId][self::BLOCK_STATE_META_MAP_PATH] . ".json", BedrockDataFiles::BLOCK_STATE_META_MAP_JSON));
 		$networkIds = null;
 		if($hashedNetworkIds){
-			$networkIds = json_decode(Filesystem::fileGetContents(str_replace(".json", "-1.26.50.json", str_replace("block_state_meta_map", "block_network_ids", BedrockDataFiles::BLOCK_STATE_META_MAP_JSON))), true, flags: JSON_THROW_ON_ERROR);
+			$networkIds = json_decode(Filesystem::fileGetContents(str_replace(".json", self::PATHS[$protocolId][self::BLOCK_STATE_META_MAP_PATH] . ".json", str_replace("block_state_meta_map", "block_network_ids", BedrockDataFiles::BLOCK_STATE_META_MAP_JSON))), true, flags: JSON_THROW_ON_ERROR);
 		}
 		return self::$loaded[$key] = new self(
 			BlockStateDictionary::loadFromString($canonicalBlockStatesRaw, $metaMappingRaw, $networkIds),
