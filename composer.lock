@@ -876,12 +876,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Amber-PM/BedrockData.git",
-                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b"
+                "reference": "c62461647b95abb3b8bea5ee773278113c7e7986"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Amber-PM/BedrockData/zipball/436cbbefe62a1cf8eae3d940a339c431d7ba969b",
-                "reference": "436cbbefe62a1cf8eae3d940a339c431d7ba969b",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockData/zipball/c62461647b95abb3b8bea5ee773278113c7e7986",
+                "reference": "c62461647b95abb3b8bea5ee773278113c7e7986",
                 "shasum": ""
             },
             "default-branch": true,
@@ -894,7 +894,7 @@
                 "source": "https://github.com/Amber-PM/BedrockData/tree/main",
                 "issues": "https://github.com/Amber-PM/BedrockData/issues"
             },
-            "time": "2026-09-16T19:58:02+00:00"
+            "time": "2026-10-27T09:37:27+00:00"
         },
         {
             "name": "vapebw/bedrock-protocol",
@@ -902,12 +902,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Amber-PM/BedrockProtocol.git",
-                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab"
+                "reference": "4ae2f97479d02b79b998039ac96bde1ae6ae26f0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Amber-PM/BedrockProtocol/zipball/cbd3997144cfdc454dec7b163d412212dd8899ab",
-                "reference": "cbd3997144cfdc454dec7b163d412212dd8899ab",
+                "url": "https://api.github.com/repos/Amber-PM/BedrockProtocol/zipball/4ae2f97479d02b79b998039ac96bde1ae6ae26f0",
+                "reference": "4ae2f97479d02b79b998039ac96bde1ae6ae26f0",
                 "shasum": ""
             },
             "require": {
@@ -955,7 +955,7 @@
                 "source": "https://github.com/Amber-PM/BedrockProtocol/tree/main",
                 "issues": "https://github.com/Amber-PM/BedrockProtocol/issues"
             },
-            "time": "2026-10-22T22:15:19+00:00"
+            "time": "2026-10-27T09:36:04+00:00"
         }
     ],
     "packages-dev": [
