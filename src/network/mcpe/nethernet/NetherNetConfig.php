@@ -83,7 +83,12 @@ final class NetherNetConfig{
 		// fail at startup, not on the first player
 		if($mux){ ExtRtcPeer::assertMuxOptions($range[0], $range[1], $iceBind, PHP_OS_FAMILY === 'Windows'); }
 		$settings['ice-udp-mux'] = $mux;
-		if(isset($settings['advertised-address'])){ throw new \InvalidArgumentException('NetherNet advertised-address is blocked: the pinned native backend has no advertised-address API'); }
+		$advertised = $settings['advertised-address'] ?? null;
+		if($advertised !== null){
+			if(!is_string($advertised)){ throw new \InvalidArgumentException('NetherNet advertised-address must be a numeric IPv4 or IPv6 address'); }
+			ExtRtcPeer::assertAdvertisedAddress($advertised);
+		}
+		$settings['advertised-address'] = $advertised;
 		foreach(['max-connections' => [128, 1024], 'max-per-ip' => [4, 1024], 'max-http-connections' => [64, 1024], 'max-pending-negotiations' => [32, 1024]] as $name => [$default, $maximum]){
 			$value = $settings[$name] ?? $default;
 			if(!is_int($value) || $value < 1 || $value > $maximum){ throw new \InvalidArgumentException('NetherNet ' . $name . ' is outside its bounded integer range'); }
@@ -97,6 +102,7 @@ final class NetherNetConfig{
 		$backend = getenv('AMBER_NETHERNET_BACKEND');
 		$settings['backend'] = $backend === false || $backend === '' ? 'ext-rtc' : $backend;
 		if(!in_array($settings['backend'], ['ext-webrtc', 'ext-rtc'], true)){ throw new \InvalidArgumentException('AMBER_NETHERNET_BACKEND must be ext-webrtc or ext-rtc'); }
+		if($settings['advertised-address'] !== null && $settings['backend'] !== 'ext-rtc'){ throw new \InvalidArgumentException('NetherNet advertised-address needs the ext-rtc backend'); }
 		return new self($settings, $dataPath);
 	}
 
@@ -110,8 +116,11 @@ final class NetherNetConfig{
 	public function getBind() : string{ return $this->settings['bind']; }
 	public function getMaxPerIp() : int{ return $this->settings['max-per-ip']; }
 	public function createPeer() : WebRtcPeer{
-		$class = $this->settings['backend'] === 'ext-rtc' ? ExtRtcPeer::class : ExtWebRtcPeer::class;
-		return new $class($this->createTransportConfig(), $this->settings['ice-port-range'][0], $this->settings['ice-port-range'][1], $this->settings['ice-bind-address'], $this->settings['ice-udp-mux']);
+		[$begin, $end] = $this->settings['ice-port-range'];
+		if($this->settings['backend'] === 'ext-rtc'){
+			return new ExtRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux'], $this->settings['advertised-address']);
+		}
+		return new ExtWebRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux']);
 	}
 	public function createTransportConfig() : TransportConfig{
 		return new TransportConfig(maxConnections: $this->settings['max-connections'], maxPendingNegotiations: $this->settings['max-pending-negotiations'], maxHttpConnections: $this->settings['max-http-connections']);

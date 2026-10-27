@@ -81,6 +81,9 @@ network:
     #Share one UDP port for every player (ICE UDP mux). Needs a single-port range, e.g. [20000, 20000].
     #On Windows also set ice-bind-address to this machine's LAN IPv4; wildcard addresses are rejected.
     #ice-udp-mux: false
+    #Public IP offered to players when the server sits behind port forwarding (containers and most hosting).
+    #The forwarded UDP port must match the ICE port so use it with ice-udp-mux.
+    #advertised-address: 203.0.113.7
     max-connections: 128
     max-per-ip: 4
     max-http-connections: 64

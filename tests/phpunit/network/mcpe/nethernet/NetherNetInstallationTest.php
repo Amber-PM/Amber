@@ -56,10 +56,22 @@ final class NetherNetInstallationTest extends TestCase{
 		$this->expectExceptionMessage('ice-port-range');
 		NetherNetConfig::fromArray(['ice-port-range' => [30000, 20000]], $this->directory);
 	}
-	public function testAdvertisedAddressCapabilityIsExplicitlyBlocked() : void{
-		$this->expectException(\InvalidArgumentException::class);
-		$this->expectExceptionMessage('no advertised-address API');
+	public function testAdvertisedAddressIsAcceptedForTheRtcBackend() : void{
 		NetherNetConfig::fromArray(['advertised-address' => '203.0.113.1'], $this->directory);
+		NetherNetConfig::fromArray(['advertised-address' => '2001:db8::1'], $this->directory);
+		$this->addToAssertionCount(2);
+	}
+	/** @return iterable<string, array{mixed}> */
+	public static function invalidAdvertisedAddresses() : iterable{
+		yield 'hostname' => ['example.com'];
+		yield 'wildcard' => ['0.0.0.0'];
+		yield 'with port' => ['203.0.113.1:25057'];
+		yield 'number' => [3405803777];
+	}
+	#[\PHPUnit\Framework\Attributes\DataProvider('invalidAdvertisedAddresses')]
+	public function testInvalidAdvertisedAddressIsRejected(mixed $address) : void{
+		$this->expectException(\InvalidArgumentException::class);
+		NetherNetConfig::fromArray(['advertised-address' => $address], $this->directory);
 	}
 	public function testIdentityDomainUsesMotdOrSafeFallback() : void{
 		foreach(['My Amber Server' => 'my-amber-server', '💛' => 'self'] as $motd => $expected){

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8fa85e38a6d1bc4ce05f40bd806a8a49",
+    "content-hash": "8ea00088914114ae165c09b2d198f1a0",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -70,9 +70,9 @@
             "version": "dev-main",
             "dist": {
                 "type": "zip",
-                "url": "packages/nethernet-16a501363e2980a2f627c61ac887c558cd61ae4fff06d026a1116fed2d522fe3.zip",
-                "reference": "16a501363e2980a2f627c61ac887c558cd61ae4fff06d026a1116fed2d522fe3",
-                "shasum": "68f4afbad9d2d857238d69bcaa579a59872edba1"
+                "url": "packages/nethernet-4a2733e785f7fc80bbeb05747263e74c6e97f7273605cdef035bff901bb85119.zip",
+                "reference": "4a2733e785f7fc80bbeb05747263e74c6e97f7273605cdef035bff901bb85119",
+                "shasum": "cbc1fe131bd55bdfc707db319df8f568db765e66"
             },
             "require": {
                 "ext-openssl": "*",
