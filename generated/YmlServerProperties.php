@@ -109,6 +109,7 @@ final class YmlServerProperties{
 	public const NETWORK_NETHERNET_MAX_HTTP_CONNECTIONS = 'network.nethernet.max-http-connections';
 	public const NETWORK_NETHERNET_MAX_PENDING_NEGOTIATIONS = 'network.nethernet.max-pending-negotiations';
 	public const NETWORK_NETHERNET_MAX_PER_IP = 'network.nethernet.max-per-ip';
+	public const NETWORK_RAKNET_PORT = 'network.raknet-port';
 	public const NETWORK_UPNP_FORWARDING = 'network.upnp-forwarding';
 	public const PLAYER = 'player';
 	public const PLAYER_NATIVE_SPECTATOR = 'player.native-spectator';

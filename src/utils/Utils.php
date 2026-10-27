@@ -66,6 +66,7 @@ use function is_infinite;
 use function is_int;
 use function is_nan;
 use function is_object;
+use function is_readable;
 use function is_string;
 use function mb_check_encoding;
 use function mt_getrandmax;
@@ -198,6 +199,18 @@ final class Utils{
 	 *
 	 * @param string $extra optional, additional data to identify the machine
 	 */
+	/**
+	 * @internal
+	 */
+	public static function readMachineId(string $path) : ?string{
+		//containers often deny reading it
+		if(!is_readable($path)){
+			return null;
+		}
+		$machineId = @file_get_contents($path);
+		return $machineId === false ? null : $machineId;
+	}
+
 	public static function getMachineUniqueId(string $extra = "") : UuidInterface{
 		if(self::$serverUniqueId !== null && $extra === ""){
 			return self::$serverUniqueId;
@@ -227,8 +240,9 @@ final class Utils{
 				$machine .= implode(" ", $matches[1]); //Mac Addresses
 			}
 		}elseif($os === Utils::OS_LINUX){
-			if(file_exists("/etc/machine-id")){
-				$machine .= file_get_contents("/etc/machine-id");
+			$machineId = self::readMachineId("/etc/machine-id");
+			if($machineId !== null){
+				$machine .= $machineId;
 			}else{
 				@exec("ifconfig 2>/dev/null", $mac);
 				$mac = implode("\n", $mac);
