@@ -34,7 +34,7 @@ final class VersionInfoTest extends TestCase{
 	}
 
 	public function testSoftwareVersionSeparatedFromApiVersion() : void{
-		self::assertSame("1.6.0", VersionInfo::BASE_VERSION);
+		self::assertSame("1.7.0", VersionInfo::BASE_VERSION);
 		self::assertSame("5.44.2", VersionInfo::COMPATIBLE_API_VERSION);
 		self::assertSame(VersionInfo::COMPATIBLE_API_VERSION, VersionInfo::getCompatibleApiVersion());
 
@@ -49,8 +49,8 @@ final class VersionInfoTest extends TestCase{
 		self::assertTrue(VersionInfo::isDevelopmentBuild());
 		self::assertSame("stable", VersionInfo::BUILD_CHANNEL());
 		self::assertSame("stable", VersionInfo::getChannel());
-		self::assertSame("1.6.0", VersionInfo::BASE_VERSION());
-		self::assertSame("1.6.0+dev", VersionInfo::VERSION()->getFullVersion(true));
+		self::assertSame("1.7.0", VersionInfo::BASE_VERSION());
+		self::assertSame("1.7.0+dev", VersionInfo::VERSION()->getFullVersion(true));
 	}
 
 	public function testOfficialStableBuildMetadata() : void{
@@ -59,14 +59,14 @@ final class VersionInfoTest extends TestCase{
 			"build" => 55,
 			"isDev" => false,
 			"channel" => "stable",
-			"baseVersion" => "1.6.0",
+			"baseVersion" => "1.7.0",
 		]);
 
 		self::assertFalse(VersionInfo::IS_DEVELOPMENT_BUILD());
 		self::assertFalse(VersionInfo::isDevelopmentBuild());
 		self::assertSame("stable", VersionInfo::BUILD_CHANNEL());
-		self::assertSame("1.6.0", VersionInfo::BASE_VERSION());
-		self::assertSame("1.6.0", VersionInfo::VERSION()->getFullVersion(true));
+		self::assertSame("1.7.0", VersionInfo::BASE_VERSION());
+		self::assertSame("1.7.0", VersionInfo::VERSION()->getFullVersion(true));
 		self::assertSame("1122334455667788990011223344556677889900", VersionInfo::GIT_HASH());
 		self::assertSame(55, VersionInfo::BUILD_NUMBER());
 	}
@@ -77,13 +77,13 @@ final class VersionInfoTest extends TestCase{
 			"build" => 56,
 			"isDev" => false,
 			"channel" => "beta",
-			"baseVersion" => "1.6.0-beta1",
+			"baseVersion" => "1.7.0-beta1",
 		]);
 
 		self::assertFalse(VersionInfo::IS_DEVELOPMENT_BUILD());
 		self::assertSame("beta", VersionInfo::BUILD_CHANNEL());
-		self::assertSame("1.6.0-beta1", VersionInfo::BASE_VERSION());
-		self::assertSame("1.6.0-beta1", VersionInfo::VERSION()->getFullVersion(true));
+		self::assertSame("1.7.0-beta1", VersionInfo::BASE_VERSION());
+		self::assertSame("1.7.0-beta1", VersionInfo::VERSION()->getFullVersion(true));
 		self::assertSame("beta1", VersionInfo::VERSION()->getSuffix());
 	}
 
@@ -93,25 +93,25 @@ final class VersionInfoTest extends TestCase{
 			"build" => 77,
 			"isDev" => true,
 			"channel" => "stable",
-			"baseVersion" => "1.6.0",
+			"baseVersion" => "1.7.0",
 		]);
 
 		self::assertTrue(VersionInfo::IS_DEVELOPMENT_BUILD());
-		self::assertSame("1.6.0+dev.77", VersionInfo::VERSION()->getFullVersion(true));
-		self::assertSame("1.6.0+dev", VersionInfo::VERSION()->getFullVersion(false));
+		self::assertSame("1.7.0+dev.77", VersionInfo::VERSION()->getFullVersion(true));
+		self::assertSame("1.7.0+dev", VersionInfo::VERSION()->getFullVersion(false));
 	}
 
 	public function testVersionStringParsing() : void{
-		$version = new VersionString("1.6.0", true, 0);
+		$version = new VersionString("1.7.0", true, 0);
 		self::assertSame(1, $version->getMajor());
-		self::assertSame(6, $version->getMinor());
+		self::assertSame(7, $version->getMinor());
 		self::assertSame(0, $version->getPatch());
 		self::assertSame("", $version->getSuffix());
-		self::assertSame("1.6.0+dev", $version->getFullVersion());
+		self::assertSame("1.7.0+dev", $version->getFullVersion());
 
-		$betaVersion = new VersionString("1.6.0-beta1", false, 0);
+		$betaVersion = new VersionString("1.7.0-beta1", false, 0);
 		self::assertSame("beta1", $betaVersion->getSuffix());
-		self::assertSame("1.6.0-beta1", $betaVersion->getFullVersion());
+		self::assertSame("1.7.0-beta1", $betaVersion->getFullVersion());
 	}
 
 	public function testDevBuildWarningTranslation() : void{

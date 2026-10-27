@@ -20,6 +20,12 @@ final class NetherNetConfigTest extends TestCase{
 		self::assertSame('tcp://0.0.0.0:19132', NetherNetConfig::fromArray([], sys_get_temp_dir())->getBind());
 	}
 
+	public function testServerPortZeroLetsTheSystemPickTheSignalingPort() : void{
+		self::assertSame('tcp://0.0.0.0:0', NetherNetConfig::fromArray([], sys_get_temp_dir(), 0)?->getBind());
+		$this->expectException(\InvalidArgumentException::class);
+		NetherNetConfig::fromArray(['signaling-port' => -1], sys_get_temp_dir());
+	}
+
 	public function testStringFalseCannotAccidentallyEnableTransport() : void{
 		$this->expectException(\InvalidArgumentException::class);
 		NetherNetConfig::fromArray(['enabled' => 'false'], sys_get_temp_dir());

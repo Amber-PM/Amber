@@ -44,7 +44,8 @@ final class NetherNetConfig{
 		if(!is_bool($enabled)){ throw new \InvalidArgumentException('network.nethernet.enabled must be a boolean'); }
 		if(!$enabled){ return null; }
 		$port = $settings['signaling-port'] ?? $serverPort;
-		if(!is_int($port) || $port < 1 || $port > 65535){ throw new \InvalidArgumentException('NetherNet signaling-port must be between 1 and 65535'); }
+		// 0 lets the os pick like server-port 0 does
+		if(!is_int($port) || $port < 0 || $port > 65535){ throw new \InvalidArgumentException('NetherNet signaling-port must be between 0 and 65535'); }
 		$address = $settings['bind-address'] ?? $serverIp;
 		if(!is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false){ throw new \InvalidArgumentException('NetherNet bind-address must be a numeric IPv4 or IPv6 address'); }
 		$settings['bind'] ??= 'tcp://' . (str_contains($address, ':') ? '[' . $address . ']' : $address) . ':' . $port;
