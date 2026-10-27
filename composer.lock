@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5a81dee97794bc0212cab3880eab1d4d",
+    "content-hash": "68bf67470f527b509b55de4c552a9a25",
     "packages": [
         {
             "name": "adhocore/json-comment",
@@ -68,30 +68,72 @@
         {
             "name": "amber-pm/nethernet",
             "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Amber-PM/NetherNet.git",
+                "reference": "c836d6576fc8328e01228bb0fc38bfd36d8042cb"
+            },
             "dist": {
                 "type": "zip",
-                "url": "packages/nethernet-f006db7c787845f4362e8d0b02f215b6318d771b0475170242fb029e9517fb8c.zip",
-                "reference": "f006db7c787845f4362e8d0b02f215b6318d771b0475170242fb029e9517fb8c",
-                "shasum": "a79a244ee8e5124691a6def7ccdf9d7bd5b6bba1"
+                "url": "https://api.github.com/repos/Amber-PM/NetherNet/zipball/c836d6576fc8328e01228bb0fc38bfd36d8042cb",
+                "reference": "c836d6576fc8328e01228bb0fc38bfd36d8042cb",
+                "shasum": ""
             },
             "require": {
                 "ext-openssl": "*",
                 "ext-rtc": "^0.1",
                 "php": "^8.1"
             },
+            "require-dev": {
+                "phpstan/phpstan": "^2.1.46",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "phpunit/phpunit": "^10.5.24"
+            },
             "suggest": {
                 "ext-webrtc": "0.3.0 for the legacy ExtWebRtcPeer backend, never load it together with ext-rtc"
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
                     "amber\\nethernet\\": "src/"
                 }
             },
+            "autoload-dev": {
+                "psr-4": {
+                    "amber\\nethernet\\tests\\": "tests/phpunit/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "@php vendor/bin/phpunit --configuration phpunit.xml.dist"
+                ],
+                "test:native": [
+                    "@php vendor/bin/phpunit --configuration phpunit.native.xml.dist"
+                ],
+                "analyse": [
+                    "@php vendor/bin/phpstan analyse --configuration phpstan.neon.dist --no-progress --memory-limit=1G"
+                ],
+                "bench:check": [
+                    "@php benchmarks/bootstrap.php"
+                ],
+                "check": [
+                    "@composer validate --strict",
+                    "@composer check-platform-reqs",
+                    "@test",
+                    "@analyse",
+                    "@bench:check"
+                ]
+            },
             "license": [
                 "LGPL-3.0-only"
             ],
-            "description": "Transport-only NetherNet library for PHP"
+            "description": "Transport-only NetherNet library for PHP",
+            "support": {
+                "source": "https://github.com/Amber-PM/NetherNet/tree/main",
+                "issues": "https://github.com/Amber-PM/NetherNet/issues"
+            },
+            "time": "2026-10-27T04:55:44+00:00"
         },
         {
             "name": "brick/math",

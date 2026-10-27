@@ -102,38 +102,12 @@
          "@php build/codegen/pocketmine-yml-property-consts.php",
          "@php build/codegen/registry-interface.php src generated"
       ],
-      "package-nethernet": "@php build/package-nethernet.php",
       "test:nethernet-native": "@php vendor/bin/phpunit --configuration vendor/amber-pm/nethernet/phpunit.rtc.xml.dist --bootstrap tests/phpunit/nethernet-native-bootstrap.php --fail-on-skipped --do-not-cache-result"
    },
    "repositories": [
       {
-         "type": "package",
-         "package": {
-            "name": "amber-pm/nethernet",
-            "description": "Transport-only NetherNet library for PHP",
-            "type": "library",
-            "license": "LGPL-3.0-only",
-            "require": {
-               "php": "^8.1",
-               "ext-openssl": "*",
-               "ext-rtc": "^0.1"
-            },
-            "suggest": {
-               "ext-webrtc": "0.3.0 for the legacy ExtWebRtcPeer backend, never load it together with ext-rtc"
-            },
-            "autoload": {
-               "psr-4": {
-                  "amber\\nethernet\\": "src/"
-               }
-            },
-            "version": "dev-main",
-            "dist": {
-               "type": "zip",
-               "url": "packages/nethernet-f006db7c787845f4362e8d0b02f215b6318d771b0475170242fb029e9517fb8c.zip",
-               "reference": "f006db7c787845f4362e8d0b02f215b6318d771b0475170242fb029e9517fb8c",
-               "shasum": "a79a244ee8e5124691a6def7ccdf9d7bd5b6bba1"
-            }
-         }
+         "type": "vcs",
+         "url": "https://github.com/Amber-PM/NetherNet.git"
       },
       {
          "type": "vcs",
