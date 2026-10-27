@@ -63,6 +63,8 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 	private array $connectionsByIp = [];
 	/** @var array<string, float> */
 	private array $blocked = [];
+	/** @var array<string, float> */
+	private array $lastWarnings = [];
 
 	/**
 	 * @param \Closure(Connection, NetherNetPacketSender, SignalingPeerAddress): NetworkSession|null $sessionFactory
@@ -107,7 +109,9 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			}, $this);
 			$this->transport = new Transport($limits, $identity, $signaling, $this->peerFactory ?? $this->config->createPeer(...));
 			$signaling->bind($this->transport);
-			$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192);
+			$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192, admit: static function(string $ip) use ($reference) : bool{
+				return $reference->get()?->admits($ip) ?? false;
+			});
 		}catch(\Throwable $e){
 			$this->shutdown();
 			throw new NetworkInterfaceStartException('NetherNet initialization failed: ' . $e->getMessage(), 0, $e);
@@ -150,7 +154,12 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			$connection->close('NetherNet connection is unavailable or has no trusted signaling address');
 			return;
 		}
-		if(($this->blocked[$address->ip] ?? 0) > hrtime(true) / 1_000_000_000 || $this->server->getIPBans()->getEntry($address->ip) !== null || ($this->connectionsByIp[$address->ip] ?? 0) >= $this->config->getMaxPerIp()){
+		if(!$this->admits($address->ip)){
+			$connection->close('NetherNet signaling address admission rejected');
+			return;
+		}
+		if(($this->connectionsByIp[$address->ip] ?? 0) >= $this->config->getMaxPerIp()){
+			$this->warnLimited('max-per-ip', 'NetherNet rejected a player from ' . $address->ip . ' because max-per-ip is reached');
 			$connection->close('NetherNet signaling address admission rejected');
 			return;
 		}
@@ -191,14 +200,16 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 		$entry = $this->clients[$connection->getId()] ?? null;
 		if($this->stopped || $entry === null || $entry['connection'] !== $connection || $entry['session'] === null){ return; }
 		$session = $entry['session'];
-		if($channel !== Channel::RELIABLE || !$session->isConnected()){
+		if(!$session->isConnected()){
 			$this->release($connection->getId(), 'NetherNet game channel unavailable');
 			return;
 		}
+		// both channels carry game batches since clients may send movement unreliably
 		try{
 			$session->handleEncoded($payload); // no raknet fe prefix and no extra fragment header
 		}catch(PacketHandlingException){
-			$this->blockAddress($entry['address']->ip, 5);
+			// only the sender goes since players behind cgnat share an ip
+			$this->blocked[$entry['address']->ip] = max($this->blocked[$entry['address']->ip] ?? 0, hrtime(true) / 1_000_000_000 + 5);
 			$this->release($connection->getId(), 'Invalid NetherNet game payload');
 		}catch(\Throwable $e){
 			$this->release($connection->getId(), 'NetherNet game payload handler failed');
@@ -208,7 +219,26 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 
 	public function onClose(int $id, string $code, string $reason) : void{
 		// ids stay unique because this transport never restarts
+		$joined = isset($this->clients[$id]);
 		$this->release($id, 'NetherNet transport closed'); // do not log arbitrary peer/native reason text
+		// codes come from the library so they are safe to log
+		if(!$joined && $code === 'connect_timeout'){
+			$this->warnLimited('connect', 'NetherNet player could not reach the ICE UDP port (connect_timeout), check that it is open and set advertised-address when the server is behind NAT');
+		}elseif(!$joined && str_starts_with($code, 'identity_')){
+			$this->warnLimited('identity', 'NetherNet player failed authentication (' . $code . ')');
+		}else{
+			$this->logger->debug('NetherNet connection ' . $id . ' closed (' . $code . ')');
+		}
+	}
+
+	private function warnLimited(string $kind, string $message) : void{
+		$now = hrtime(true) / 1_000_000_000;
+		if(($this->lastWarnings[$kind] ?? -INF) + 60 > $now){
+			$this->logger->debug($message);
+			return;
+		}
+		$this->lastWarnings[$kind] = $now;
+		$this->logger->warning($message);
 	}
 
 	private function release(int $id, string $reason) : void{
@@ -244,6 +274,9 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 		foreach($this->clients as $id => $entry){ if($entry['address']->ip === $address){ $this->release($id, 'NetherNet signaling address blocked'); } }
 	}
 	public function unblockAddress(string $address) : void{ unset($this->blocked[$address]); }
+	private function admits(string $ip) : bool{
+		return ($this->blocked[$ip] ?? 0) <= hrtime(true) / 1_000_000_000 && $this->server->getIPBans()->getEntry($ip) === null;
+	}
 	public function addRawPacketFilter(string $regex) : void{} // no raw datagrams are forwarded by this interface
 	public function sendRawPacket(string $address, int $port, string $payload) : void{} // datagram interfaces own raw udp
 }

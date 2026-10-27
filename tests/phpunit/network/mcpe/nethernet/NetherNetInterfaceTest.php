@@ -21,6 +21,7 @@ use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\PacketBroadcaster;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\Network;
+use pocketmine\network\PacketHandlingException;
 use pocketmine\Server;
 use pocketmine\timings\Timings;
 
@@ -256,6 +257,57 @@ final class NetherNetInterfaceTest extends TestCase{
 		$interface->onOpen($second);
 		self::assertSame(1, $second->closes);
 		self::assertSame(1, $this->network->getConnectionCount());
+	}
+
+	public function testUnreliableChannelPayloadReachesTheSession() : void{
+		$interface = $this->make();
+		$connection = $this->connection(1);
+		$interface->onOpen($connection);
+		$interface->onPayload($connection, 'movement', Channel::UNRELIABLE);
+		self::assertSame([1 => ['movement']], $this->received);
+		self::assertSame(0, $connection->closes);
+		self::assertTrue($this->created[0]->isConnected());
+	}
+
+	public function testInvalidPayloadOnlyDropsTheSenderAndBlocksNewJoins() : void{
+		$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => 'tcp://127.0.0.1:0', 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'audience', 'max-per-ip' => 4], $this->directory);
+		$interface = $this->make(function(Connection $connection, NetherNetPacketSender $sender, SignalingPeerAddress $address) : NetworkSession{
+			$session = $this->makeSession($connection, $sender, $address, true);
+			self::assertInstanceOf(\PHPUnit\Framework\MockObject\MockObject::class, $session);
+			$session->method('handleEncoded')->willReturnCallback(static function(string $payload) : void{
+				if($payload === 'bad'){ throw new PacketHandlingException('bad batch'); }
+			});
+			$this->created[] = $session;
+			return $session;
+		});
+		$bad = $this->connection(1);
+		$good = $this->connection(2);
+		$interface->onOpen($bad);
+		$interface->onOpen($good);
+		$interface->onPayload($bad, 'bad', Channel::RELIABLE);
+		self::assertSame(1, $bad->closes);
+		self::assertSame(0, $good->closes);
+		self::assertTrue($this->created[1]->isConnected());
+		$late = $this->connection(3);
+		$interface->onOpen($late);
+		self::assertSame(1, $late->closes);
+		self::assertSame(1, $this->network->getConnectionCount());
+	}
+
+	public function testFailedNegotiationsAreLoggedWithRateLimit() : void{
+		$this->logger->expects(self::once())->method('warning')->with(self::stringContains('connect_timeout'));
+		$interface = $this->make();
+		$interface->onClose(1, 'connect_timeout', 'DTLS or channels timed out');
+		$interface->onClose(2, 'connect_timeout', 'DTLS or channels timed out');
+	}
+
+	public function testPerIpRejectionIsLogged() : void{
+		$this->logger->expects(self::once())->method('warning')->with(self::stringContains('max-per-ip'));
+		$interface = $this->make();
+		$interface->onOpen($this->connection(1));
+		$second = $this->connection(2);
+		$interface->onOpen($second);
+		self::assertSame(1, $second->closes);
 	}
 
 	public function testMissingAddressAndMalformedIdentityFailClosed() : void{
