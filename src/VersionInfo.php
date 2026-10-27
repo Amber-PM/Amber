@@ -31,7 +31,7 @@ use function str_repeat;
 
 final class VersionInfo{
 	public const NAME = "AmberPM";
-	public const BASE_VERSION = "1.6.0";
+	public const BASE_VERSION = "1.7.0";
 	public const COMPATIBLE_API_VERSION = "5.44.2";
 	public const IS_DEVELOPMENT_BUILD = true;
 	public const BUILD_CHANNEL = "stable";
