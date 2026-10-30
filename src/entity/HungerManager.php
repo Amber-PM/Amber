@@ -26,6 +26,7 @@ namespace pocketmine\entity;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityRegainHealthEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\World;
 use function max;
 use function min;
@@ -203,7 +204,16 @@ class HungerManager{
 
 		if($this->foodTickTimer === 0){
 			if($food >= 18){
-				if($health < $this->entity->getMaxHealth()){
+				$regen = true;
+				try{
+					$rules = $this->entity->getWorld()->getGameRules();
+					if($rules !== null && get_class($rules) === GameRules::class){
+						$regen = $rules->getBool(GameRules::NATURAL_REGENERATION);
+					}
+				}catch(\Throwable){
+					$regen = true;
+				}
+				if($health < $this->entity->getMaxHealth() && $regen){
 					$this->entity->heal(new EntityRegainHealthEvent($this->entity, 1, EntityRegainHealthEvent::CAUSE_SATURATION));
 					$this->exhaust(6.0, PlayerExhaustEvent::CAUSE_HEALTH_REGEN);
 				}
