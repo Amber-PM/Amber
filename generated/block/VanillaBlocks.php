@@ -199,6 +199,7 @@ final class VanillaBlocks{
 	private static Wall $_mCOBBLESTONE_WALL;
 	private static Cobweb $_mCOBWEB;
 	private static CocoaBlock $_mCOCOA_POD;
+	private static Composter $_mCOMPOSTER;
 	private static ChemistryTable $_mCOMPOUND_CREATOR;
 	private static Concrete $_mCONCRETE;
 	private static ConcretePowder $_mCONCRETE_POWDER;
@@ -467,6 +468,7 @@ final class VanillaBlocks{
 	private static GrassPath $_mGRASS_PATH;
 	private static Gravel $_mGRAVEL;
 	private static Torch $_mGREEN_TORCH;
+	private static Grindstone $_mGRINDSTONE;
 	private static HangingRoots $_mHANGING_ROOTS;
 	private static HardenedClay $_mHARDENED_CLAY;
 	private static HardenedGlass $_mHARDENED_GLASS;
@@ -1040,6 +1042,7 @@ final class VanillaBlocks{
 			"cobblestone_wall" => fn(Wall $v) => self::$_mCOBBLESTONE_WALL = $v,
 			"cobweb" => fn(Cobweb $v) => self::$_mCOBWEB = $v,
 			"cocoa_pod" => fn(CocoaBlock $v) => self::$_mCOCOA_POD = $v,
+			"composter" => fn(Composter $v) => self::$_mCOMPOSTER = $v,
 			"compound_creator" => fn(ChemistryTable $v) => self::$_mCOMPOUND_CREATOR = $v,
 			"concrete" => fn(Concrete $v) => self::$_mCONCRETE = $v,
 			"concrete_powder" => fn(ConcretePowder $v) => self::$_mCONCRETE_POWDER = $v,
@@ -1308,6 +1311,7 @@ final class VanillaBlocks{
 			"grass_path" => fn(GrassPath $v) => self::$_mGRASS_PATH = $v,
 			"gravel" => fn(Gravel $v) => self::$_mGRAVEL = $v,
 			"green_torch" => fn(Torch $v) => self::$_mGREEN_TORCH = $v,
+			"grindstone" => fn(Grindstone $v) => self::$_mGRINDSTONE = $v,
 			"hanging_roots" => fn(HangingRoots $v) => self::$_mHANGING_ROOTS = $v,
 			"hardened_clay" => fn(HardenedClay $v) => self::$_mHARDENED_CLAY = $v,
 			"hardened_glass" => fn(HardenedGlass $v) => self::$_mHARDENED_GLASS = $v,
@@ -2527,6 +2531,11 @@ final class VanillaBlocks{
 	public static function COCOA_POD() : CocoaBlock{
 		if(!isset(self::$_mCOCOA_POD)){ self::init(); }
 		return clone self::$_mCOCOA_POD;
+	}
+
+	public static function COMPOSTER() : Composter{
+		if(!isset(self::$_mCOMPOSTER)){ self::init(); }
+		return clone self::$_mCOMPOSTER;
 	}
 
 	public static function COMPOUND_CREATOR() : ChemistryTable{
@@ -3867,6 +3876,11 @@ final class VanillaBlocks{
 	public static function GREEN_TORCH() : Torch{
 		if(!isset(self::$_mGREEN_TORCH)){ self::init(); }
 		return clone self::$_mGREEN_TORCH;
+	}
+
+	public static function GRINDSTONE() : Grindstone{
+		if(!isset(self::$_mGRINDSTONE)){ self::init(); }
+		return clone self::$_mGRINDSTONE;
 	}
 
 	public static function HANGING_ROOTS() : HangingRoots{
