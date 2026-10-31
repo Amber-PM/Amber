@@ -233,6 +233,34 @@ final class EntityFactory{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
 
+		$this->register(Ghast::class, function(World $world, CompoundTag $nbt) : Ghast{
+			return new Ghast(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Ghast', 'minecraft:ghast']);
+
+		$this->register(Blaze::class, function(World $world, CompoundTag $nbt) : Blaze{
+			return new Blaze(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Blaze', 'minecraft:blaze']);
+
+		$this->register(WitherSkeleton::class, function(World $world, CompoundTag $nbt) : WitherSkeleton{
+			return new WitherSkeleton(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['WitherSkeleton', 'minecraft:wither_skeleton']);
+
+		$this->register(Piglin::class, function(World $world, CompoundTag $nbt) : Piglin{
+			return new Piglin(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Piglin', 'minecraft:piglin']);
+
+		$this->register(ZombifiedPiglin::class, function(World $world, CompoundTag $nbt) : ZombifiedPiglin{
+			return new ZombifiedPiglin(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['ZombiePigman', 'minecraft:zombie_pigman', 'ZombifiedPiglin', 'minecraft:zombified_piglin']);
+
+		$this->register(Strider::class, function(World $world, CompoundTag $nbt) : Strider{
+			return new Strider(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Strider', 'minecraft:strider']);
+
+		$this->register(Shulker::class, function(World $world, CompoundTag $nbt) : Shulker{
+			return new Shulker(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Shulker', 'minecraft:shulker']);
+
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
 		}, ['Human']);
