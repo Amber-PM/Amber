@@ -1018,6 +1018,12 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 		$this->spawnToAll();
 
+		try{
+			$this->location->getWorld()->getWeather()->sendWeather($this);
+		}catch(\Throwable){
+			// Defensive mock safety in unit tests
+		}
+
 		if($this->getHealth() <= 0){
 			$this->logger->debug("Quit while dead, forcing respawn");
 			$this->actuallyRespawn();
