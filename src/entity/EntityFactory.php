@@ -46,6 +46,7 @@ use pocketmine\entity\projectile\Egg;
 use pocketmine\entity\projectile\EnderPearl;
 use pocketmine\entity\projectile\ExperienceBottle;
 use pocketmine\entity\projectile\IceBomb;
+use pocketmine\entity\projectile\LlamaSpit;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
@@ -232,6 +233,46 @@ final class EntityFactory{
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
+
+		$this->register(Fox::class, function(World $world, CompoundTag $nbt) : Fox{
+			return new Fox(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Fox', 'minecraft:fox']);
+
+		$this->register(Panda::class, function(World $world, CompoundTag $nbt) : Panda{
+			return new Panda(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Panda', 'minecraft:panda']);
+
+		$this->register(PolarBear::class, function(World $world, CompoundTag $nbt) : PolarBear{
+			return new PolarBear(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['PolarBear', 'minecraft:polar_bear']);
+
+		$this->register(Goat::class, function(World $world, CompoundTag $nbt) : Goat{
+			return new Goat(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Goat', 'minecraft:goat']);
+
+		$this->register(Llama::class, function(World $world, CompoundTag $nbt) : Llama{
+			return new Llama(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Llama', 'minecraft:llama']);
+
+		$this->register(TraderLlama::class, function(World $world, CompoundTag $nbt) : TraderLlama{
+			return new TraderLlama(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['TraderLlama', 'minecraft:trader_llama']);
+
+		$this->register(LlamaSpit::class, function(World $world, CompoundTag $nbt) : LlamaSpit{
+			return new LlamaSpit(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['LlamaSpit', 'minecraft:llama_spit']);
+
+		$this->register(Frog::class, function(World $world, CompoundTag $nbt) : Frog{
+			return new Frog(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Frog', 'minecraft:frog']);
+
+		$this->register(Tadpole::class, function(World $world, CompoundTag $nbt) : Tadpole{
+			return new Tadpole(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Tadpole', 'minecraft:tadpole']);
+
+		$this->register(Allay::class, function(World $world, CompoundTag $nbt) : Allay{
+			return new Allay(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Allay', 'minecraft:allay']);
 
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
