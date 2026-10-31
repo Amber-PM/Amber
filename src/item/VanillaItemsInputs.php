@@ -26,8 +26,14 @@ namespace pocketmine\item;
 use pocketmine\block\utils\RecordType;
 use pocketmine\block\VanillaBlocks as Blocks;
 use pocketmine\entity\Cat;
+use pocketmine\entity\Chicken;
+use pocketmine\entity\Cow;
+use pocketmine\entity\Creeper;
+use pocketmine\entity\Enderman;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
+use pocketmine\entity\Pig;
+use pocketmine\entity\Sheep;
 use pocketmine\entity\Skeleton;
 use pocketmine\entity\Spider;
 use pocketmine\entity\Squid;
@@ -408,6 +414,60 @@ final class VanillaItemsInputs extends RegistrySource{
 
 			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
 				return new Cat(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("creeper_spawn_egg", fn(IID $id) => new class($id, "Creeper Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::CREEPER;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Creeper(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("enderman_spawn_egg", fn(IID $id) => new class($id, "Enderman Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::ENDERMAN;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Enderman(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("cow_spawn_egg", fn(IID $id) => new class($id, "Cow Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::COW;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Cow(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("sheep_spawn_egg", fn(IID $id) => new class($id, "Sheep Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::SHEEP;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Sheep(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("pig_spawn_egg", fn(IID $id) => new class($id, "Pig Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::PIG;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Pig(Location::fromObject($pos, $world, $yaw, $pitch));
+			}
+		});
+		self::register("chicken_spawn_egg", fn(IID $id) => new class($id, "Chicken Spawn Egg") extends SpawnEgg{
+			public function getSpawnEntityNetworkId() : string{
+				return EntityIds::CHICKEN;
+			}
+
+			protected function createEntity(World $world, Vector3 $pos, float $yaw, float $pitch) : Entity{
+				return new Chicken(Location::fromObject($pos, $world, $yaw, $pitch));
 			}
 		});
 	}
