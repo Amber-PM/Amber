@@ -619,6 +619,12 @@ final class PistonActionTest extends TestCase{
 		return new RedstoneEngine($world, 100);
 	}
 
+	//runs the update and the scheduled start after the delay
+	private function updatePower(Piston $piston, RedstoneEngine $engine) : void{
+		$piston->onRedstoneUpdate($engine);
+		$piston->onRedstoneScheduledUpdate($engine);
+	}
+
 	public function testReconstructedExtendedPistonRetractsWhenPowerRemoved() : void{
 		[$world, $blocks] = $this->createTestWorld();
 		$pos = new Vector3(0, 64, 0);
@@ -645,7 +651,7 @@ final class PistonActionTest extends TestCase{
 		$engine = $this->createTestRedstoneEngine($world);
 
 		// Trigger redstone update with power removed
-		$reconstructed->onRedstoneUpdate($engine);
+		$this->updatePower($reconstructed, $engine);
 		$this->finishMovement($world, $pos);
 
 		// Piston should have retracted: head is removed from (0, 64, 1)
@@ -673,7 +679,7 @@ final class PistonActionTest extends TestCase{
 		$engine = $this->createTestRedstoneEngine($world);
 
 		// onRedstoneUpdate should detect actual extension state in the world and retract
-		$freshPiston->onRedstoneUpdate($engine);
+		$this->updatePower($freshPiston, $engine);
 		$this->finishMovement($world, $pos);
 
 		self::assertFalse($freshPiston->isExtended());
@@ -709,12 +715,12 @@ final class PistonActionTest extends TestCase{
 		$engine = $this->createTestRedstoneEngine($world);
 		for($cycle = 0; $cycle < 8; ++$cycle){
 			$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::REDSTONE());
-			$piston->onRedstoneUpdate($engine);
+			$this->updatePower($piston, $engine);
 			$this->finishMovement($world, $piston->getPosition());
 			self::assertTrue($piston->isExtended());
 			self::assertSame(VanillaBlocks::STONE()->getTypeId(), $world->getBlock(new Vector3(0, 64, 2))->getTypeId());
 			$this->setBlock($world, new Vector3(1, 64, 0), VanillaBlocks::AIR());
-			$piston->onRedstoneUpdate($engine);
+			$this->updatePower($piston, $engine);
 			$this->finishMovement($world, $piston->getPosition());
 			self::assertFalse($piston->isExtended());
 			self::assertSame(VanillaBlocks::STONE()->getTypeId(), $world->getBlock(new Vector3(0, 64, 1))->getTypeId());
@@ -726,7 +732,7 @@ final class PistonActionTest extends TestCase{
 		$piston = VanillaBlocks::PISTON()->setFacing(Facing::SOUTH);
 		$this->setBlock($world, new Vector3(0, 64, 0), $piston);
 		$this->setBlock($world, new Vector3(0, 64, 1), VanillaBlocks::REDSTONE());
-		$piston->onRedstoneUpdate($this->createTestRedstoneEngine($world));
+		$this->updatePower($piston, $this->createTestRedstoneEngine($world));
 		self::assertFalse($piston->isExtended());
 	}
 

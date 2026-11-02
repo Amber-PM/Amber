@@ -54,6 +54,16 @@ final class PistonArm extends Spawnable{
 	private float $lastProgress = 0.0;
 	private ?CompoundTag $movement = null;
 	private ?PistonEntityMovement $entityMovement = null;
+	//direction a waiting start will take even when the pulse is gone by then
+	private ?bool $pendingStart = null;
+
+	public function getPendingStart() : ?bool{
+		return $this->pendingStart;
+	}
+
+	public function setPendingStart(?bool $pendingStart) : void{
+		$this->pendingStart = $pendingStart;
+	}
 
 	public function isMoving() : bool{
 		return $this->state === 1 || $this->state === 3;
