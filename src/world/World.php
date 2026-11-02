@@ -141,10 +141,10 @@ use function count;
 use function floor;
 use function get_class;
 use function gettype;
+use function hrtime;
 use function is_a;
 use function is_object;
 use function max;
-use function microtime;
 use function min;
 use function morton2d_decode;
 use function morton2d_encode;
@@ -2327,8 +2327,10 @@ class World implements ChunkManager{
 		$chunkHash = World::chunkHash($chunkX, $chunkZ);
 		$relativeBlockHash = World::chunkBlockHash($x, $y, $z);
 
-		unset($this->blockCache[$chunkHash][$relativeBlockHash]);
-		$this->blockCacheSize--;
+		if(isset($this->blockCache[$chunkHash][$relativeBlockHash])){
+			unset($this->blockCache[$chunkHash][$relativeBlockHash]);
+			--$this->blockCacheSize;
+		}
 		unset($this->blockCollisionBoxCache[$chunkHash][$relativeBlockHash]);
 		//blocks like fences have collision boxes that reach into neighbouring blocks, so we need to invalidate the
 		//caches for those blocks as well
@@ -3409,7 +3411,9 @@ class World implements ChunkManager{
 	}
 
 	private function queueUnloadChunk(int $x, int $z) : void{
-		$this->unloadQueue[World::chunkHash($x, $z)] = microtime(true);
+		$hash = World::chunkHash($x, $z);
+		unset($this->unloadQueue[$hash]);
+		$this->unloadQueue[$hash] = hrtime(true) / 1_000_000_000;
 	}
 
 	public function unloadChunkRequest(int $x, int $z, bool $safe = true) : bool{
@@ -3971,7 +3975,7 @@ class World implements ChunkManager{
 	public function unloadChunks(bool $force = false) : void{
 		if(count($this->unloadQueue) > 0){
 			$maxUnload = 96;
-			$now = microtime(true);
+			$now = hrtime(true) / 1_000_000_000;
 			foreach($this->unloadQueue as $index => $time){
 				World::getXZ($index, $X, $Z);
 
@@ -3979,7 +3983,7 @@ class World implements ChunkManager{
 					if($maxUnload <= 0){
 						break;
 					}elseif($time > ($now - 30)){
-						continue;
+						break;
 					}
 				}
 
