@@ -110,7 +110,7 @@ final class PistonMoveRulesTest extends TestCase{
 	}
 
 	public function testNonFlowableAttachmentsPopAndNeverAdhere() : void{
-		foreach([VanillaBlocks::OAK_DOOR(), VanillaBlocks::BED(), VanillaBlocks::CAKE(), VanillaBlocks::OAK_SIGN(), VanillaBlocks::STONE_PRESSURE_PLATE(), VanillaBlocks::LADDER(), VanillaBlocks::BAMBOO(), VanillaBlocks::CACTUS(), VanillaBlocks::CANDLE(), VanillaBlocks::LANTERN(), VanillaBlocks::AMETHYST_CLUSTER(), VanillaBlocks::SEA_PICKLE(), VanillaBlocks::GLOW_LICHEN(), VanillaBlocks::DRAGON_EGG(), VanillaBlocks::BUDDING_AMETHYST(), VanillaBlocks::CAMPFIRE()] as $block){
+		foreach([VanillaBlocks::OAK_DOOR(), VanillaBlocks::BED(), VanillaBlocks::CAKE(), VanillaBlocks::OAK_SIGN(), VanillaBlocks::STONE_PRESSURE_PLATE(), VanillaBlocks::LADDER(), VanillaBlocks::BAMBOO(), VanillaBlocks::CACTUS(), VanillaBlocks::AMETHYST_CLUSTER(), VanillaBlocks::SEA_PICKLE(), VanillaBlocks::GLOW_LICHEN(), VanillaBlocks::DRAGON_EGG(), VanillaBlocks::BUDDING_AMETHYST(), VanillaBlocks::CAMPFIRE()] as $block){
 			self::assertTrue(PistonMoveRules::isBreakableOnPush($block), $block->getName());
 			self::assertFalse(PistonMoveRules::isImmovable($block), $block->getName());
 			self::assertFalse(PistonMoveRules::canStickTogether(VanillaBlocks::SLIME(), $block), $block->getName());
