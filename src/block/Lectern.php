@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\tile\Lectern as TileLectern;
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\block\utils\FacesOppositePlacingPlayerTrait;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\SupportType;
@@ -36,8 +37,10 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\sound\LecternPlaceBookSound;
 use function count;
+use function floor;
+use function min;
 
-class Lectern extends Transparent implements HorizontalFacing{
+class Lectern extends Transparent implements HorizontalFacing, ComparatorSignalSource{
 	use FacesOppositePlacingPlayerTrait;
 
 	protected int $viewedPage = 0;
@@ -164,5 +167,16 @@ class Lectern extends Transparent implements HorizontalFacing{
 			$this->producingSignal = false;
 			$this->position->getWorld()->setBlock($this->position, $this);
 		}
+	}
+
+	public function getComparatorSignal() : int{
+		if($this->book === null){
+			return 0;
+		}
+		$pages = count($this->book->getPages());
+		if($pages <= 1){
+			return 15;
+		}
+		return (int) floor(1 + (min($this->viewedPage, $pages - 1) / ($pages - 1)) * 14);
 	}
 }

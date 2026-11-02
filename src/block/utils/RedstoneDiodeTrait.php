@@ -24,7 +24,6 @@ declare(strict_types=1);
 
 namespace pocketmine\block\utils;
 
-use pocketmine\block\Redstone;
 use pocketmine\block\RedstoneComparator;
 use pocketmine\block\RedstoneRepeater;
 use pocketmine\block\RedstoneWire;
@@ -41,10 +40,10 @@ trait RedstoneDiodeTrait{
 		return $engine->getPowerFrom($this->position->getSide($this->facing), Facing::opposite($this->facing));
 	}
 
-	/** Power coming in from the side $side: only wire, repeaters, comparators and redstone blocks count. */
+	/** power coming in from the side $side where only wire and repeaters and comparators count */
 	protected function getRedstoneSideInput(RedstoneEngine $engine, int $side) : int{
 		$block = $this->getSide($side);
-		if($block instanceof RedstoneWire || $block instanceof RedstoneRepeater || $block instanceof RedstoneComparator || $block instanceof Redstone){
+		if($block instanceof RedstoneWire || $block instanceof RedstoneRepeater || $block instanceof RedstoneComparator){
 			return $engine->getOutput($block, Facing::opposite($side), false);
 		}
 		return 0;

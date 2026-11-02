@@ -23,13 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\block\utils\FacesOppositePlacingPlayerTrait;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 
-class EndPortalFrame extends Opaque implements HorizontalFacing{
+class EndPortalFrame extends Opaque implements HorizontalFacing, ComparatorSignalSource{
 	use FacesOppositePlacingPlayerTrait;
 
 	protected bool $eye = false;
@@ -53,5 +54,9 @@ class EndPortalFrame extends Opaque implements HorizontalFacing{
 
 	protected function recalculateCollisionBoxes() : array{
 		return [AxisAlignedBB::one()->trim(Facing::UP, 3 / 16)];
+	}
+
+	public function getComparatorSignal() : int{
+		return $this->eye ? 15 : 0;
 	}
 }
