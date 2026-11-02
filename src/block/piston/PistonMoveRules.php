@@ -41,11 +41,15 @@ final class PistonMoveRules{
 	public static function isTileClassSupported(string $tileClass) : bool{
 		return in_array($tileClass, [
 			\pocketmine\block\tile\Barrel::class,
+			\pocketmine\block\tile\Bell::class,
 			\pocketmine\block\tile\BrewingStand::class,
 			\pocketmine\block\tile\Chest::class,
+			\pocketmine\block\tile\ChiseledBookshelf::class,
+			\pocketmine\block\tile\DaylightSensor::class,
 			\pocketmine\block\tile\Dispenser::class,
 			\pocketmine\block\tile\Dropper::class,
 			\pocketmine\block\tile\Hopper::class,
+			\pocketmine\block\tile\Lectern::class,
 			\pocketmine\block\tile\NormalFurnace::class,
 			\pocketmine\block\tile\BlastFurnace::class,
 			\pocketmine\block\tile\Smoker::class,
@@ -144,8 +148,6 @@ final class PistonMoveRules{
 			$block instanceof \pocketmine\block\Ladder ||
 			$block instanceof \pocketmine\block\Bamboo ||
 			$block instanceof \pocketmine\block\Cactus ||
-			$block instanceof \pocketmine\block\Candle ||
-			$block instanceof \pocketmine\block\Lantern ||
 			$block instanceof \pocketmine\block\AmethystCluster ||
 			$block instanceof \pocketmine\block\BaseBigDripleaf ||
 			$block instanceof \pocketmine\block\SmallDripleaf ||

@@ -26,6 +26,7 @@ namespace pocketmine\block;
 use pocketmine\block\tile\ItemFrame as TileItemFrame;
 use pocketmine\block\utils\AnyFacing;
 use pocketmine\block\utils\AnyFacingTrait;
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\block\utils\SupportType;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
@@ -39,8 +40,9 @@ use pocketmine\world\sound\ItemFrameRemoveItemSound;
 use pocketmine\world\sound\ItemFrameRotateItemSound;
 use function is_infinite;
 use function is_nan;
+use function min;
 
-class ItemFrame extends Flowable implements AnyFacing{
+class ItemFrame extends Flowable implements AnyFacing, ComparatorSignalSource{
 	use AnyFacingTrait;
 
 	public const ROTATIONS = 8;
@@ -195,5 +197,9 @@ class ItemFrame extends Flowable implements AnyFacing{
 
 	public function getPickedItem(bool $addUserData = false) : Item{
 		return $this->framedItem !== null ? clone $this->framedItem : parent::getPickedItem($addUserData);
+	}
+
+	public function getComparatorSignal() : int{
+		return $this->framedItem === null ? 0 : min(8, $this->itemRotation + 1);
 	}
 }

@@ -27,6 +27,7 @@ use pocketmine\scheduler\AsyncPool;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\generator\PopulationTask;
 use function array_key_exists;
+use function in_array;
 
 final class AsyncGeneratorExecutor implements GeneratorExecutor{
 	private static int $nextAsyncContextId = 1;
@@ -89,7 +90,7 @@ final class AsyncGeneratorExecutor implements GeneratorExecutor{
 			$onCompletion
 		);
 		$workerId = $this->workerPool->selectWorker();
-		if(!isset($this->workerPool->getRunningWorkers()[$workerId]) && isset($this->generatorRegisteredWorkers[$workerId])){
+		if(!in_array($workerId, $this->workerPool->getRunningWorkers(), true) && isset($this->generatorRegisteredWorkers[$workerId])){
 			$this->logger->debug("Selected worker $workerId previously had generator registered, but is now offline");
 			unset($this->generatorRegisteredWorkers[$workerId]);
 		}

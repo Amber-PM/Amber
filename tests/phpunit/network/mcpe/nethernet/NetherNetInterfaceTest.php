@@ -326,6 +326,25 @@ final class NetherNetInterfaceTest extends TestCase{
 		self::assertMatchesRegularExpression('/needs TCP \d+ and UDP 20000-20127 open, set advertised-address/', $ports[0]);
 	}
 
+	public function testTakenSignalingPortNamesThePortAndRcon() : void{
+		$taken = stream_socket_server('tcp://127.0.0.1:0');
+		self::assertNotFalse($taken);
+		try{
+			$bind = 'tcp://' . stream_socket_get_name($taken, false);
+			$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => $bind, 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'audience'], $this->directory);
+			$interface = new NetherNetInterface($this->server, $this->config, $this->broadcaster, $this->entities, $this->converter, null, static fn() => throw new \LogicException('No backend is needed'), $this->logger, $this->config->createIdentityHandler());
+			try{
+				$interface->start();
+				self::fail('A taken signaling port must stop startup');
+			}catch(\pocketmine\network\NetworkInterfaceStartException $e){
+				self::assertStringContainsString($bind, $e->getMessage());
+				self::assertStringContainsString('RCON', $e->getMessage());
+			}
+		}finally{
+			fclose($taken);
+		}
+	}
+
 	public function testFailedNegotiationsAreLoggedWithRateLimit() : void{
 		$this->logger->expects(self::once())->method('warning')->with(self::stringContains('connect_timeout'));
 		$interface = $this->make();

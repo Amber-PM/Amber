@@ -117,9 +117,24 @@ class RedstoneRepeater extends Flowable implements PoweredByRedstone, Horizontal
 	}
 
 	public function onRedstoneScheduledUpdate(RedstoneEngine $engine) : void{
-		$powered = $this->getRedstoneInput($engine) > 0;
-		if(!$this->isLocked($engine) && $powered !== $this->powered){
-			$engine->getWorld()->setBlock($this->position, $this->setPowered($powered));
+		if($this->isLocked($engine)){
+			return;
+		}
+		$input = $this->getRedstoneInput($engine) > 0;
+		if(!$this->powered){
+			if(!$input && $this->delay === 1){
+				//stretching pulses at the shortest delay is java only
+				return;
+			}
+			//short on pulses are stretched to the delay
+			$engine->getWorld()->setBlock($this->position, $this->setPowered(true));
+			$engine->requestAround($this->position);
+			if(!$input){
+				$engine->schedule($this->position, $this->delay * RedstoneEngine::REDSTONE_TICK);
+			}
+		}elseif(!$input){
+			//an off pulse shorter than the delay never gets here
+			$engine->getWorld()->setBlock($this->position, $this->setPowered(false));
 			$engine->requestAround($this->position);
 		}
 	}
