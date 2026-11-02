@@ -112,9 +112,14 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			}, $this);
 			$this->transport = new Transport($limits, $identity, $signaling, $this->peerFactory ?? $this->config->createPeer(...));
 			$signaling->bind($this->transport);
-			$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192, admit: static function(string $ip) use ($reference) : bool{
-				return $reference->get()?->admits($ip) ?? false;
-			});
+			try{
+				$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192, admit: static function(string $ip) use ($reference) : bool{
+					return $reference->get()?->admits($ip) ?? false;
+				});
+			}catch(\RuntimeException $e){
+				// rcon plugins default to server-port so the tcp side is often taken
+				throw new \RuntimeException('cannot listen on ' . $this->config->getBind() . ', another process or plugin (often RCON) already uses this TCP port, move it to another port (' . $e->getMessage() . ')', 0, $e);
+			}
 			// most join failures are closed ports so say which ones up front
 			$address = $this->http->getAddress();
 			$tcp = substr($address, (int) strrpos($address, ':') + 1);
