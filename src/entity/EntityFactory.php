@@ -233,6 +233,30 @@ final class EntityFactory{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
 
+		$this->register(Pillager::class, function(World $world, CompoundTag $nbt) : Pillager{
+			return new Pillager(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Pillager', 'minecraft:pillager']);
+
+		$this->register(Vindicator::class, function(World $world, CompoundTag $nbt) : Vindicator{
+			return new Vindicator(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Vindicator', 'minecraft:vindicator']);
+
+		$this->register(Ravager::class, function(World $world, CompoundTag $nbt) : Ravager{
+			return new Ravager(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Ravager', 'minecraft:ravager']);
+
+		$this->register(EvocationFang::class, function(World $world, CompoundTag $nbt) : EvocationFang{
+			return new EvocationFang(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['EvocationFang', 'minecraft:evocation_fang']);
+
+		$this->register(EvocationIllager::class, function(World $world, CompoundTag $nbt) : EvocationIllager{
+			return new EvocationIllager(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['EvocationIllager', 'minecraft:evocation_illager', 'Evoker']);
+
+		$this->register(Vex::class, function(World $world, CompoundTag $nbt) : Vex{
+			return new Vex(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Vex', 'minecraft:vex']);
+
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
 		}, ['Human']);
