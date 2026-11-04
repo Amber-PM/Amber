@@ -108,4 +108,28 @@ final class GameRulesTest extends TestCase{
 		self::assertInstanceOf(IntGameRule::class, $networkRules[GameRule::RANDOM_TICK_SPEED]);
 		self::assertSame(1, $networkRules[GameRule::RANDOM_TICK_SPEED]->getValue());
 	}
+
+	public function testIntegerBounds() : void{
+		$rules = new GameRules();
+
+		// Random tick speed bounds [0, 4096]
+		self::assertTrue($rules->set(GameRule::RANDOM_TICK_SPEED, 0, broadcast: false));
+		self::assertTrue($rules->set(GameRule::RANDOM_TICK_SPEED, 4096, broadcast: false));
+		self::assertFalse($rules->set(GameRule::RANDOM_TICK_SPEED, -1, broadcast: false));
+		self::assertFalse($rules->set(GameRule::RANDOM_TICK_SPEED, 4097, broadcast: false));
+		self::assertFalse($rules->set(GameRule::RANDOM_TICK_SPEED, 1000000000, broadcast: false));
+
+		// Players sleeping percentage bounds [0, 100]
+		self::assertTrue($rules->set(GameRule::PLAYERS_SLEEPING_PERCENTAGE, 0, broadcast: false));
+		self::assertTrue($rules->set(GameRule::PLAYERS_SLEEPING_PERCENTAGE, 50, broadcast: false));
+		self::assertTrue($rules->set(GameRule::PLAYERS_SLEEPING_PERCENTAGE, 100, broadcast: false));
+		self::assertFalse($rules->set(GameRule::PLAYERS_SLEEPING_PERCENTAGE, -5, broadcast: false));
+		self::assertFalse($rules->set(GameRule::PLAYERS_SLEEPING_PERCENTAGE, 101, broadcast: false));
+
+		// Spawn radius bounds [0, 32]
+		self::assertTrue($rules->set(GameRule::SPAWN_RADIUS, 0, broadcast: false));
+		self::assertTrue($rules->set(GameRule::SPAWN_RADIUS, 32, broadcast: false));
+		self::assertFalse($rules->set(GameRule::SPAWN_RADIUS, -1, broadcast: false));
+		self::assertFalse($rules->set(GameRule::SPAWN_RADIUS, 33, broadcast: false));
+	}
 }

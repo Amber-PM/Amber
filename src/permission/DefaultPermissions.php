@@ -58,7 +58,10 @@ abstract class DefaultPermissions{
 	private static function registerNoArgsDesc(string $permission, array $grantedBy) : Permission{
 		$translationKey = preg_replace("/^pocketmine\./", "pocketmine.permission.", $permission) ?? throw new AssumptionFailedError(preg_last_error_msg());
 		$parameters = KnownTranslationParameterInfo::TABLE[$translationKey] ?? null;
-		if($parameters !== null && count($parameters) !== 0){
+		if($parameters === null){
+			throw new \InvalidArgumentException("Expected translation key $translationKey not defined");
+		}
+		if(count($parameters) !== 0){
 			throw new \InvalidArgumentException("Cannot use this function to register a permission with a parameterisable description string");
 		}
 		$translatable = new Translatable($translationKey, []);

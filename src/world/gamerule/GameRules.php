@@ -212,8 +212,21 @@ class GameRules{
 		if($def->getType() === GameRuleType::BOOL && !is_bool($value)){
 			return false;
 		}
-		if($def->getType() === GameRuleType::INT && !is_int($value)){
-			return false;
+		if($def->getType() === GameRuleType::INT){
+			if(!is_int($value)){
+				return false;
+			}
+			$valid = match($canonical){
+				GameRule::RANDOM_TICK_SPEED => $value >= 0 && $value <= 4096,
+				GameRule::PLAYERS_SLEEPING_PERCENTAGE => $value >= 0 && $value <= 100,
+				GameRule::FUNCTION_COMMAND_LIMIT => $value >= 1,
+				GameRule::MAX_COMMAND_CHAIN_LENGTH => $value >= 0,
+				GameRule::SPAWN_RADIUS => $value >= 0 && $value <= 32,
+				default => true,
+			};
+			if(!$valid){
+				return false;
+			}
 		}
 
 		$this->values[$canonical] = $value;

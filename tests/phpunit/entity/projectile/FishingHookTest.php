@@ -44,9 +44,21 @@ final class FishingHookTest extends TestCase{
 		self::assertFalse($hook->isInWater());
 		self::assertFalse($hook->isInBiteWindow());
 		self::assertFalse($hook->isHookedBlock());
+		self::assertNull($hook->getHookedEntity());
 
 		$damage = $hook->reelIn();
 		self::assertSame(0, $damage);
 		self::assertTrue($hook->isFlaggedForDespawn());
+	}
+
+	public function testDespawnsOnEntityHitReturnsFalse() : void{
+		$hook = new class extends FishingHook{
+			public function __construct(){}
+			public function __destruct(){}
+			public function testDespawns() : bool{
+				return $this->despawnsOnEntityHit();
+			}
+		};
+		self::assertFalse($hook->testDespawns());
 	}
 }

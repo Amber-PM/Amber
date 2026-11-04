@@ -25,60 +25,56 @@ namespace pocketmine\command\defaults;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\utils\InvalidCommandSyntaxException;
+use pocketmine\command\OverloadedCommand;
+use pocketmine\command\overload\GreedyStringArgumentParser;
+use pocketmine\command\overload\Vector3ArgumentParser;
 use pocketmine\entity\EntityFactory;
+use pocketmine\data\SavedDataLoadingException;
 use pocketmine\entity\Location;
-use pocketmine\lang\Translatable;
+use pocketmine\lang\KnownTranslationFactory;
+use pocketmine\math\Vector3;
 use pocketmine\permission\DefaultPermissionNames;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
-use function count;
+use function in_array;
 use function str_starts_with;
+use function strtolower;
+use function substr;
 
-class SummonCommand extends VanillaCommand{
+class SummonCommand extends OverloadedCommand{
 
 	public function __construct(){
 		parent::__construct(
 			"summon",
-			"Summons an entity",
-			"/summon <entityType: string> [spawnPos: x y z] [spawnEvent: string] [nameTag: string]"
+			KnownTranslationFactory::pocketmine_command_summon_description(),
+			KnownTranslationFactory::commands_summon_usage()
 		);
 		$this->setPermission(DefaultPermissionNames::COMMAND_SUMMON);
+
+		$this->addOverload(
+			fn(CommandSender $sender, string $entityType) => $this->summon($sender, $entityType, null, null)
+		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $entityType, Vector3 $spawnPos) => $this->summon($sender, $entityType, $spawnPos, null),
+			explicitParsers: ["spawnPos" => new Vector3ArgumentParser()]
+		);
+		$this->addOverload(
+			fn(CommandSender $sender, string $entityType, Vector3 $spawnPos, string $nameTag) => $this->summon($sender, $entityType, $spawnPos, $nameTag),
+			explicitParsers: ["spawnPos" => new Vector3ArgumentParser(), "nameTag" => new GreedyStringArgumentParser()]
+		);
 	}
 
-	public function execute(CommandSender $sender, string $commandLabel, array $args) : bool{
-		if(!$this->testPermission($sender)){
-			return true;
-		}
-
-		if(count($args) < 1){
-			throw new InvalidCommandSyntaxException();
-		}
-
-		$entityType = $args[0];
-
+	private function summon(CommandSender $sender, string $entityType, ?Vector3 $spawnPos, ?string $nameTag) : bool{
 		$world = null;
-		$x = 0.0;
-		$y = 0.0;
-		$z = 0.0;
 		$yaw = 0.0;
 		$pitch = 0.0;
 
 		if($sender instanceof Player){
 			$world = $sender->getWorld();
-			$x = $sender->getPosition()->x;
-			$y = $sender->getPosition()->y;
-			$z = $sender->getPosition()->z;
 			$yaw = $sender->getLocation()->yaw;
 			$pitch = $sender->getLocation()->pitch;
 		}else{
 			$world = $sender->getServer()->getWorldManager()->getDefaultWorld();
-			if($world !== null){
-				$spawn = $world->getSpawnLocation();
-				$x = $spawn->x;
-				$y = $spawn->y;
-				$z = $spawn->z;
-			}
 		}
 
 		if($world === null){
@@ -86,35 +82,46 @@ class SummonCommand extends VanillaCommand{
 			return false;
 		}
 
-		if(isset($args[1]) && isset($args[2]) && isset($args[3])){
-			$x = (float) $this->getRelativeDouble($x, $sender, $args[1]);
-			$y = (float) $this->getRelativeDouble($y, $sender, $args[2]);
-			$z = (float) $this->getRelativeDouble($z, $sender, $args[3]);
+		if($spawnPos === null){
+			if($sender instanceof Player){
+				$spawnPos = $sender->getPosition();
+			}else{
+				$spawnPos = $world->getSpawnLocation();
+			}
 		}
 
-		$location = new Location($x, $y, $z, $world, $yaw, $pitch);
+		$location = new Location($spawnPos->x, $spawnPos->y, $spawnPos->z, $world, $yaw, $pitch);
 
-		$nameTag = null;
-		if(isset($args[5])){
-			$nameTag = $args[5];
-		}elseif(isset($args[4]) && !str_starts_with($args[4], "minecraft:")){
-			$nameTag = $args[4];
+		// Guard against unsupported entity types that require specialized save data not provided by /summon
+		$cleanType = strtolower(str_starts_with($entityType, "minecraft:") ? substr($entityType, 10) : $entityType);
+		if(in_array($cleanType, ["item", "painting", "falling_block", "falling_sand", "trident"], true)){
+			$sender->sendMessage(TextFormat::RED . "Cannot summon '$entityType': unsupported entity type");
+			return false;
 		}
 
-		$entity = EntityFactory::getInstance()->create($entityType, $location);
+		try{
+			$entity = EntityFactory::getInstance()->create($entityType, $location);
+		}catch(SavedDataLoadingException){
+			$sender->sendMessage(TextFormat::RED . "Cannot summon '$entityType': missing required data");
+			return false;
+		}catch(\Throwable){
+			$sender->sendMessage(TextFormat::RED . "Could not summon entity: '$entityType'");
+			return false;
+		}
+
 		if($entity === null){
 			$sender->sendMessage(TextFormat::RED . "Could not summon entity: Unknown entity type '$entityType'");
 			return false;
 		}
 
-		if($nameTag !== null){
+		if($nameTag !== null && $nameTag !== ""){
 			$entity->setNameTag($nameTag);
 			$entity->setNameTagVisible(true);
 			$entity->setNameTagAlwaysVisible(true);
 		}
 
 		$entity->spawnToAll();
-		Command::broadcastCommandMessage($sender, new Translatable("commands.summon.success", []));
+		Command::broadcastCommandMessage($sender, KnownTranslationFactory::commands_summon_success());
 
 		return true;
 	}

@@ -84,5 +84,19 @@ final class GameRuleCommandTest extends TestCase{
 		// 5. Set invalid boolean format
 		$command->execute($sender, "gamerule", ["keepinventory", "not_a_bool"]);
 		self::assertStringContainsString("Expected boolean value", $messages[count($messages) - 1]);
+
+		// 6. Set invalid integer format (decimal or scientific notation)
+		$command->execute($sender, "gamerule", ["randomtickspeed", "3.14"]);
+		self::assertStringContainsString("Expected integer value", $messages[count($messages) - 1]);
+
+		$command->execute($sender, "gamerule", ["randomtickspeed", "1e5"]);
+		self::assertStringContainsString("Expected integer value", $messages[count($messages) - 1]);
+
+		// 7. Set out-of-range integer value
+		$command->execute($sender, "gamerule", ["randomtickspeed", "5000"]);
+		self::assertStringContainsString("out of range", $messages[count($messages) - 1]);
+
+		$command->execute($sender, "gamerule", ["randomtickspeed", "-1"]);
+		self::assertStringContainsString("out of range", $messages[count($messages) - 1]);
 	}
 }

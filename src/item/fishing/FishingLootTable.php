@@ -24,15 +24,19 @@ declare(strict_types=1);
 namespace pocketmine\item\fishing;
 
 use pocketmine\block\VanillaBlocks;
+use pocketmine\item\enchantment\AvailableEnchantmentRegistry;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
+use pocketmine\item\ItemTypeIds;
 use pocketmine\item\PotionType;
 use pocketmine\item\VanillaItems;
 use function array_values;
 use function count;
 use function max;
+use function min;
 use function mt_rand;
+use function round;
 use function shuffle;
 
 final class FishingLootTable{
@@ -50,9 +54,9 @@ final class FishingLootTable{
 		// fish: weight 85, quality -1
 		// treasure: weight 5, quality 2
 		// junk: weight 10, quality -2
-		$fishWeight = max(1, 85 - $luckOfSeaLevel);
-		$treasureWeight = 5 + (2 * $luckOfSeaLevel);
-		$junkWeight = max(1, 10 - (2 * $luckOfSeaLevel));
+		$fishWeight = max(0, 85 - $luckOfSeaLevel);
+		$treasureWeight = max(0, 5 + ($luckOfSeaLevel * 2));
+		$junkWeight = max(0, 10 - ($luckOfSeaLevel * 2));
 
 		$total = $fishWeight + $treasureWeight + $junkWeight;
 		$roll = mt_rand(1, $total);
@@ -60,20 +64,18 @@ final class FishingLootTable{
 		if($roll <= $fishWeight){
 			return self::rollFish();
 		}
-
-		if($roll <= $fishWeight + $treasureWeight){
+		if($roll <= ($fishWeight + $treasureWeight)){
 			return self::rollTreasure();
 		}
-
 		return self::rollJunk();
 	}
 
 	public static function rollFish() : Item{
 		// BDS fish.json:
-		// raw fish: 60%
-		// raw salmon: 25%
-		// clownfish: 2%
-		// pufferfish: 13%
+		// raw_cod: 60
+		// raw_salmon: 25
+		// clownfish: 2
+		// pufferfish: 13
 		$roll = mt_rand(1, 100);
 		if($roll <= 60){
 			return VanillaItems::RAW_FISH();
@@ -91,8 +93,8 @@ final class FishingLootTable{
 		// BDS treasure.json:
 		// nautilus_shell: 5
 		// name_tag: 5
-		// bow: 5 (damage 0-25%, enchanted level 30)
-		// fishing_rod: 5 (damage 0-25%, enchanted level 30)
+		// bow: 5 (damage 0-25% remaining, enchanted level 30)
+		// fishing_rod: 5 (damage 0-25% remaining, enchanted level 30)
 		// book: 6 (enchanted level 30)
 		$roll = mt_rand(1, 26);
 		if($roll <= 5){
@@ -103,13 +105,15 @@ final class FishingLootTable{
 		}
 		if($roll <= 15){
 			$bow = VanillaItems::BOW();
-			$bow->setDamage((int) ((mt_rand(0, 25) / 100.0) * $bow->getMaxDurability()));
+			$remainingFraction = mt_rand(0, 25) / 100.0;
+			$bow->setDamage((int) round($bow->getMaxDurability() * (1.0 - $remainingFraction)));
 			self::applyRandomEnchantments($bow);
 			return $bow;
 		}
 		if($roll <= 20){
 			$rod = VanillaItems::FISHING_ROD();
-			$rod->setDamage((int) ((mt_rand(0, 25) / 100.0) * $rod->getMaxDurability()));
+			$remainingFraction = mt_rand(0, 25) / 100.0;
+			$rod->setDamage((int) round($rod->getMaxDurability() * (1.0 - $remainingFraction)));
 			self::applyRandomEnchantments($rod);
 			return $rod;
 		}
@@ -121,14 +125,14 @@ final class FishingLootTable{
 
 	public static function rollJunk() : Item{
 		// BDS junk.json:
-		// leather_boots: 10 (0-90% damage)
+		// leather_boots: 10 (0-90% remaining durability)
 		// waterlily: 17
 		// ink_sac: 1 (count 10)
 		// leather: 10
 		// bone: 10
 		// potion (water bottle): 10
 		// string: 5
-		// fishing_rod: 2 (0-90% damage)
+		// fishing_rod: 2 (0-90% remaining durability)
 		// bowl: 10
 		// stick: 5
 		// tripwire_hook: 10
@@ -136,7 +140,8 @@ final class FishingLootTable{
 		$roll = mt_rand(1, 100);
 		if($roll <= 10){
 			$boots = VanillaItems::LEATHER_BOOTS();
-			$boots->setDamage((int) ((mt_rand(0, 90) / 100.0) * $boots->getMaxDurability()));
+			$remainingFraction = mt_rand(0, 90) / 100.0;
+			$boots->setDamage((int) round($boots->getMaxDurability() * (1.0 - $remainingFraction)));
 			return $boots;
 		}
 		if($roll <= 27){
@@ -159,7 +164,8 @@ final class FishingLootTable{
 		}
 		if($roll <= 65){
 			$rod = VanillaItems::FISHING_ROD();
-			$rod->setDamage((int) ((mt_rand(0, 90) / 100.0) * $rod->getMaxDurability()));
+			$remainingFraction = mt_rand(0, 90) / 100.0;
+			$rod->setDamage((int) round($rod->getMaxDurability() * (1.0 - $remainingFraction)));
 			return $rod;
 		}
 		if($roll <= 75){
@@ -175,13 +181,65 @@ final class FishingLootTable{
 	}
 
 	private static function applyRandomEnchantments(Item $item) : void{
-		$all = array_values(VanillaEnchantments::getAll());
-		if(count($all) > 0){
-			shuffle($all);
-			$count = mt_rand(1, 3);
-			for($i = 0; $i < $count && $i < count($all); $i++){
-				$e = $all[$i];
-				$item->addEnchantment(new EnchantmentInstance($e, mt_rand(1, $e->getMaxLevel())));
+		$available = [];
+		if($item->getTypeId() === ItemTypeIds::ENCHANTED_BOOK){
+			$available = array_values(VanillaEnchantments::getAll());
+		}else{
+			$registry = AvailableEnchantmentRegistry::getInstance();
+			$available = array_values($registry->getAllEnchantmentsForItem($item));
+		}
+
+		if(count($available) === 0){
+			return;
+		}
+
+		// Calculate valid enchantment levels for enchanting power 30
+		$power = 30;
+		$candidates = [];
+		foreach($available as $enchantment){
+			for($lvl = $enchantment->getMaxLevel(); $lvl >= 1; $lvl--){
+				if($power >= $enchantment->getMinEnchantingPower($lvl) && $power <= $enchantment->getMaxEnchantingPower($lvl)){
+					$candidates[] = new EnchantmentInstance($enchantment, $lvl);
+					break;
+				}
+			}
+			if($enchantment->getMaxLevel() === 1 && $power >= $enchantment->getMinEnchantingPower(1)){
+				$found = false;
+				foreach($candidates as $c){
+					if($c->getType() === $enchantment){
+						$found = true;
+						break;
+					}
+				}
+				if(!$found){
+					$candidates[] = new EnchantmentInstance($enchantment, 1);
+				}
+			}
+		}
+
+		if(count($candidates) === 0){
+			return;
+		}
+
+		shuffle($candidates);
+		$chosen = [];
+		$targetCount = mt_rand(1, 3);
+
+		foreach($candidates as $candidate){
+			$type = $candidate->getType();
+			$compatible = true;
+			foreach($chosen as $existing){
+				if($existing->getType() === $type || !$type->isCompatibleWith($existing->getType())){
+					$compatible = false;
+					break;
+				}
+			}
+			if($compatible){
+				$chosen[] = $candidate;
+				$item->addEnchantment($candidate);
+				if(count($chosen) >= $targetCount){
+					break;
+				}
 			}
 		}
 	}

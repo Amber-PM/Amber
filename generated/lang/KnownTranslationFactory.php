@@ -289,6 +289,17 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::COMMANDS_GAMEMODE_USAGE, []);
 	}
 
+	public static function commands_gamerule_success(Translatable|string $param0, Translatable|string $param1) : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_GAMERULE_SUCCESS, [
+			0 => $param0,
+			1 => $param1,
+		]);
+	}
+
+	public static function commands_gamerule_usage() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_GAMERULE_USAGE, []);
+	}
+
 	public static function commands_generic_num_tooBig(Translatable|string $param0, Translatable|string $param1) : Translatable{
 		return new Translatable(KnownTranslationKeys::COMMANDS_GENERIC_NUM_TOOBIG, [
 			0 => $param0,
@@ -469,6 +480,14 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::COMMANDS_STOP_START, []);
 	}
 
+	public static function commands_summon_success() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_SUMMON_SUCCESS, []);
+	}
+
+	public static function commands_summon_usage() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_SUMMON_USAGE, []);
+	}
+
 	public static function commands_time_added(Translatable|string $param0) : Translatable{
 		return new Translatable(KnownTranslationKeys::COMMANDS_TIME_ADDED, [
 			0 => $param0,
@@ -537,6 +556,22 @@ final class KnownTranslationFactory{
 
 	public static function commands_unbanip_usage() : Translatable{
 		return new Translatable(KnownTranslationKeys::COMMANDS_UNBANIP_USAGE, []);
+	}
+
+	public static function commands_weather_clear() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_WEATHER_CLEAR, []);
+	}
+
+	public static function commands_weather_rain() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_WEATHER_RAIN, []);
+	}
+
+	public static function commands_weather_thunder() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_WEATHER_THUNDER, []);
+	}
+
+	public static function commands_weather_usage() : Translatable{
+		return new Translatable(KnownTranslationKeys::COMMANDS_WEATHER_USAGE, []);
 	}
 
 	public static function commands_whitelist_add_success(Translatable|string $param0) : Translatable{
@@ -1586,6 +1621,10 @@ final class KnownTranslationFactory{
 		]);
 	}
 
+	public static function pocketmine_command_gamerule_description() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_GAMERULE_DESCRIPTION, []);
+	}
+
 	public static function pocketmine_command_gc_chunks(Translatable|string $chunksCollected) : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_GC_CHUNKS, [
 			"chunksCollected" => $chunksCollected,
@@ -1890,6 +1929,10 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_STOP_DESCRIPTION, []);
 	}
 
+	public static function pocketmine_command_summon_description() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_SUMMON_DESCRIPTION, []);
+	}
+
 	public static function pocketmine_command_tell_description() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_TELL_DESCRIPTION, []);
 	}
@@ -2065,6 +2108,10 @@ final class KnownTranslationFactory{
 
 	public static function pocketmine_command_version_usage() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_VERSION_USAGE, []);
+	}
+
+	public static function pocketmine_command_weather_description() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_COMMAND_WEATHER_DESCRIPTION, []);
 	}
 
 	public static function pocketmine_command_whitelist_description() : Translatable{
@@ -2497,6 +2544,10 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_GAMEMODE_SELF, []);
 	}
 
+	public static function pocketmine_permission_command_gamerule() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_GAMERULE, []);
+	}
+
 	public static function pocketmine_permission_command_gc() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_GC, []);
 	}
@@ -2597,6 +2648,10 @@ final class KnownTranslationFactory{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_STOP, []);
 	}
 
+	public static function pocketmine_permission_command_summon() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_SUMMON, []);
+	}
+
 	public static function pocketmine_permission_command_teleport_other() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_TELEPORT_OTHER, []);
 	}
@@ -2655,6 +2710,10 @@ final class KnownTranslationFactory{
 
 	public static function pocketmine_permission_command_version() : Translatable{
 		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_VERSION, []);
+	}
+
+	public static function pocketmine_permission_command_weather() : Translatable{
+		return new Translatable(KnownTranslationKeys::POCKETMINE_PERMISSION_COMMAND_WEATHER, []);
 	}
 
 	public static function pocketmine_permission_command_whitelist_add() : Translatable{

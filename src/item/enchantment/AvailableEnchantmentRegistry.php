@@ -74,6 +74,8 @@ final class AvailableEnchantmentRegistry{
 		$this->register(Enchantments::PUNCH(), [Tags::BOW], []);
 		$this->register(Enchantments::FLAME(), [Tags::BOW], []);
 		$this->register(Enchantments::INFINITY(), [Tags::BOW], []);
+		$this->register(Enchantments::LUCK_OF_THE_SEA(), [Tags::FISHING_ROD], []);
+		$this->register(Enchantments::LURE(), [Tags::FISHING_ROD], []);
 		$this->register(
 			Enchantments::MENDING(),
 			[],

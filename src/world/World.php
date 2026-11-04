@@ -140,6 +140,7 @@ use function array_merge;
 use function array_sum;
 use function array_values;
 use function assert;
+use function ceil;
 use function cos;
 use function count;
 use function floor;
@@ -586,6 +587,19 @@ class World implements ChunkManager{
 		$worldData = $this->provider->getWorldData();
 		if(method_exists($worldData, "getCompoundTag")){
 			$this->gameRules->readFromNbt($worldData->getCompoundTag());
+		}
+
+		$rainLevel = $worldData->getRainLevel();
+		$lightningLevel = $worldData->getLightningLevel();
+		if($lightningLevel > 0.0){
+			$this->weather = Weather::THUNDER;
+			$this->weatherDuration = max(1, $worldData->getLightningTime());
+		}elseif($rainLevel > 0.0){
+			$this->weather = Weather::RAIN;
+			$this->weatherDuration = max(1, $worldData->getRainTime());
+		}else{
+			$this->weather = Weather::CLEAR;
+			$this->weatherDuration = max($worldData->getRainTime(), 12000);
 		}
 
 		$this->chunkTickRadius = min($this->server->getViewDistance(), max(0, $cfg->getPropertyInt(YmlServerProperties::CHUNK_TICKING_TICK_RADIUS, 4)));
@@ -1138,7 +1152,7 @@ class World implements ChunkManager{
 	}
 
 	protected function actuallyDoTick(int $currentTick) : void{
-		if(!$this->stopTime && $this->gameRules->getBool(GameRules::DO_DAYLIGHT_CYCLE)){
+		if(!$this->stopTime && $this->getGameRules()->getBool(GameRules::DO_DAYLIGHT_CYCLE)){
 			//this simulates an overflow, as would happen in any language which doesn't do stupid things to var types
 			if($this->time === PHP_INT_MAX){
 				$this->time = PHP_INT_MIN;
@@ -1147,7 +1161,7 @@ class World implements ChunkManager{
 			}
 		}
 
-		if($this->gameRules->getBool(GameRules::DO_WEATHER_CYCLE)){
+		if($this->getGameRules()->getBool(GameRules::DO_WEATHER_CYCLE)){
 			if(--$this->weatherDuration <= 0){
 				if($this->weather === Weather::CLEAR){
 					if(mt_rand(1, 5) === 1){
@@ -1302,19 +1316,33 @@ class World implements ChunkManager{
 	}
 
 	public function checkSleep() : void{
-		if(count($this->players) === 0){
-			return;
-		}
-
-		$resetTime = true;
+		$total = 0;
+		$sleeping = 0;
 		foreach($this->getPlayers() as $p){
-			if(!$p->isSleeping()){
-				$resetTime = false;
-				break;
+			if(!$p->isSpectator()){
+				$total++;
+				if($p->isSleeping()){
+					$sleeping++;
+				}
 			}
 		}
 
-		if($resetTime){
+		if($sleeping === 0 || $total === 0){
+			return;
+		}
+
+		$percentage = 100;
+		try{
+			$rules = $this->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class){
+				$percentage = $rules->getInt(GameRules::PLAYERS_SLEEPING_PERCENTAGE);
+			}
+		}catch(\Throwable){
+			$percentage = 100;
+		}
+
+		$needed = $percentage <= 0 ? 1 : (int) ceil(($total * $percentage) / 100);
+		if($sleeping >= $needed){
 			$time = $this->getTimeOfDay();
 
 			if($time >= World::TIME_NIGHT && $time < World::TIME_SUNRISE){
@@ -1639,7 +1667,7 @@ class World implements ChunkManager{
 		}
 
 		$blockFactory = $this->blockStateRegistry;
-		$randomTickSpeed = $this->gameRules->getInt(GameRules::RANDOM_TICK_SPEED);
+		$randomTickSpeed = $this->getGameRules()->getInt(GameRules::RANDOM_TICK_SPEED);
 		if($randomTickSpeed <= 0){
 			return;
 		}
@@ -1688,8 +1716,12 @@ class World implements ChunkManager{
 
 		$worldData = $this->provider->getWorldData();
 		$worldData->setTime($this->time);
+		$worldData->setRainLevel($this->isRaining() ? 1.0 : 0.0);
+		$worldData->setRainTime($this->isRaining() ? $this->weatherDuration : 0);
+		$worldData->setLightningLevel($this->isThundering() ? 1.0 : 0.0);
+		$worldData->setLightningTime($this->isThundering() ? $this->weatherDuration : 0);
 		if(method_exists($worldData, "getCompoundTag")){
-			$this->gameRules->writeToNbt($worldData->getCompoundTag());
+			$this->getGameRules()->writeToNbt($worldData->getCompoundTag());
 		}
 		$this->saveChunks();
 		$worldData->save();
@@ -2486,7 +2518,7 @@ class World implements ChunkManager{
 		}
 
 		$drops = [];
-		if(($player === null || $player->hasFiniteResources()) && $this->gameRules->getBool(GameRules::DO_TILE_DROPS)){
+		if(($player === null || $player->hasFiniteResources()) && $this->getGameRules()->getBool(GameRules::DO_TILE_DROPS)){
 			$drops = array_merge(...array_map(fn(Block $block) => $block->getDrops($item), $affectedBlocks));
 		}
 
@@ -3668,6 +3700,10 @@ class World implements ChunkManager{
 		return $this->weather === Weather::THUNDER;
 	}
 
+	public function getWeatherDuration() : int{
+		return $this->weatherDuration;
+	}
+
 	public function setWeather(int $weather, ?int $duration = null) : void{
 		$old = $this->weather;
 		$this->weather = $weather;
@@ -3688,9 +3724,13 @@ class World implements ChunkManager{
 				}
 			}
 		}elseif($weather === Weather::RAIN){
-			$pk = LevelEventPacket::create(LevelEvent::START_RAIN, $this->weatherDuration, null);
+			$pkRain = LevelEventPacket::create(LevelEvent::START_RAIN, $this->weatherDuration, null);
+			$pkStopThunder = $old === Weather::THUNDER ? LevelEventPacket::create(LevelEvent::STOP_THUNDER, 0, null) : null;
 			foreach($this->getPlayers() as $player){
-				$player->getNetworkSession()->sendDataPacket($pk);
+				$player->getNetworkSession()->sendDataPacket($pkRain);
+				if($pkStopThunder !== null){
+					$player->getNetworkSession()->sendDataPacket($pkStopThunder);
+				}
 			}
 		}elseif($weather === Weather::THUNDER){
 			$pkRain = LevelEventPacket::create(LevelEvent::START_RAIN, $this->weatherDuration, null);

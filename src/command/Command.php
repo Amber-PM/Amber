@@ -30,11 +30,14 @@ use pocketmine\command\utils\CommandException;
 use pocketmine\lang\KnownTranslationFactory;
 use pocketmine\lang\Translatable;
 use pocketmine\permission\PermissionManager;
+use pocketmine\player\Player;
 use pocketmine\Server;
 use pocketmine\utils\BroadcastLoggerForwarder;
 use pocketmine\utils\TextFormat;
+use pocketmine\world\gamerule\GameRules;
 use function array_values;
 use function explode;
+use function get_class;
 use function implode;
 use function str_replace;
 use const PHP_INT_MAX;
@@ -239,14 +242,26 @@ abstract class Command{
 		$result = KnownTranslationFactory::chat_type_admin($source->getName(), $message);
 		$colored = $result->prefix(TextFormat::GRAY . TextFormat::ITALIC);
 
-		if($sendToSource){
+		$sendFeedback = true;
+		if($source instanceof Player){
+			try{
+				$rules = $source->getWorld()->getGameRules();
+				if($rules !== null && get_class($rules) === GameRules::class){
+					$sendFeedback = $rules->getBool(GameRules::SEND_COMMAND_FEEDBACK);
+				}
+			}catch(\Throwable){
+				$sendFeedback = true;
+			}
+		}
+
+		if($sendToSource && $sendFeedback){
 			$source->sendMessage($message);
 		}
 
 		foreach($users as $user){
 			if($user instanceof BroadcastLoggerForwarder){
 				$user->sendMessage($result);
-			}elseif($user !== $source){
+			}elseif($user !== $source && $sendFeedback){
 				$user->sendMessage($colored);
 			}
 		}

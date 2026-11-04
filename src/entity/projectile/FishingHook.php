@@ -43,6 +43,7 @@ use pocketmine\world\particle\WaterDripParticle;
 use pocketmine\world\sound\WaterSplashSound;
 use function cos;
 use function max;
+use function min;
 use function mt_rand;
 use function sin;
 use function sqrt;
@@ -70,6 +71,7 @@ class FishingHook extends Projectile{
 	private ?int $biteTicks = null;
 	private int $catchWindowTicks = 0;
 	private bool $hookedBlock = false;
+	private ?Entity $hookedEntity = null;
 
 	public function __construct(Location $location, ?Entity $shootingEntity, ?CompoundTag $nbt = null){
 		parent::__construct($location, $shootingEntity, $nbt);
@@ -87,9 +89,35 @@ class FishingHook extends Projectile{
 		return $this->hookedBlock;
 	}
 
+	public function getHookedEntity() : ?Entity{
+		return $this->hookedEntity;
+	}
+
+	public function getBiteTicks() : ?int{
+		return $this->biteTicks;
+	}
+
 	protected function onHitBlock(Block $blockHit, RayTraceResult $hitResult) : void{
 		parent::onHitBlock($blockHit, $hitResult);
 		$this->hookedBlock = true;
+	}
+
+	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
+		$owner = $this->getOwningEntity();
+		if($entityHit === $owner){
+			return;
+		}
+
+		parent::onHitEntity($entityHit, $hitResult);
+
+		if($this->hookedEntity === null && $entityHit->isAlive()){
+			$this->hookedEntity = $entityHit;
+			$this->motion = Vector3::zero();
+		}
+	}
+
+	protected function despawnsOnEntityHit() : bool{
+		return false;
 	}
 
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
@@ -146,17 +174,47 @@ class FishingHook extends Projectile{
 			return false;
 		}
 
+		if($this->hookedEntity !== null){
+			if($this->hookedEntity->isClosed() || !$this->hookedEntity->isAlive()){
+				$this->hookedEntity = null;
+			}else{
+				$targetPos = $this->hookedEntity->getLocation()->add(0, $this->hookedEntity->getSize()->getHeight() * 0.5, 0);
+				$this->location = Location::fromObject($targetPos, $this->getWorld(), $this->location->yaw, $this->location->pitch);
+				$this->motion = Vector3::zero();
+				return true;
+			}
+		}
+
 		$block = $this->getWorld()->getBlock($this->location);
-		if($block instanceof Water){
+		$blockBelow = $this->getWorld()->getBlock($this->location->subtract(0, 0.25, 0));
+		$inWater = $block instanceof Water || $blockBelow instanceof Water;
+
+		if($inWater){
 			$this->inWater = true;
 			$this->hookedBlock = false;
 
-			// Buoyancy in water: dampen motion and float up
-			$this->motion = new Vector3(
-				$this->motion->x * 0.85,
-				($this->motion->y * 0.2) + 0.05,
-				$this->motion->z * 0.85
-			);
+			$waterBlock = $block instanceof Water ? $block : $blockBelow;
+			$surfaceY = $waterBlock->getPosition()->y + 1.0;
+			$targetY = $surfaceY - 0.1;
+
+			$blockAbove = $this->getWorld()->getBlock($waterBlock->getPosition()->add(0, 1, 0));
+			if($blockAbove instanceof Water){
+				// Deep underwater: float up towards surface
+				$this->motion = new Vector3(
+					$this->motion->x * 0.85,
+					min(0.15, ($this->motion->y * 0.5) + 0.05),
+					$this->motion->z * 0.85
+				);
+			}else{
+				// At or near surface: stabilize vertically around target waterline
+				$deltaY = $targetY - $this->location->y;
+				$newVy = ($this->motion->y * 0.3) + ($deltaY * 0.25);
+				$this->motion = new Vector3(
+					$this->motion->x * 0.6,
+					$newVy,
+					$this->motion->z * 0.6
+				);
+			}
 
 			if($this->biteTicks === null){
 				$wait = mt_rand(100, 600);
@@ -217,7 +275,15 @@ class FishingHook extends Projectile{
 		$damage = 0;
 
 		if($owner instanceof Player && $owner->isAlive()){
-			if($this->catchWindowTicks > 0){
+			if($this->hookedEntity !== null && $this->hookedEntity->isAlive()){
+				// Pull the hooked entity towards the owner
+				$diff = $owner->getPosition()->subtractVector($this->hookedEntity->getPosition());
+				$dist = $diff->length();
+				$pull = new Vector3($diff->x * 0.1, min(0.6, $diff->y * 0.1 + sqrt($dist) * 0.08), $diff->z * 0.1);
+				$this->hookedEntity->setMotion($pull);
+				$this->broadcastSound(new WaterSplashSound(0.5));
+				$damage = 5;
+			}elseif($this->catchWindowTicks > 0){
 				// Successful catch!
 				$luck = $this->getLuckOfSeaLevel();
 				$loot = FishingLootTable::rollLoot($luck);

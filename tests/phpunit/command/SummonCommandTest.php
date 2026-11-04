@@ -71,7 +71,17 @@ final class SummonCommandTest extends TestCase{
 		self::assertNotEmpty($messages);
 		self::assertStringContainsString("Unknown entity type", $messages[count($messages) - 1]);
 
-		// 2. Missing args
+		// 2. Unsupported entity types
+		$command->execute($sender, "summon", ["item"]);
+		self::assertStringContainsString("unsupported entity type", $messages[count($messages) - 1]);
+
+		$command->execute($sender, "summon", ["minecraft:falling_block"]);
+		self::assertStringContainsString("unsupported entity type", $messages[count($messages) - 1]);
+
+		$command->execute($sender, "summon", ["painting"]);
+		self::assertStringContainsString("unsupported entity type", $messages[count($messages) - 1]);
+
+		// 3. Missing args
 		$this->expectException(InvalidCommandSyntaxException::class);
 		$command->execute($sender, "summon", []);
 	}

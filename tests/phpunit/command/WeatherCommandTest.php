@@ -81,7 +81,11 @@ final class WeatherCommandTest extends TestCase{
 		$command->execute($sender, "weather", ["clear"]);
 		self::assertSame(Weather::CLEAR, $currentWeather);
 
-		// 4. Invalid weather type throws syntax exception
+		// 4. Set weather with max duration
+		$command->execute($sender, "weather", ["clear", "1000000"]);
+		self::assertSame(1000000 * 20, $currentDuration);
+
+		// 5. Invalid weather type throws syntax exception
 		$this->expectException(InvalidCommandSyntaxException::class);
 		$command->execute($sender, "weather", ["snowstorm"]);
 	}

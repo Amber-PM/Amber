@@ -77,6 +77,8 @@ final class KnownTranslationKeys{
 	public const COMMANDS_GAMEMODE_SUCCESS_OTHER = "commands.gamemode.success.other";
 	public const COMMANDS_GAMEMODE_SUCCESS_SELF = "commands.gamemode.success.self";
 	public const COMMANDS_GAMEMODE_USAGE = "commands.gamemode.usage";
+	public const COMMANDS_GAMERULE_SUCCESS = "commands.gamerule.success";
+	public const COMMANDS_GAMERULE_USAGE = "commands.gamerule.usage";
 	public const COMMANDS_GENERIC_NUM_TOOBIG = "commands.generic.num.tooBig";
 	public const COMMANDS_GENERIC_NUM_TOOSMALL = "commands.generic.num.tooSmall";
 	public const COMMANDS_GENERIC_PLAYER_NOTFOUND = "commands.generic.player.notFound";
@@ -110,6 +112,8 @@ final class KnownTranslationKeys{
 	public const COMMANDS_SETWORLDSPAWN_USAGE = "commands.setworldspawn.usage";
 	public const COMMANDS_SPAWNPOINT_USAGE = "commands.spawnpoint.usage";
 	public const COMMANDS_STOP_START = "commands.stop.start";
+	public const COMMANDS_SUMMON_SUCCESS = "commands.summon.success";
+	public const COMMANDS_SUMMON_USAGE = "commands.summon.usage";
 	public const COMMANDS_TIME_ADDED = "commands.time.added";
 	public const COMMANDS_TIME_QUERY = "commands.time.query";
 	public const COMMANDS_TIME_SET = "commands.time.set";
@@ -123,6 +127,10 @@ final class KnownTranslationKeys{
 	public const COMMANDS_UNBANIP_INVALID = "commands.unbanip.invalid";
 	public const COMMANDS_UNBANIP_SUCCESS = "commands.unbanip.success";
 	public const COMMANDS_UNBANIP_USAGE = "commands.unbanip.usage";
+	public const COMMANDS_WEATHER_CLEAR = "commands.weather.clear";
+	public const COMMANDS_WEATHER_RAIN = "commands.weather.rain";
+	public const COMMANDS_WEATHER_THUNDER = "commands.weather.thunder";
+	public const COMMANDS_WEATHER_USAGE = "commands.weather.usage";
 	public const COMMANDS_WHITELIST_ADD_SUCCESS = "commands.whitelist.add.success";
 	public const COMMANDS_WHITELIST_ADD_USAGE = "commands.whitelist.add.usage";
 	public const COMMANDS_WHITELIST_DISABLED = "commands.whitelist.disabled";
@@ -358,6 +366,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_COMMAND_GAMEMODE_DESCRIPTION = "pocketmine.command.gamemode.description";
 	public const POCKETMINE_COMMAND_GAMEMODE_FAILURE = "pocketmine.command.gamemode.failure";
 	public const POCKETMINE_COMMAND_GAMEMODE_UNKNOWN = "pocketmine.command.gamemode.unknown";
+	public const POCKETMINE_COMMAND_GAMERULE_DESCRIPTION = "pocketmine.command.gamerule.description";
 	public const POCKETMINE_COMMAND_GC_CHUNKS = "pocketmine.command.gc.chunks";
 	public const POCKETMINE_COMMAND_GC_CYCLES = "pocketmine.command.gc.cycles";
 	public const POCKETMINE_COMMAND_GC_DESCRIPTION = "pocketmine.command.gc.description";
@@ -415,6 +424,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_COMMAND_STATUS_WORLD = "pocketmine.command.status.world";
 	public const POCKETMINE_COMMAND_STATUS_WORLD_TIMESTAT = "pocketmine.command.status.world.timeStat";
 	public const POCKETMINE_COMMAND_STOP_DESCRIPTION = "pocketmine.command.stop.description";
+	public const POCKETMINE_COMMAND_SUMMON_DESCRIPTION = "pocketmine.command.summon.description";
 	public const POCKETMINE_COMMAND_TELL_DESCRIPTION = "pocketmine.command.tell.description";
 	public const POCKETMINE_COMMAND_TIME_DESCRIPTION = "pocketmine.command.time.description";
 	public const POCKETMINE_COMMAND_TIME_USAGE = "pocketmine.command.time.usage";
@@ -452,6 +462,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_COMMAND_VERSION_SERVERSOFTWARENAME = "pocketmine.command.version.serverSoftwareName";
 	public const POCKETMINE_COMMAND_VERSION_SERVERSOFTWAREVERSION = "pocketmine.command.version.serverSoftwareVersion";
 	public const POCKETMINE_COMMAND_VERSION_USAGE = "pocketmine.command.version.usage";
+	public const POCKETMINE_COMMAND_WEATHER_DESCRIPTION = "pocketmine.command.weather.description";
 	public const POCKETMINE_COMMAND_WHITELIST_DESCRIPTION = "pocketmine.command.whitelist.description";
 	public const POCKETMINE_COMMAND_WORLD_DESCRIPTION = "pocketmine.command.world.description";
 	public const POCKETMINE_COMMAND_WORLD_LIST_LOADED = "pocketmine.command.world.list.loaded";
@@ -537,6 +548,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_PERMISSION_COMMAND_ENCHANT_SELF = "pocketmine.permission.command.enchant.self";
 	public const POCKETMINE_PERMISSION_COMMAND_GAMEMODE_OTHER = "pocketmine.permission.command.gamemode.other";
 	public const POCKETMINE_PERMISSION_COMMAND_GAMEMODE_SELF = "pocketmine.permission.command.gamemode.self";
+	public const POCKETMINE_PERMISSION_COMMAND_GAMERULE = "pocketmine.permission.command.gamerule";
 	public const POCKETMINE_PERMISSION_COMMAND_GC = "pocketmine.permission.command.gc";
 	public const POCKETMINE_PERMISSION_COMMAND_GIVE_OTHER = "pocketmine.permission.command.give.other";
 	public const POCKETMINE_PERMISSION_COMMAND_GIVE_SELF = "pocketmine.permission.command.give.self";
@@ -562,6 +574,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_PERMISSION_COMMAND_SPAWNPOINT_SELF = "pocketmine.permission.command.spawnpoint.self";
 	public const POCKETMINE_PERMISSION_COMMAND_STATUS = "pocketmine.permission.command.status";
 	public const POCKETMINE_PERMISSION_COMMAND_STOP = "pocketmine.permission.command.stop";
+	public const POCKETMINE_PERMISSION_COMMAND_SUMMON = "pocketmine.permission.command.summon";
 	public const POCKETMINE_PERMISSION_COMMAND_TELEPORT_OTHER = "pocketmine.permission.command.teleport.other";
 	public const POCKETMINE_PERMISSION_COMMAND_TELEPORT_SELF = "pocketmine.permission.command.teleport.self";
 	public const POCKETMINE_PERMISSION_COMMAND_TELL = "pocketmine.permission.command.tell";
@@ -577,6 +590,7 @@ final class KnownTranslationKeys{
 	public const POCKETMINE_PERMISSION_COMMAND_UNBAN_IP = "pocketmine.permission.command.unban.ip";
 	public const POCKETMINE_PERMISSION_COMMAND_UNBAN_PLAYER = "pocketmine.permission.command.unban.player";
 	public const POCKETMINE_PERMISSION_COMMAND_VERSION = "pocketmine.permission.command.version";
+	public const POCKETMINE_PERMISSION_COMMAND_WEATHER = "pocketmine.permission.command.weather";
 	public const POCKETMINE_PERMISSION_COMMAND_WHITELIST_ADD = "pocketmine.permission.command.whitelist.add";
 	public const POCKETMINE_PERMISSION_COMMAND_WHITELIST_DISABLE = "pocketmine.permission.command.whitelist.disable";
 	public const POCKETMINE_PERMISSION_COMMAND_WHITELIST_ENABLE = "pocketmine.permission.command.whitelist.enable";

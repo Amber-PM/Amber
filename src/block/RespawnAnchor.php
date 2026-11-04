@@ -34,9 +34,11 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
 use pocketmine\world\Explosion;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\Position;
 use pocketmine\world\sound\RespawnAnchorChargeSound;
 use pocketmine\world\sound\RespawnAnchorSetSpawnSound;
+use function get_class;
 
 final class RespawnAnchor extends Opaque implements ComparatorSignalSource{
 	private const MIN_CHARGES = 0;
@@ -104,6 +106,14 @@ final class RespawnAnchor extends Opaque implements ComparatorSignalSource{
 	}
 
 	private function explode(?Player $player) : void{
+		try{
+			$rules = $this->position->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class && !$rules->getBool(GameRules::RESPAWN_BLOCKS_EXPLODE)){
+				return;
+			}
+		}catch(\Throwable){
+		}
+
 		$ev = new BlockPreExplodeEvent($this, 5, $player);
 		$ev->setIncendiary(true);
 
