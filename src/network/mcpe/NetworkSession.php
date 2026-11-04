@@ -67,6 +67,8 @@ use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DisconnectPacket;
+use pocketmine\network\mcpe\protocol\GameRulesChangedPacket;
+use pocketmine\network\mcpe\protocol\LevelEventPacket;
 use pocketmine\network\mcpe\protocol\ModalFormRequestPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\NetworkChunkPublisherUpdatePacket;
@@ -117,7 +119,9 @@ use pocketmine\network\mcpe\protocol\types\command\CommandParameter;
 use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
+use pocketmine\network\mcpe\protocol\types\LevelEvent;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
 use pocketmine\network\mcpe\protocol\UpdateAbilitiesPacket;
 use pocketmine\network\mcpe\protocol\UpdateAdventureSettingsPacket;
@@ -1573,7 +1577,32 @@ class NetworkSession{
 			$this->syncWorldTime($world->getTime());
 			$this->syncWorldDifficulty($world->getDifficulty());
 			$this->syncWorldSpawnPoint($world->getSpawnLocation());
-			//TODO: weather needs to be synced here (when implemented)
+			$this->syncGameRules($world);
+			$this->syncWeather($world);
+		}
+	}
+
+	public function syncGameRules(World $world) : void{
+		try{
+			$rules = $world->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class){
+				$this->sendDataPacket(GameRulesChangedPacket::create($rules->toNetworkRules()));
+			}
+		}catch(\Throwable){
+		}
+	}
+
+	public function syncWeather(World $world) : void{
+		$duration = $world->getWeatherDuration();
+		if($world->isThundering()){
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::START_RAIN, $duration, null));
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::START_THUNDER, $duration, null));
+		}elseif($world->isRaining()){
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::START_RAIN, $duration, null));
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::STOP_THUNDER, 0, null));
+		}else{
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::STOP_RAIN, 0, null));
+			$this->sendDataPacket(LevelEventPacket::create(LevelEvent::STOP_THUNDER, 0, null));
 		}
 	}
 

@@ -64,6 +64,7 @@ use pocketmine\timings\Timings;
 use pocketmine\utils\Binary;
 use pocketmine\utils\Limits;
 use pocketmine\utils\Utils;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\sound\BurpSound;
 use pocketmine\world\sound\EntityLandSound;
 use pocketmine\world\sound\EntityLongFallSound;
@@ -654,7 +655,21 @@ abstract class Living extends Entity{
 	}
 
 	protected function onDeath() : void{
-		$ev = new EntityDeathEvent($this, $this->getDrops(), $this->getXpDropAmount());
+		$dropLoot = true;
+		try{
+			$rules = $this->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class){
+				if($this instanceof \pocketmine\entity\object\ArmorStand){
+					$dropLoot = $rules->getBool(GameRules::DO_ENTITY_DROPS);
+				}elseif(!($this instanceof Human)){
+					$dropLoot = $rules->getBool(GameRules::DO_MOB_LOOT);
+				}
+			}
+		}catch(\Throwable){
+			$dropLoot = true;
+		}
+		$drops = $dropLoot ? $this->getDrops() : [];
+		$ev = new EntityDeathEvent($this, $drops, $this->getXpDropAmount());
 		$ev->call();
 		foreach($ev->getDrops() as $item){
 			$this->getWorld()->dropItem($this->location, $item);

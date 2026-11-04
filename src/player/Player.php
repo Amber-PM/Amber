@@ -50,6 +50,7 @@ use pocketmine\entity\NeverSavedWithChunkEntity;
 use pocketmine\entity\object\FireworkRocket as FireworkEntity;
 use pocketmine\entity\object\ItemEntity;
 use pocketmine\entity\projectile\Arrow;
+use pocketmine\entity\projectile\FishingHook;
 use pocketmine\entity\Skin;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
@@ -149,6 +150,7 @@ use pocketmine\world\ChunkListenerNoOpTrait;
 use pocketmine\world\ChunkLoader;
 use pocketmine\world\ChunkTicker;
 use pocketmine\world\format\Chunk;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\Position;
 use pocketmine\world\shape\PositionedShape;
 use pocketmine\world\shape\Shape;
@@ -356,6 +358,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 	// self-attached shapes: [ShapeHandle, Shape, Vector3 offset][] — position-tracked because Bedrock doesn't render attachedToEntityId for the local player
 	private array $selfAttachedShapes = [];
+
+	protected ?FishingHook $fishingHook = null;
 
 	private PlayerCamera $camera;
 
@@ -2809,6 +2813,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		$this->getNetworkSession()->onCloseAllForms();
 	}
 
+	public function getFishingHook() : ?FishingHook{
+		return $this->fishingHook;
+	}
+
+	public function setFishingHook(?FishingHook $fishingHook) : void{
+		$this->fishingHook = $fishingHook;
+	}
+
 	/**
 	 * Transfers a player to another server.
 	 *
@@ -2938,6 +2950,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDispose() : void{
+		if($this->fishingHook !== null){
+			$this->fishingHook->flagForDespawn();
+			$this->fishingHook = null;
+		}
 		$this->discardGlideBoosts();
 		$this->disconnect("Player destroyed");
 		$this->cursorInventory->removeAllViewers();
@@ -3014,6 +3030,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	}
 
 	protected function onDeath() : void{
+		if($this->fishingHook !== null){
+			$this->fishingHook->flagForDespawn();
+			$this->fishingHook = null;
+		}
 		$this->discardGlideBoosts();
 		$this->setGliding(false);
 		//Crafting grid must always be evacuated even if keep-inventory is true. This dumps the contents into the
@@ -3022,7 +3042,22 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 
 		$this->setDeathPosition($this->getPosition());
 
+		$keepInv = false;
+		$showDeath = true;
+		try{
+			$rules = $this->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class){
+				$keepInv = $rules->getBool(GameRules::KEEP_INVENTORY);
+				$showDeath = $rules->getBool(GameRules::SHOW_DEATH_MESSAGES);
+			}
+		}catch(\Throwable){
+		}
+
 		$ev = new PlayerDeathEvent($this, $this->getDrops(), $this->getXpDropAmount(), null);
+		if($keepInv){
+			$ev->setKeepInventory(true);
+			$ev->setKeepXp(true);
+		}
 		$ev->call();
 
 		if(!$ev->getKeepInventory()){
@@ -3042,7 +3077,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 			$this->xpManager->setXpAndProgress(0, 0.0);
 		}
 
-		if($ev->getDeathMessage() !== ""){
+		if($ev->getDeathMessage() !== "" && $showDeath){
 			$this->server->broadcastMessage($ev->getDeathMessage());
 		}
 
@@ -3144,6 +3179,38 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 	public function attack(EntityDamageEvent $source) : void{
 		if(!$this->isAlive()){
 			return;
+		}
+
+		try{
+			$rules = $this->getWorld()->getGameRules();
+		}catch(\Throwable){
+			$rules = null;
+		}
+
+		if($rules !== null && get_class($rules) === GameRules::class){
+			if($source instanceof EntityDamageByEntityEvent){
+				$damager = $source->getDamager();
+				if($damager instanceof Player && !$rules->getBool(GameRules::PVP)){
+					$source->cancel();
+				}
+			}
+
+			if(!$rules->getBool(GameRules::FALL_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FALL){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::DROWNING_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_DROWNING){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::FIRE_DAMAGE) && (
+				$source->getCause() === EntityDamageEvent::CAUSE_FIRE
+				|| $source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK
+				|| $source->getCause() === EntityDamageEvent::CAUSE_LAVA
+			)){
+				$source->cancel();
+			}
+			if(!$rules->getBool(GameRules::FREEZE_DAMAGE) && $source->getCause() === EntityDamageEvent::CAUSE_FREEZING){
+				$source->cancel();
+			}
 		}
 
 		if($this->isCreative()

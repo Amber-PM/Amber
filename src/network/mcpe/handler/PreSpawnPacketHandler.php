@@ -101,13 +101,10 @@ class PreSpawnPacketHandler extends PacketHandler{
 			$levelSettings->hasAchievementsDisabled = true;
 			$levelSettings->time = $world->getTime();
 			$levelSettings->eduEditionOffer = 0;
-			$levelSettings->rainLevel = 0; //TODO: implement these properly
-			$levelSettings->lightningLevel = 0;
+			$levelSettings->rainLevel = $world->isRaining() ? 1.0 : 0.0;
+			$levelSettings->lightningLevel = $world->isThundering() ? 1.0 : 0.0;
 			$levelSettings->commandsEnabled = true;
-			$levelSettings->gameRules = [
-				"naturalregeneration" => new BoolGameRule(false, false), //Hack for client side regeneration
-				"locatorbar" => new BoolGameRule(false, false) //Disable client-side tracking of nearby players
-			];
+			$levelSettings->gameRules = $world->getGameRules()->toNetworkRules();
 			$levelSettings->experiments = new Experiments([], false);
 
 			if($protocolId >= ProtocolInfo::PROTOCOL_1_26_50){

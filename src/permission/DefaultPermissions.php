@@ -64,7 +64,7 @@ abstract class DefaultPermissions{
 		if(count($parameters) !== 0){
 			throw new \InvalidArgumentException("Cannot use this function to register a permission with a parameterisable description string");
 		}
-		$translatable = new Translatable($translationKey);
+		$translatable = new Translatable($translationKey, []);
 		return self::registerPermission(new Permission($permission, $translatable), $grantedBy);
 	}
 
@@ -91,6 +91,7 @@ abstract class DefaultPermissions{
 			Names::COMMAND_ENCHANT_SELF,
 			Names::COMMAND_GAMEMODE_OTHER,
 			Names::COMMAND_GAMEMODE_SELF,
+			Names::COMMAND_GAMERULE,
 			Names::COMMAND_GC,
 			Names::COMMAND_GIVE_OTHER,
 			Names::COMMAND_GIVE_SELF,
@@ -112,6 +113,7 @@ abstract class DefaultPermissions{
 			Names::COMMAND_SPAWNPOINT_SELF,
 			Names::COMMAND_STATUS,
 			Names::COMMAND_STOP,
+			Names::COMMAND_SUMMON,
 			Names::COMMAND_TELEPORT_OTHER,
 			Names::COMMAND_TELEPORT_SELF,
 			Names::COMMAND_TIME_ADD,
@@ -125,6 +127,7 @@ abstract class DefaultPermissions{
 			Names::COMMAND_TRANSFERSERVER,
 			Names::COMMAND_UNBAN_IP,
 			Names::COMMAND_UNBAN_PLAYER,
+			Names::COMMAND_WEATHER,
 			Names::COMMAND_WHITELIST_ADD,
 			Names::COMMAND_WHITELIST_DISABLE,
 			Names::COMMAND_WHITELIST_ENABLE,
