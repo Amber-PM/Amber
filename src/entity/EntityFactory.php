@@ -49,6 +49,7 @@ use pocketmine\entity\projectile\IceBomb;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
+use pocketmine\entity\projectile\WindCharge;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -232,6 +233,38 @@ final class EntityFactory{
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
+
+		$this->register(WindCharge::class, function(World $world, CompoundTag $nbt) : WindCharge{
+			return new WindCharge(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['WindCharge', 'minecraft:wind_charge_projectile', 'minecraft:breeze_wind_charge_projectile']);
+
+		$this->register(Warden::class, function(World $world, CompoundTag $nbt) : Warden{
+			return new Warden(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Warden', 'minecraft:warden']);
+
+		$this->register(Breeze::class, function(World $world, CompoundTag $nbt) : Breeze{
+			return new Breeze(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Breeze', 'minecraft:breeze']);
+
+		$this->register(Allay::class, function(World $world, CompoundTag $nbt) : Allay{
+			return new Allay(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Allay', 'minecraft:allay']);
+
+		$this->register(Camel::class, function(World $world, CompoundTag $nbt) : Camel{
+			return new Camel(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Camel', 'minecraft:camel']);
+
+		$this->register(Sniffer::class, function(World $world, CompoundTag $nbt) : Sniffer{
+			return new Sniffer(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Sniffer', 'minecraft:sniffer']);
+
+		$this->register(Armadillo::class, function(World $world, CompoundTag $nbt) : Armadillo{
+			return new Armadillo(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Armadillo', 'minecraft:armadillo']);
+
+		$this->register(Bogged::class, function(World $world, CompoundTag $nbt) : Bogged{
+			return new Bogged(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Bogged', 'minecraft:bogged']);
 
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
