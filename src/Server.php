@@ -1372,6 +1372,28 @@ class Server{
 		return true;
 	}
 
+	private static function getProtocolsToPreload(array $acceptedProtocols, array $allowedProtocols, \Closure $isAllowed) : array{
+		$protocols = [];
+		if(count($allowedProtocols) === 0){
+			return $protocols;
+		}
+
+		foreach($acceptedProtocols as $protocolId){
+			if($isAllowed($protocolId)){
+				$protocols[] = $protocolId;
+			}
+		}
+
+		return $protocols;
+	}
+
+	private function startupPreloadAllowedProtocols() : void{
+		$allowedProtocols = (array) $this->configGroup->getProperty("network.allowed-protocols", []);
+		foreach(self::getProtocolsToPreload(ProtocolInfo::ACCEPTED_PROTOCOL, $allowedProtocols, $this->isProtocolAllowed(...)) as $protocolId){
+			TypeConverter::getInstance($protocolId);
+		}
+	}
+
 	/**
 	 * @return int[]|null
 	 * @phpstan-return array{int, int}|null
@@ -1389,6 +1411,8 @@ class Server{
 
 	private function startupPrepareNetworkInterfaces() : bool{
 		$useQuery = $this->configGroup->getConfigBool(ServerProperties::ENABLE_QUERY, true);
+
+		$this->startupPreloadAllowedProtocols();
 
 		$typeConverter = TypeConverter::getInstance();
 		$packetBroadcaster = $this->getPacketBroadcaster(ProtocolInfo::CURRENT_PROTOCOL);

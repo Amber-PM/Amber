@@ -734,6 +734,7 @@ class World implements ChunkManager{
 	 * @param Player[]|null $players
 	 */
 	public function addSound(Vector3 $pos, Sound $sound, ?array $players = null) : void{
+		$defaultViewers = $players === null;
 		$players ??= $this->getViewersForPosition($pos);
 
 		if(WorldSoundEvent::hasHandlers()){
@@ -745,6 +746,7 @@ class World implements ChunkManager{
 
 			$sound = $ev->getSound();
 			$players = $ev->getRecipients();
+			$defaultViewers = false;
 		}
 
 		if(($blockSound = ($sound instanceof BlockSound)) || $sound instanceof ProtocolSound){
@@ -761,15 +763,15 @@ class World implements ChunkManager{
 				};
 			}
 
-			if($players === $this->getViewersForPosition($pos)){
-				$this->broadcastPacketToViewersByTypeConverter($pos, $closure);
+			if($defaultViewers || $players === $this->getViewersForPosition($pos)){
+				$this->broadcastPacketToPlayersByTypeConverterUsingChunk($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE, $closure);
 			}else{
-				TypeConverter::broadcastByTypeConverter($this->filterViewersForPosition($pos, $players), $closure);
+				TypeConverter::broadcastByTypeConverterUnchecked($this->filterViewersForPosition($pos, $players), $closure);
 			}
 		}else{
 			$pk = $sound->encode($pos);
 			if(count($pk) > 0){
-				if($players === $this->getViewersForPosition($pos)){
+				if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 					foreach($pk as $e){
 						$this->broadcastPacketToViewers($pos, $e);
 					}
@@ -784,6 +786,7 @@ class World implements ChunkManager{
 	 * @param Player[]|null $players
 	 */
 	public function addParticle(Vector3 $pos, Particle $particle, ?array $players = null) : void{
+		$defaultViewers = $players === null;
 		$players ??= $this->getViewersForPosition($pos);
 
 		if(WorldParticleEvent::hasHandlers()){
@@ -795,6 +798,7 @@ class World implements ChunkManager{
 
 			$particle = $ev->getParticle();
 			$players = $ev->getRecipients();
+			$defaultViewers = false;
 		}
 
 		if($particle instanceof BlockParticle || $particle instanceof ItemParticle || $particle instanceof ProtocolParticle){
@@ -810,15 +814,15 @@ class World implements ChunkManager{
 				return $particle->encode($pos);
 			};
 
-			if($players === $this->getViewersForPosition($pos)){
-				$this->broadcastPacketToViewersByTypeConverter($pos, $closure);
+			if($defaultViewers || $players === $this->getViewersForPosition($pos)){
+				$this->broadcastPacketToPlayersByTypeConverterUsingChunk($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE, $closure);
 			}else{
-				TypeConverter::broadcastByTypeConverter($this->filterViewersForPosition($pos, $players), $closure);
+				TypeConverter::broadcastByTypeConverterUnchecked($this->filterViewersForPosition($pos, $players), $closure);
 			}
 		}else{
 			$pk = $particle->encode($pos);
 			if(count($pk) > 0){
-				if($players === $this->getViewersForPosition($pos)){
+				if($defaultViewers || $players === $this->getViewersForPosition($pos)){
 					foreach($pk as $e){
 						$this->broadcastPacketToViewers($pos, $e);
 					}
@@ -966,6 +970,11 @@ class World implements ChunkManager{
 	 * @phpstan-param \Closure(TypeConverter) : ClientboundPacket[] $closure
 	 */
 	public function broadcastPacketToViewersByTypeConverter(Vector3 $pos, \Closure $closure) : void{
+		Utils::validateCallableSignature(new CallbackType(
+			new ReturnType(BuiltInTypes::ARRAY, ReturnType::COVARIANT),
+			new ParameterType('typeConverter', TypeConverter::class),
+		), $closure);
+
 		$this->broadcastPacketToPlayersByTypeConverterUsingChunk($pos->getFloorX() >> Chunk::COORD_BIT_SIZE, $pos->getFloorZ() >> Chunk::COORD_BIT_SIZE, $closure);
 	}
 
@@ -973,11 +982,6 @@ class World implements ChunkManager{
 	 * @phpstan-param \Closure(TypeConverter) : ClientboundPacket[] $closure
 	 */
 	private function broadcastPacketToPlayersByTypeConverterUsingChunk(int $chunkX, int $chunkZ, \Closure $closure) : void{
-		Utils::validateCallableSignature(new CallbackType(
-			new ReturnType(BuiltInTypes::ARRAY, ReturnType::COVARIANT),
-			new ParameterType('typeConverter', TypeConverter::class),
-		), $closure);
-
 		if(!isset($this->packetBuffersByChunkTypeConverter[$index = World::chunkHash($chunkX, $chunkZ)])){
 			$this->packetBuffersByChunkTypeConverter[$index] = [$closure];
 		}else{
@@ -1251,7 +1255,7 @@ class World implements ChunkManager{
 
 		foreach($this->packetBuffersByChunkTypeConverter as $index => $entries){
 			World::getXZ($index, $chunkX, $chunkZ);
-			TypeConverter::broadcastByTypeConverter($this->getChunkPlayers($chunkX, $chunkZ), function(TypeConverter $typeConverter) use ($index, $entries) : array{
+			TypeConverter::broadcastByTypeConverterUnchecked($this->getChunkPlayers($chunkX, $chunkZ), function(TypeConverter $typeConverter) use ($index, $entries) : array{
 				return array_merge($this->packetBuffersByChunk[$index] ?? [], ...array_map(function(\Closure $closure) use ($typeConverter) : array{
 					return $closure($typeConverter);
 				}, $entries));
