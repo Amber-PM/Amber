@@ -1392,6 +1392,8 @@ class Server{
 		foreach(self::getProtocolsToPreload(ProtocolInfo::ACCEPTED_PROTOCOL, $allowedProtocols, $this->isProtocolAllowed(...)) as $protocolId){
 			TypeConverter::getInstance($protocolId);
 		}
+	}
+
 	/**
 	 * @return int[]|null
 	 * @phpstan-return array{int, int}|null
