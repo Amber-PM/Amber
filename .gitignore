@@ -60,3 +60,6 @@ Documentation/*
 
 # Native release build inputs and products
 /.native-rtc/
+# BDS cache
+bds-cache/
+resources/vanilla/
