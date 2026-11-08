@@ -108,12 +108,14 @@ final class ResourcePacksPacketHandlerTest extends TestCase{
 	public function testReplayedStatusCompletedOnlyInvokesCallbackOnce() : void{
 		$session = $this->getMockBuilder(NetworkSession::class)
 			->disableOriginalConstructor()
-			->onlyMethods(["sendDataPacket", "getLogger", "unhandledPacketDebug", "getProtocolId"])
+			->onlyMethods(["sendDataPacket", "getLogger", "unhandledPacketDebug", "getProtocolId", "usesLocalResourcePackSendCompletion"])
 			->getMock();
 		$session->method("getLogger")->willReturn($this->createMock(\PrefixedLogger::class));
 		$session->method("getProtocolId")->willReturn(ProtocolInfo::CURRENT_PROTOCOL);
 		$session->method("sendDataPacket")->willReturn(true);
+		$session->method("usesLocalResourcePackSendCompletion")->willReturn(false);
 		(new \ReflectionProperty(NetworkSession::class, "logger"))->setValue($session, $this->createMock(\PrefixedLogger::class));
+		(new \ReflectionProperty(NetworkSession::class, "transportPolicy"))->setValue($session, null);
 
 		$completionCount = 0;
 		$handler = new ResourcePacksPacketHandler(

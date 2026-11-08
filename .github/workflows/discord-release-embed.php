@@ -94,7 +94,7 @@ if(isset($argv[0]) && realpath($argv[0]) === __FILE__){
 	$sourceUrl = "https://github.com/$repo/tree/$matchedTag";
 	$pharDownloadUrl = "https://github.com/$repo/releases/download/$matchedTag/PocketMine-MP.phar";
 	$buildLogUrl = "https://github.com/$repo/actions";
-	$phpBinaryUrl = "https://github.com/pmmp/PHP-Binaries/releases/tag/pm5-php-8.2-latest";
+	$phpBinaryUrl = "https://github.com/Amber-PM/PHP-Binaries/releases/latest";
 	$baseVersion = $releaseInfoJson["name"] ?? $matchedTag;
 	$channel = ($releaseInfoJson["prerelease"] ?? false) ? "beta" : "stable";
 

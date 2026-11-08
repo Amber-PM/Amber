@@ -1,35 +1,25 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-### Report via GitHub
+Please report security vulnerabilities in AmberPM privately. **Do not post exploits, credentials, or sensitive reproduction details in public GitHub issues, discussions, or Discord channels.**
 
-Send a _**private security report**_ by going to https://github.com/pmmp/PocketMine-MP/security and clicking the "Report a vulnerability" button.
+1. Check the [AmberPM Security page](https://github.com/Amber-PM/Amber/security). If **Report a vulnerability** is available, use it to submit a private report.
+2. Otherwise, contact a verified AmberPM maintainer via direct message through the [official AmberPM Discord](https://discord.gg/w2nHHADWvF). Ask to arrange a private reporting channel before sharing sensitive details.
 
-> [!WARNING]
-> **DO NOT report vulnerabilities on the Issues tab. Report them in the Security tab ONLY.**
-> 
-> The issue tracker is public to view, which means that malicious actors may learn about exploits from a public issue.
->
-> **You may put live PocketMine-MP servers at risk by reporting a vulnerability on the GitHub issue tracker.**
+Do not send AmberPM-specific security reports to the PocketMine-MP project or its security email address.
 
-### Report via email
+### What to include
 
-If you can't or don't want to use the GitHub system, you can also **contact us** by sending an email to [**security@pmmp.io**](mailto:security@pmmp.io).
-Include the following information:
+- Affected AmberPM version or commit and Minecraft Bedrock protocol/version, if relevant.
+- A clear description of the impact and prerequisites.
+- Steps to reproduce or a minimal proof of concept, shared privately.
+- Any suggested mitigation, if available.
 
-- Version of PocketMine-MP
-- Detailed description of the vulnerability (e.g. how to exploit it, what the effects are)
-- Your GitHub username, if you wish to be credited for reporting the problem in the security advisory
+Please avoid testing against servers you do not own or have permission to assess.
 
-Please note that we can't guarantee a reply to every email.
+## Response and fixes
 
-## FAQ
-### Do you offer a bug bounty?
-No.
+Maintainers will review reports as availability permits, coordinate disclosure, and publish fixes or advisories when appropriate. **No response time, release deadline, or bug bounty is guaranteed.**
 
-### How soon can I expect a fix for a vulnerability I've reported?
-This depends on the nature of the problem. We can't provide any general ETA (nor would it be wise to provide one).
-In general, it depends on when developers have time to look into the problem, how complex the problem is to fix, and how many users it impacts.
-
-When a fix for a severe vulnerability is pushed, a patch release for the target version will usually be released within 24 hours so that users can update.
+For ordinary, non-security bugs, use the [public issue tracker](https://github.com/Amber-PM/Amber/issues).

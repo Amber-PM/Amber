@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\block\utils\CopperMaterial;
 use pocketmine\block\utils\CopperOxidation;
 use pocketmine\block\utils\CopperTrait;
@@ -34,7 +35,7 @@ use pocketmine\block\utils\RedstoneReceiver;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\world\redstone\RedstoneEngine;
 
-class CopperBulb extends Opaque implements CopperMaterial, Lightable, PoweredByRedstone, RedstoneReceiver{
+class CopperBulb extends Opaque implements CopperMaterial, Lightable, PoweredByRedstone, RedstoneReceiver, ComparatorSignalSource{
 	use CopperTrait;
 	use PoweredByRedstoneTrait;
 	use LightableTrait{
@@ -76,5 +77,9 @@ class CopperBulb extends Opaque implements CopperMaterial, Lightable, PoweredByR
 		if($powered !== $this->powered){
 			$engine->getWorld()->setBlock($this->position, $this->togglePowered($powered));
 		}
+	}
+
+	public function getComparatorSignal() : int{
+		return $this->lit ? 15 : 0;
 	}
 }

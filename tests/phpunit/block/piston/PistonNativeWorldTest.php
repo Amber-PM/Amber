@@ -706,7 +706,7 @@ final class PistonNativeWorldTest extends TestCase{
 						self::assertTrue($piston->retract());
 						$this->finishMovement($world, new \pocketmine\math\Vector3(8, 64, 8));
 					}
-					foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+					foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_44, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
 						$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
 						$packets = $world->createBlockUpdatePackets($converter, [new \pocketmine\math\Vector3(8, 64, 8)]);
 						self::assertCount(3, $packets);
@@ -733,6 +733,7 @@ final class PistonNativeWorldTest extends TestCase{
 		$world->setBlockAt(8, 63, 8, VanillaBlocks::REDSTONE());
 		$piston = $world->getBlockAt(8, 64, 8);
 		$piston->onRedstoneUpdate($engine);
+		$piston->onRedstoneScheduledUpdate($engine);
 		$tile = $world->getTileAt(8, 64, 8);
 		self::assertInstanceOf(\pocketmine\block\tile\PistonArm::class, $tile);
 		self::assertTrue($tile->isMoving());
@@ -746,11 +747,15 @@ final class PistonNativeWorldTest extends TestCase{
 		self::assertSame(1, $tile->saveNBT()->getByte("State"));
 		self::assertSame(0.5, $tile->saveNBT()->getFloat("Progress"));
 		$engine->tick(2);
+		$engine->tick(3);
+		//the retract waits for the start delay
+		self::assertSame(2, $tile->saveNBT()->getByte("State"));
+		$engine->tick(4);
 		self::assertSame(3, $tile->saveNBT()->getByte("State"));
 		self::assertFalse($world->getBlockAt(8, 64, 8)->isExtended());
 		self::assertTrue(PistonMoveRules::isImmovable($world->getBlockAt(8, 64, 8)));
-		$engine->tick(3);
-		$engine->tick(4);
+		$engine->tick(5);
+		$engine->tick(6);
 		self::assertFalse($tile->isMoving());
 		self::assertSame(0, $tile->saveNBT()->getByte("State"));
 		self::assertSame(0.0, $tile->saveNBT()->getFloat("Progress"));
@@ -905,6 +910,7 @@ final class PistonNativeWorldTest extends TestCase{
 		$world->setBlockAt(15, 64, 8, VanillaBlocks::PISTON()->setFacing(Facing::EAST));
 		$world->setBlockAt(15, 63, 8, VanillaBlocks::REDSTONE());
 		$world->getBlockAt(15, 64, 8)->onRedstoneUpdate($engine);
+		$world->getBlockAt(15, 64, 8)->onRedstoneScheduledUpdate($engine);
 		$tile = $world->getTileAt(15, 64, 8);
 		self::assertInstanceOf(\pocketmine\block\tile\PistonArm::class, $tile);
 		$chunks = new \ReflectionProperty(World::class, "chunks");
@@ -961,7 +967,7 @@ final class PistonNativeWorldTest extends TestCase{
 		$world->getTileAt(15, 64, 1)->getInventory()->setItem(0, VanillaItems::DIAMOND()->setCount(64));
 		self::assertTrue($world->getBlockAt(14, 64, 1)->extend());
 		$tile = $world->getTileAt(16, 64, 1);
-		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
+		foreach([\pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_20_60, \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_44, \pocketmine\network\mcpe\protocol\ProtocolInfo::CURRENT_PROTOCOL] as $protocol){
 			$converter = \pocketmine\network\mcpe\convert\TypeConverter::getInstance($protocol);
 			$spawn = $tile->getSpawnCompound($converter);
 			self::assertSame("MovingBlock", $spawn->getString("id"));

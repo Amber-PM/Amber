@@ -29,8 +29,16 @@ use pocketmine\utils\fixtures\TestInstantiableClass;
 use pocketmine\utils\fixtures\TestInterface;
 use pocketmine\utils\fixtures\TestSubclassOfInstantiableClass;
 use pocketmine\utils\fixtures\TestTrait;
+use function bin2hex;
+use function chmod;
 use function define;
 use function defined;
+use function file_put_contents;
+use function is_readable;
+use function random_bytes;
+use function sys_get_temp_dir;
+use function tempnam;
+use function unlink;
 
 class UtilsTest extends TestCase{
 
@@ -152,5 +160,37 @@ class UtilsTest extends TestCase{
 	public function testValidInstanceInvalidParameters(string $className, string $baseName) : void{
 		$this->expectException(\InvalidArgumentException::class);
 		Utils::testValidInstance($className, $baseName); //@phpstan-ignore-line
+	}
+
+	public function testMachineIdIsReadFromAReadableFile() : void{
+		$path = tempnam(sys_get_temp_dir(), "machine-id");
+		self::assertNotFalse($path);
+		try{
+			file_put_contents($path, "0123456789abcdef\n");
+			self::assertSame("0123456789abcdef\n", Utils::readMachineId($path));
+		}finally{
+			unlink($path);
+		}
+	}
+
+	public function testMissingOrUnreadableMachineIdIsSkipped() : void{
+		self::assertNull(Utils::readMachineId(sys_get_temp_dir() . "/missing-machine-id-" . bin2hex(random_bytes(4))));
+		if(Utils::getOS() === Utils::OS_WINDOWS){
+			return;
+		}
+		$path = tempnam(sys_get_temp_dir(), "machine-id");
+		self::assertNotFalse($path);
+		try{
+			file_put_contents($path, "0123456789abcdef\n");
+			chmod($path, 0000);
+			if(is_readable($path)){
+				//root ignores file modes
+				return;
+			}
+			self::assertNull(Utils::readMachineId($path));
+		}finally{
+			chmod($path, 0600);
+			unlink($path);
+		}
 	}
 }

@@ -337,12 +337,19 @@ class Server{
 		return VersionInfo::VERSION()->getFullVersion(true);
 	}
 
+	/**
+	 * Amber-named alias for getPocketMineVersion().
+	 */
+	public function getAmberVersion() : string{
+		return VersionInfo::VERSION()->getFullVersion(true);
+	}
+
 	public function getVersion() : string{
 		return ProtocolInfo::MINECRAFT_VERSION;
 	}
 
 	public function getApiVersion() : string{
-		return VersionInfo::BASE_VERSION;
+		return VersionInfo::COMPATIBLE_API_VERSION;
 	}
 
 	public function isProtocolAllowed(int $protocolId) : bool{
@@ -890,7 +897,7 @@ class Server{
 			$pocketmineYmlPath = Path::join($this->dataPath, "pocketmine.yml");
 			if(!file_exists($pocketmineYmlPath)){
 				$content = Filesystem::fileGetContents(Path::join(\pocketmine\RESOURCE_PATH, "pocketmine.yml"));
-				if(VersionInfo::IS_DEVELOPMENT_BUILD){
+				if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 					$content = str_replace("preferred-channel: stable", "preferred-channel: beta", $content);
 				}
 				@file_put_contents($pocketmineYmlPath, $content);
@@ -951,7 +958,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::language_selected($this->language->getName(), $this->language->getLang())));
 
-			if(VersionInfo::IS_DEVELOPMENT_BUILD){
+			if(VersionInfo::IS_DEVELOPMENT_BUILD()){
 				if(!$this->configGroup->getPropertyBool(Yml::SETTINGS_ENABLE_DEV_BUILDS, false)){
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error1(VersionInfo::NAME)));
 					$this->logger->emergency($this->language->translate(KnownTranslationFactory::pocketmine_server_devBuild_error2()));
@@ -1087,7 +1094,7 @@ class Server{
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_info(
 				$this->getName(),
-				(VersionInfo::IS_DEVELOPMENT_BUILD ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
+				(VersionInfo::IS_DEVELOPMENT_BUILD() ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
 			)));
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_license($this->getName())));
 
@@ -1193,18 +1200,11 @@ class Server{
 			$highlight = TextFormat::AQUA;
 			$reset = TextFormat::RESET;
 			$github = VersionInfo::GITHUB_URL;
-			$splash = "\n\n";
-			foreach([
-				KnownTranslationFactory::pocketmine_server_url_discord("{$highlight}https://discord.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_docs("{$highlight}https://doc.pmmp.io{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_sourceCode("{$highlight}{$github}{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_freePlugins("{$highlight}https://poggit.pmmp.io/plugins{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_donations("{$highlight}https://patreon.com/pocketminemp{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_translations("{$highlight}https://translate.pocketmine.net{$reset}"),
-				KnownTranslationFactory::pocketmine_server_url_bugReporting("{$highlight}{$github}/issues{$reset}")
-			] as $link){
-				$splash .= "- " . $this->language->translate($link) . "\n";
-			}
+			$version = VersionInfo::VERSION();
+
+			$splash = "\n" .
+				"  " . TextFormat::GOLD . VersionInfo::NAME . " " . $version->getFullVersion(true) . $reset . "\n" .
+				"  " . TextFormat::GRAY . "GitHub: " . $highlight . $github . $reset . "\n";
 			$this->logger->info($splash);
 
 			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_startFinished(strval(round(microtime(true) - $this->startTime, 3)))));
@@ -1392,6 +1392,19 @@ class Server{
 		foreach(self::getProtocolsToPreload(ProtocolInfo::ACCEPTED_PROTOCOL, $allowedProtocols, $this->isProtocolAllowed(...)) as $protocolId){
 			TypeConverter::getInstance($protocolId);
 		}
+	/**
+	 * @return int[]|null
+	 * @phpstan-return array{int, int}|null
+	 * @throws \InvalidArgumentException
+	 * @internal
+	 */
+	public static function resolveRakNetPorts(int $configured, int $port, int $portV6) : ?array{
+		return match(true){
+			$configured === -1 => null,
+			$configured === 0 => [$port, $portV6],
+			$configured >= 1 && $configured <= 65535 => [$configured, $configured],
+			default => throw new \InvalidArgumentException("network.raknet-port must be -1, 0 or a port between 1 and 65535, got $configured")
+		};
 	}
 
 	private function startupPrepareNetworkInterfaces() : bool{
@@ -1403,11 +1416,21 @@ class Server{
 		$packetBroadcaster = $this->getPacketBroadcaster(ProtocolInfo::CURRENT_PROTOCOL);
 		$entityEventBroadcaster = $this->getEntityEventBroadcaster($packetBroadcaster, $typeConverter);
 
-		if(
-			!$this->startupPrepareConnectableNetworkInterfaces($this->getIp(), $this->getPort(), false, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter) ||
+		try{
+			$rakNetPorts = self::resolveRakNetPorts($this->configGroup->getPropertyInt(Yml::NETWORK_RAKNET_PORT, 0), $this->getPort(), $this->getPortV6());
+		}catch(\InvalidArgumentException $e){
+			$this->logger->emergency($e->getMessage());
+			return false;
+		}
+		if($rakNetPorts === null){
+			//query travels over the raknet socket so it goes too
+			$useQuery = false;
+			$this->logger->notice("RakNet is disabled by network.raknet-port, clients that need RakNet and Query cannot connect");
+		}elseif(
+			!$this->startupPrepareConnectableNetworkInterfaces($this->getIp(), $rakNetPorts[0], false, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter) ||
 			(
 				$this->configGroup->getConfigBool(ServerProperties::ENABLE_IPV6, true) &&
-				!$this->startupPrepareConnectableNetworkInterfaces($this->getIpV6(), $this->getPortV6(), true, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter)
+				!$this->startupPrepareConnectableNetworkInterfaces($this->getIpV6(), $rakNetPorts[1], true, $useQuery, $packetBroadcaster, $entityEventBroadcaster, $typeConverter)
 			)
 		){
 			return false;
@@ -1423,6 +1446,13 @@ class Server{
 
 		if($this->configGroup->getPropertyBool(Yml::NETWORK_UPNP_FORWARDING, false)){
 			$this->network->registerInterface(new UPnPNetworkInterface($this->logger, Internet::getInternalIP(), $this->getPort()));
+		}
+
+		try{
+			\pocketmine\network\mcpe\nethernet\NetherNetBootstrap::register($this, $packetBroadcaster, $entityEventBroadcaster, $typeConverter);
+		}catch(NetworkInterfaceStartException $e){
+			$this->logger->emergency('Required NetherNet interface did not start: ' . $e->getMessage());
+			return false;
 		}
 
 		return true;

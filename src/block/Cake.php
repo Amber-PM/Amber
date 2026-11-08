@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\item\Item;
 use pocketmine\item\ItemBlock;
@@ -31,7 +32,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 
-class Cake extends BaseCake{
+class Cake extends BaseCake implements ComparatorSignalSource{
 	public const MAX_BITES = 6;
 
 	protected int $bites = 0;
@@ -91,5 +92,9 @@ class Cake extends BaseCake{
 			$clone = VanillaBlocks::AIR();
 		}
 		return $clone;
+	}
+
+	public function getComparatorSignal() : int{
+		return (self::MAX_BITES + 1 - $this->bites) * 2;
 	}
 }

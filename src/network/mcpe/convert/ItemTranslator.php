@@ -84,7 +84,9 @@ final class ItemTranslator{
 		$blockStateData = $itemData->getBlock();
 
 		if($blockStateData !== null){
-			$blockRuntimeId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData);
+			//newer palettes add properties the serializer does not emit yet
+			$blockRuntimeId = $this->blockStateDictionary->lookupStateIdFromData($blockStateData) ??
+				$this->blockStateDictionary->lookupClosestStateId($blockStateData->getName(), $blockStateData->getStates());
 			if($blockRuntimeId === null){
 				throw new AssumptionFailedError("Unmapped blockstate returned by blockstate serializer: " . $blockStateData->toNbt());
 			}
@@ -137,6 +139,7 @@ final class ItemTranslator{
 
 	public static function getItemSchemaId(int $protocolId) : int{
 		return match($protocolId){
+			ProtocolInfo::PROTOCOL_1_26_60,
 			ProtocolInfo::PROTOCOL_1_26_51,
 			ProtocolInfo::PROTOCOL_1_26_50,
 			ProtocolInfo::PROTOCOL_1_26_44,

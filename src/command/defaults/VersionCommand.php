@@ -60,7 +60,7 @@ class VersionCommand extends OverloadedCommand{
 		$sender->sendMessage(KnownTranslationFactory::pocketmine_command_version_serverSoftwareName(
 			TextFormat::GREEN . VersionInfo::NAME . TextFormat::RESET
 		));
-		$versionColor = VersionInfo::IS_DEVELOPMENT_BUILD ? TextFormat::YELLOW : TextFormat::GREEN;
+		$versionColor = VersionInfo::IS_DEVELOPMENT_BUILD() ? TextFormat::YELLOW : TextFormat::GREEN;
 		$sender->sendMessage(KnownTranslationFactory::pocketmine_command_version_serverSoftwareVersion(
 			$versionColor . VersionInfo::VERSION()->getFullVersion() . TextFormat::RESET,
 			TextFormat::GREEN . VersionInfo::GIT_HASH() . TextFormat::RESET

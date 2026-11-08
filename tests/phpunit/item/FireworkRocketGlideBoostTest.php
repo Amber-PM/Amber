@@ -129,7 +129,7 @@ class FireworkRocketGlideBoostTest extends TestCase{
 	}
 
 	public static function movementEffectProtocols() : array{
-		return [[748], [ProtocolInfo::CURRENT_PROTOCOL]];
+		return [[748], [ProtocolInfo::PROTOCOL_1_26_44], [ProtocolInfo::CURRENT_PROTOCOL]];
 	}
 
 	#[DataProvider("movementEffectProtocols")]

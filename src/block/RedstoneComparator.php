@@ -115,13 +115,17 @@ class RedstoneComparator extends Flowable implements AnalogRedstoneSignalEmitter
 		return $face === Facing::opposite($this->facing) ? $this->signalStrength : 0;
 	}
 
-	/** Compares (or subtracts) the power from the sides with the power from behind, or the container behind. */
+	/** compares or subtracts the side power and the power or measured signal behind */
 	private function computeOutput(RedstoneEngine $engine) : int{
-		$rear = $this->getRedstoneInput($engine);
-		$containerSignal = $engine->getContainerWatch()->readContainer($this->position->getSide($this->facing));
-		$engine->getContainerWatch()->watch($this->position, $containerSignal);
-		if($containerSignal !== null){
-			$rear = max($rear, $containerSignal);
+		[$measured, $throughBlock] = $engine->getContainerWatch()->readFor($this);
+		$engine->getContainerWatch()->watch($this->position, $measured);
+		if($measured === null){
+			$rear = $this->getRedstoneInput($engine);
+		}elseif($throughBlock){
+			//bedrock ignores the power of the block in between
+			$rear = $measured;
+		}else{
+			$rear = max($this->getRedstoneInput($engine), $measured);
 		}
 		$side = max(
 			$this->getRedstoneSideInput($engine, Facing::rotateY($this->facing, true)),

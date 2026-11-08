@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world\redstone\wire;
 
 use pocketmine\block\Block;
+use pocketmine\block\Piston;
 use pocketmine\block\RedstoneRepeater;
 use pocketmine\block\RedstoneTorch;
 use pocketmine\block\RedstoneWire;
@@ -169,6 +170,10 @@ final class WireTopology{
 	private static function connectsToWire(Block $block, int $face) : bool{
 		if($block instanceof RedstoneRepeater){
 			return Facing::axis($block->getFacing()) === Facing::axis($face);
+		}
+		if($block instanceof Piston){
+			//bedrock dust points into the back and sides of a piston
+			return $block->getFacing() !== Facing::opposite($face);
 		}
 		return $block instanceof RedstoneSource;
 	}

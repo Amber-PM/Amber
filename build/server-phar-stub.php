@@ -26,17 +26,22 @@ namespace pocketmine\server_phar_stub;
 use function clearstatcache;
 use function copy;
 use function define;
+use function dirname;
+use function disk_free_space;
 use function fclose;
 use function fflush;
 use function flock;
 use function fopen;
 use function fwrite;
+use function getenv;
 use function getmypid;
 use function hrtime;
+use function ini_get;
 use function is_dir;
 use function is_file;
 use function mkdir;
 use function number_format;
+use function putenv;
 use function str_replace;
 use function stream_get_contents;
 use function sys_get_temp_dir;
@@ -46,6 +51,7 @@ use const DIRECTORY_SEPARATOR;
 use const LOCK_EX;
 use const LOCK_NB;
 use const LOCK_UN;
+use const PHP_OS_FAMILY;
 
 /**
  * Finds the appropriate tmp directory to store the decompressed phar cache, accounting for potential file name
@@ -156,7 +162,41 @@ function preparePharCache(string $tmpPath, string $pharPath) : string{
 	}
 
 	lockPharCache($tmpName . ".lock");
-	return convertPharToTar($tmpName, $pharPath);
+	try{
+		return convertPharToTar($tmpName, $pharPath);
+	}catch(\Throwable $e){
+		//a half written cache only wastes the little space left
+		foreach([$tmpName . ".phar", $tmpName . ".tar", $tmpName . ".lock", $tmpName] as $file){
+			@unlink($file);
+		}
+		throw $e;
+	}
+}
+
+/**
+ * Returns the number of bytes the decompressed cache takes.
+ */
+function getPharCacheSize(string $pharPath) : int{
+	$size = 0;
+	foreach(new \RecursiveIteratorIterator(new \Phar($pharPath)) as $file){
+		$size += $file->getSize();
+	}
+	return $size;
+}
+
+//container hosts often mount a tiny tmpfs and php caches the temp dir on first use so pick it before anything asks
+$systemTmp = getenv('TMPDIR');
+$systemTmp = $systemTmp !== false && $systemTmp !== '' ? $systemTmp : '/tmp';
+if(PHP_OS_FAMILY !== 'Windows' && (string) ini_get('sys_temp_dir') === ''){
+	$free = @disk_free_space($systemTmp);
+	//the tar and a copy of the phar sit side by side while converting
+	if($free !== false && $free < getPharCacheSize(__FILE__) * 2){
+		$fallback = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'tmp';
+		if(@mkdir($fallback, 0777, true) || is_dir($fallback)){
+			putenv('TMPDIR=' . $fallback);
+			echo "Not enough space in $systemTmp, using $fallback for the phar cache\n";
+		}
+	}
 }
 
 $tmpDir = preparePharCacheDirectory();
