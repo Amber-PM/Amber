@@ -23,8 +23,18 @@ declare(strict_types=1);
 
 namespace pocketmine\world\redstone;
 
+use pocketmine\block\Block;
+use pocketmine\block\Chain;
+use pocketmine\block\ChorusFlower;
+use pocketmine\block\ChorusPlant;
+use pocketmine\block\CopperGrate;
+use pocketmine\block\Farmland;
+use pocketmine\block\GrassPath;
+use pocketmine\block\ItemFrame;
+use pocketmine\block\Piston;
 use pocketmine\block\RedstoneComparator;
 use pocketmine\block\tile\Container;
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\math\Vector3;
 use pocketmine\world\World;
 use function array_key_first;
@@ -38,7 +48,7 @@ use function min;
  * every redstone tick.
  */
 final class ContainerWatch{
-	/** @var array<int, int> comparator hash => signal it last read from the container behind it */
+	/** @var array<int, int> comparator hash => signal it last read from the container or block behind it */
 	private array $watched = [];
 
 	public function __construct(private World $world){}
@@ -55,6 +65,62 @@ final class ContainerWatch{
 		}
 		$tile = $this->world->getTileAt($x, $pos->getFloorY(), $z);
 		return $tile instanceof Container ? self::containerSignal($tile) : null;
+	}
+
+	/**
+	 * container or measurable block signal at the position or null when nothing there can be measured
+	 */
+	private function readMeasurable(Vector3 $pos) : ?int{
+		$signal = $this->readContainer($pos);
+		if($signal !== null){
+			return $signal;
+		}
+		$block = $this->world->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ());
+		return $block instanceof ComparatorSignalSource && !$block instanceof ItemFrame ? $block->getComparatorSignal() : null;
+	}
+
+	/**
+	 * what the comparator measures behind it and whether it was read through a block
+	 * bedrock reads through one comparator conducting block and ignores the power of that block
+	 *
+	 * @return array{?int, bool}
+	 */
+	public function readFor(RedstoneComparator $comparator) : array{
+		$facing = $comparator->getFacing();
+		$back = $comparator->getPosition()->getSide($facing);
+		if(!$this->world->isChunkLoaded($back->getFloorX() >> 4, $back->getFloorZ() >> 4)){
+			return [null, false];
+		}
+		$signal = $this->readMeasurable($back);
+		if($signal !== null){
+			return [$signal, false];
+		}
+		if(!self::conductsForComparator($this->world->getBlockAt($back->getFloorX(), $back->getFloorY(), $back->getFloorZ()))){
+			return [null, false];
+		}
+		$beyond = $back->getSide($facing);
+		if(!$this->world->isInWorld($beyond->getFloorX(), $beyond->getFloorY(), $beyond->getFloorZ()) || !$this->world->isChunkLoaded($beyond->getFloorX() >> 4, $beyond->getFloorZ() >> 4)){
+			return [null, false];
+		}
+		$frame = $this->world->getBlockAt($beyond->getFloorX(), $beyond->getFloorY(), $beyond->getFloorZ());
+		if($frame instanceof ItemFrame){
+			//the frame has to hang on the block in between
+			return $frame->getFacing() === $facing ? [$frame->getComparatorSignal(), true] : [null, false];
+		}
+		$signal = $this->readMeasurable($beyond);
+		return $signal !== null ? [$signal, true] : [null, false];
+	}
+
+	/** bedrock also reads through a few blocks that do not conduct power */
+	public static function conductsForComparator(Block $block) : bool{
+		return RedstoneEngine::isConductor($block) ||
+			$block instanceof Piston ||
+			$block instanceof Chain ||
+			$block instanceof Farmland ||
+			$block instanceof GrassPath ||
+			$block instanceof CopperGrate ||
+			$block instanceof ChorusPlant ||
+			$block instanceof ChorusFlower;
 	}
 
 	public function watch(Vector3 $comparator, ?int $signal) : void{
@@ -97,7 +163,7 @@ final class ContainerWatch{
 			if(!$this->world->isChunkLoaded($back->getFloorX() >> 4, $back->getFloorZ() >> 4)){
 				continue;
 			}
-			if($this->readContainer($back) !== $signal){
+			if($this->readFor($comparator)[0] !== $signal){
 				$engine->request($x, $y, $z);
 			}
 		}

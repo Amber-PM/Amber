@@ -47,6 +47,8 @@ use pocketmine\world\World;
 use function get_class;
 
 class Piston extends Transparent implements AnyFacing, PoweredByRedstone, DelayedRedstoneReceiver{
+	private const START_DELAY = 2;
+
 	protected int $facing = Facing::DOWN;
 	protected bool $extended = false;
 	protected bool $powered = false;
@@ -171,7 +173,25 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Delaye
 			$engine->schedule($this->position, 1);
 			return;
 		}
-		$isPowered = $this->receivesPower($engine);
+		if($tile instanceof PistonArm && $tile->getPendingStart() !== null){
+			//a start is already waiting so the pulse that asked for it is kept
+			$engine->schedule($this->position, self::START_DELAY);
+			return;
+		}
+		$wanted = $this->receivesPower($engine);
+		if($wanted !== $this->isExtended()){
+			//pistons start moving two ticks after the power changes
+			if($tile instanceof PistonArm){
+				$tile->setPendingStart($wanted);
+			}
+			$engine->schedule($this->position, self::START_DELAY);
+			return;
+		}
+		$this->start($engine);
+	}
+
+	private function start(RedstoneEngine $engine, ?bool $target = null) : void{
+		$isPowered = $target ?? $this->receivesPower($engine);
 		$isExtended = $this->isExtended();
 		if($isPowered !== $this->powered || $isPowered !== $isExtended){
 			$this->powered = $isPowered;
@@ -210,13 +230,16 @@ class Piston extends Transparent implements AnyFacing, PoweredByRedstone, Delaye
 		if($tile instanceof PistonArm && $tile->isMoving()){
 			if(PistonMovement::tick($tile)){
 				if(!$tile->isClosed() && $engine->getWorld()->getTile($this->position) === $tile){
+					$tile->setPendingStart(null);
 					$this->onRedstoneUpdate($engine);
 				}
 			}else{
 				$this->scheduleAnimation();
 			}
 		}elseif($tile instanceof PistonArm){
-			$this->onRedstoneUpdate($engine);
+			$target = $tile->getPendingStart();
+			$tile->setPendingStart(null);
+			$this->start($engine, $target);
 		}
 	}
 

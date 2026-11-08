@@ -14,6 +14,13 @@ if($pharPath === false || file_exists($data)){
 	fwrite(STDERR, "Artifact must exist and data directory must be new\n");
 	exit(1);
 }
+// the banner must show the version the phar was built for
+$metadata = (new Phar($pharPath))->getMetadata();
+if(!is_array($metadata) || !is_string($metadata["baseVersion"] ?? null)){
+	fwrite(STDERR, "Artifact has no baseVersion metadata\n");
+	exit(1);
+}
+$expectedVersion = $metadata["baseVersion"];
 mkdir($data, 0777, true);
 $config = yaml_parse_file(dirname(__DIR__, 2) . "/resources/pocketmine.yml");
 $config["settings"]["enable-dev-builds"] = $argv[3] === "true";
@@ -56,7 +63,7 @@ $warning = str_contains($output, "You are running a AmberPM DEVELOPMENT build.")
 	str_contains($output, "The build may have bugs, crash, corrupt your data, or break your plugins.");
 $passed = !$status["running"] && $exit === ($expectedStart ? 0 : 1) && $started === $expectedStart &&
 	$rejected === !$expectedStart && $warning === ($expectedDev && $expectedStart) &&
-	(!$started || (str_contains($output, "  AmberPM 1.6.0") && str_contains($output, "GitHub: https://github.com/Amber-PM/Amber") && str_contains($output, "This server is running AmberPM")));
+	(!$started || (str_contains($output, "  AmberPM " . $expectedVersion) && str_contains($output, "GitHub: https://github.com/Amber-PM/Amber") && str_contains($output, "This server is running AmberPM")));
 echo json_encode(["pass" => $passed, "exit" => $exit, "started" => $started, "rejected" => $rejected, "warning" => $warning, "log" => $log], JSON_PRETTY_PRINT) . PHP_EOL;
 if(!$passed){
 	fwrite(STDERR, $output . $errors);

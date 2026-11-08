@@ -1,0 +1,5 @@
+[req]
+default_bits = 2048
+distinguished_name = test_name
+
+[test_name]

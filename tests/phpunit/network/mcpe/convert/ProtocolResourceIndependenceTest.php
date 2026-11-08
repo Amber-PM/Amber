@@ -36,6 +36,7 @@ final class ProtocolResourceIndependenceTest extends TestCase{
 	public static function defaults() : iterable{
 		yield 'previous default' => [2169];
 		yield 'released 26.50 default' => [2193];
+		yield 'released 26.60 default' => [2225];
 		yield '26.50 preview as default' => [2192];
 		yield 'future default' => [9999];
 	}
@@ -48,6 +49,6 @@ final class ProtocolResourceIndependenceTest extends TestCase{
 		$output = stream_get_contents($pipes[1]);
 		fclose($pipes[1]);
 		self::assertSame(0, proc_close($process), $output);
-		self::assertSame("Validated 32 protocols\n", $output);
+		self::assertSame("Validated 33 protocols\n", $output);
 	}
 }

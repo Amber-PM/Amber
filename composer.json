@@ -49,7 +49,9 @@
       "pocketmine/raklib-ipc": "~1.0.0",
       "pocketmine/snooze": "^0.5.0",
       "ramsey/uuid": "~4.9.0",
-      "symfony/filesystem": "~6.4.0"
+      "symfony/filesystem": "~6.4.0",
+      "amber-pm/nethernet": "dev-main",
+      "php-zts": "*"
    },
    "require-dev": {
       "phpstan/phpstan": "2.1.46",
@@ -88,7 +90,7 @@
    "scripts": {
       "make-devtools": "@php -dphar.readonly=0 tests/plugins/DevTools/src/ConsoleScript.php --make ./ --relative tests/plugins/DevTools --out plugins/DevTools.phar",
       "make-server": [
-         "@composer install --no-dev --classmap-authoritative --ignore-platform-reqs",
+         "@composer install --no-dev --classmap-authoritative",
          "@php -dphar.readonly=0 build/server-phar.php"
       ],
       "update-codegen": [
@@ -99,16 +101,21 @@
          "@php build/codegen/known-translation-apis.php",
          "@php build/codegen/pocketmine-yml-property-consts.php",
          "@php build/codegen/registry-interface.php src generated"
-      ]
+      ],
+      "test:nethernet-native": "@php vendor/bin/phpunit --configuration vendor/amber-pm/nethernet/phpunit.rtc.xml.dist --bootstrap tests/phpunit/nethernet-native-bootstrap.php --fail-on-skipped --do-not-cache-result"
    },
    "repositories": [
       {
          "type": "vcs",
-         "url":  "https://github.com/Amber-PM/BedrockProtocol.git"
+         "url": "https://github.com/Amber-PM/NetherNet.git"
       },
       {
          "type": "vcs",
-         "url":  "https://github.com/Amber-PM/BedrockData.git"
+         "url": "https://github.com/Amber-PM/BedrockProtocol.git"
+      },
+      {
+         "type": "vcs",
+         "url": "https://github.com/Amber-PM/BedrockData.git"
       }
    ]
 }

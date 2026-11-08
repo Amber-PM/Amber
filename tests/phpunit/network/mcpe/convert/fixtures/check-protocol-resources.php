@@ -44,14 +44,14 @@ $source = preg_replace('/public const CURRENT_PROTOCOL = [^;]+;/', 'public const
 eval(substr($source, 5));
 require $root . '/vendor/autoload.php';
 $rows = json_decode(file_get_contents(__DIR__ . '/protocol-resources.json'), true, flags: JSON_THROW_ON_ERROR);
-Assert::assertSame([589, 594, 618, 622, 630, 649, 662, 671, 685, 686, 712, 729, 748, 766, 776, 786, 800, 818, 819, 827, 844, 859, 860, 898, 924, 944, 975, 1001, 2168, 2169, 2192, 2193], ProtocolInfo::ACCEPTED_PROTOCOL);
+Assert::assertSame([589, 594, 618, 622, 630, 649, 662, 671, 685, 686, 712, 729, 748, 766, 776, 786, 800, 818, 819, 827, 844, 859, 860, 898, 924, 944, 975, 1001, 2168, 2169, 2192, 2193, 2225], ProtocolInfo::ACCEPTED_PROTOCOL);
 Assert::assertSame(2169, WorldDataVersions::NETWORK);
 $dataDir = $root . '/vendor/vapebw/bedrock-data';
 $expectedBlocks = [];
 foreach($rows as [$protocol, $blocks, $items, $tags]){
 	$translator = BlockTranslator::loadFromProtocolId($protocol);
 	$dictionary = $translator->getBlockStateDictionary();
-	$networkIds = $protocol >= 2192 ? json_decode(file_get_contents($dataDir . '/block_network_ids-1.26.50.json'), true, flags: JSON_THROW_ON_ERROR) : null;
+	$networkIds = $protocol >= 2192 ? json_decode(file_get_contents($dataDir . '/block_network_ids' . $blocks . '.json'), true, flags: JSON_THROW_ON_ERROR) : null;
 	$key = $blocks . ($networkIds === null ? ':indexed' : ':hashed');
 	$expectedBlocks[$key] ??= serialize(BlockStateDictionary::loadFromString(file_get_contents($dataDir . '/canonical_block_states' . $blocks . '.nbt'), file_get_contents($dataDir . '/block_state_meta_map' . $blocks . '.json'), $networkIds)->getStates());
 	Assert::assertSame($expectedBlocks[$key], serialize($dictionary->getStates()), "Block resources for $protocol");
@@ -76,4 +76,4 @@ foreach(['minecraft:acacia_fence', 'minecraft:black_stained_glass_pane', 'minecr
 	Assert::assertSame(3, $item->getCount(), "World item $name");
 	Assert::assertSame($name, GlobalItemDataHandlers::getSerializer()->serializeType($item)->getName(), "World item $name");
 }
-echo "Validated 32 protocols\n";
+echo "Validated 33 protocols\n";

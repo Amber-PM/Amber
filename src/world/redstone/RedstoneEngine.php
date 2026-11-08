@@ -55,6 +55,8 @@ final class RedstoneEngine{
 	private array $queued = [];
 	/** @var array<int, true> positions last seen powered by blocks that react to changes of power (doors, TNT...) */
 	private array $lastPowered = [];
+	/** @var array<int, array<int, true>> unloaded chunk hash => block hashes waiting for it */
+	private array $parked = [];
 	private bool $active = false;
 	private int $processed = 0;
 	private int $currentTick = 0;
@@ -108,6 +110,7 @@ final class RedstoneEngine{
 		$this->entityScans = [];
 		$this->queue = new \SplQueue();
 		$this->queued = [];
+		$this->parked = [];
 		$this->scheduler->clear();
 		$this->lastPowered = [];
 		$this->wires->clear();
@@ -299,6 +302,9 @@ final class RedstoneEngine{
 		$this->budget->reset($this->maxUpdatesPerTick);
 		$this->isTicking = true;
 		try{
+			if($this->parked !== []){
+				$this->releaseParked();
+			}
 			$otherWork = $this->scheduler->hasPending() || $this->wires->hasDeferred() || !$this->queue->isEmpty();
 			$feedbackBudget = $this->budget->remaining();
 			if($otherWork){
@@ -362,6 +368,30 @@ final class RedstoneEngine{
 		}
 	}
 
+	private function releaseParked() : void{
+		foreach($this->parked as $chunkHash => $hashes){
+			$chunkX = null;
+			$chunkZ = null;
+			World::getXZ($chunkHash, $chunkX, $chunkZ);
+			if($chunkX === null || $chunkZ === null || !$this->world->isChunkLoaded($chunkX, $chunkZ)){
+				continue;
+			}
+			unset($this->parked[$chunkHash]);
+			foreach($hashes as $hash => $_){
+				World::getBlockXYZ($hash, $x, $y, $z);
+				$this->request($x, $y, $z);
+			}
+		}
+	}
+
+	public function getParkedCount() : int{
+		$count = 0;
+		foreach($this->parked as $hashes){
+			$count += count($hashes);
+		}
+		return $count;
+	}
+
 	private function processQueuedUpdates() : void{
 		$unloadedSkips = 0;
 		$unloadedSkipLimit = max(1, $this->budget->remaining());
@@ -370,6 +400,8 @@ final class RedstoneEngine{
 			unset($this->queued[$hash]);
 			World::getBlockXYZ($hash, $x, $y, $z);
 			if(!$this->world->isChunkLoaded($x >> 4, $z >> 4)){
+				//kept until the chunk is back so the update is not lost
+				$this->parked[World::chunkHash($x >> 4, $z >> 4)][$hash] = true;
 				if(++$unloadedSkips >= $unloadedSkipLimit){
 					break;
 				}

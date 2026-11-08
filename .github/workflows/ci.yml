@@ -20,7 +20,7 @@ concurrency:
 jobs:
   quality:
     name: Quality checks (PHP 8.3)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout Amber
@@ -33,9 +33,15 @@ jobs:
           install-path: ./bin
           pm-version-major: 5
 
+      - name: Build pinned NetherNet native backend for this PHP ZTS ABI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool bison re2c cmake ninja-build g++ git pkg-config
+          bash build/install-rtc.sh
+
       - name: Verify PocketMine PHP extensions
         run: |
-          php -r 'foreach ( ["pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
+          php -r 'foreach ( ["rtc", "pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
 
       - name: Validate Composer configuration and lock
         run: composer validate --no-interaction
@@ -49,6 +55,28 @@ jobs:
 
       - name: Install locked dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Verify installed NetherNet native API
+        run: php -r 'require "vendor/autoload.php"; \amber\nethernet\backend\ExtRtcPeer::assertAvailable();'
+
+      - name: Run complete NetherNet native suite (locked fixtures, real backend)
+        run: composer test:nethernet-native
+
+      - name: Stage and verify relocatable Linux x86_64 PHP runtime
+        run: |
+          sudo apt-get install -y patchelf
+          php_prefix=$(dirname "$(dirname "$(readlink -f "$(command -v php)")")")
+          bash build/package-linux-runtime.sh "$php_prefix" .native-rtc "$RUNNER_TEMP/amber-runtime-artifacts"
+          mkdir -p "$RUNNER_TEMP/amber-runtime-moved"
+          tar -xzf "$RUNNER_TEMP/amber-runtime-artifacts/amber-php-linux-x86_64-staging.tar.gz" -C "$RUNNER_TEMP/amber-runtime-moved"
+          env -u PHPRC -u LD_LIBRARY_PATH -u PHP_INI_SCAN_DIR "$RUNNER_TEMP/amber-runtime-moved/bin/php7/bin/php" vendor/bin/phpunit --configuration vendor/amber-pm/nethernet/phpunit.rtc.xml.dist --bootstrap tests/phpunit/nethernet-native-bootstrap.php --fail-on-skipped --do-not-cache-result
+
+      - name: Save Linux runtime candidate for release review
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: amber-php-linux-x86_64-staging
+          path: ${{ runner.temp }}/amber-runtime-artifacts/*
+          if-no-files-found: error
 
       - name: Check PHP syntax
         shell: bash
@@ -90,9 +118,15 @@ jobs:
           install-path: ./bin
           pm-version-major: 5
 
+      - name: Build pinned NetherNet native backend for this PHP ZTS ABI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool bison re2c cmake ninja-build g++ git pkg-config
+          bash build/install-rtc.sh
+
       - name: Verify PocketMine PHP extensions
         run: |
-          php -r 'foreach ( ["pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
+          php -r 'foreach ( ["rtc", "pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
 
       - name: Cache Composer packages
         uses: actions/cache@v5
@@ -103,6 +137,12 @@ jobs:
 
       - name: Install locked dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Verify installed NetherNet native API
+        run: php -r 'require "vendor/autoload.php"; \amber\nethernet\backend\ExtRtcPeer::assertAvailable();'
+
+      - name: Run complete NetherNet native suite (locked fixtures, real backend)
+        run: composer test:nethernet-native
 
       - name: Verify source and generated PHP syntax
         shell: bash
@@ -134,9 +174,15 @@ jobs:
           install-path: ./bin
           pm-version-major: 5
 
+      - name: Build pinned NetherNet native backend for this PHP ZTS ABI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool bison re2c cmake ninja-build g++ git pkg-config
+          bash build/install-rtc.sh
+
       - name: Verify PocketMine PHP extensions
         run: |
-          php -r 'foreach ( ["pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
+          php -r 'foreach ( ["rtc", "pmmpthread", "encoding", "crypto", "libdeflate", "morton", "chunkutils2", "leveldb", "gmp", "igbinary", "sockets", "curl", "yaml", "mbstring", "simplexml", "zip"] as $extension ) { if ( ! extension_loaded( $extension ) ) { fwrite( STDERR, "Missing PHP extension: $extension\n" ); exit( 1 ); } } if ( ! PHP_ZTS ) { fwrite( STDERR, "PHP must be built with ZTS enabled\n" ); exit( 1 ); }'
 
       - name: Cache Composer packages
         uses: actions/cache@v5
@@ -174,6 +220,7 @@ jobs:
           else
             php build/verify-phar.php --phar=PocketMine-MP.phar
           fi
+          php -r '$phar = new Phar("PocketMine-MP.phar"); $phar->getStub(); require "phar://PocketMine-MP.phar/vendor/autoload.php"; if(!class_exists(\amber\nethernet\Transport::class) || !interface_exists(\amber\nethernet\SignalingPeerConnection::class)){exit(1);} \amber\nethernet\backend\ExtRtcPeer::assertAvailable();'
 
       - name: Smoke test release candidate
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate_tag != '' }}

@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\ChiseledBookshelf as TileChiseledBookshelf;
 use pocketmine\block\utils\ChiseledBookshelfSlot;
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\block\utils\FacesOppositePlacingPlayerTrait;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\HorizontalFacingTrait;
@@ -39,7 +40,7 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use function spl_object_id;
 
-class ChiseledBookshelf extends Opaque implements HorizontalFacing{
+class ChiseledBookshelf extends Opaque implements HorizontalFacing, ComparatorSignalSource{
 	use HorizontalFacingTrait;
 	use FacesOppositePlacingPlayerTrait;
 
@@ -183,5 +184,9 @@ class ChiseledBookshelf extends Opaque implements HorizontalFacing{
 
 	public function isAffectedBySilkTouch() : bool{
 		return true;
+	}
+
+	public function getComparatorSignal() : int{
+		return $this->lastInteractedSlot === null ? 0 : $this->lastInteractedSlot->value + 1;
 	}
 }

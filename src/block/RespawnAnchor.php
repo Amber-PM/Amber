@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ComparatorSignalSource;
 use pocketmine\data\runtime\RuntimeDataDescriber;
 use pocketmine\event\block\BlockPreExplodeEvent;
 use pocketmine\event\player\PlayerRespawnAnchorUseEvent;
@@ -33,11 +34,13 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
 use pocketmine\world\Explosion;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\Position;
 use pocketmine\world\sound\RespawnAnchorChargeSound;
 use pocketmine\world\sound\RespawnAnchorSetSpawnSound;
+use function get_class;
 
-final class RespawnAnchor extends Opaque{
+final class RespawnAnchor extends Opaque implements ComparatorSignalSource{
 	private const MIN_CHARGES = 0;
 	private const MAX_CHARGES = 4;
 
@@ -103,6 +106,14 @@ final class RespawnAnchor extends Opaque{
 	}
 
 	private function explode(?Player $player) : void{
+		try{
+			$rules = $this->position->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class && !$rules->getBool(GameRules::RESPAWN_BLOCKS_EXPLODE)){
+				return;
+			}
+		}catch(\Throwable){
+		}
+
 		$ev = new BlockPreExplodeEvent($this, 5, $player);
 		$ev->setIncendiary(true);
 
@@ -120,5 +131,15 @@ final class RespawnAnchor extends Opaque{
 			$explosion->explodeA();
 		}
 		$explosion->explodeB();
+	}
+
+	public function getComparatorSignal() : int{
+		return match($this->charges){
+			0 => 0,
+			1 => 3,
+			2 => 7,
+			3 => 11,
+			default => 15,
+		};
 	}
 }

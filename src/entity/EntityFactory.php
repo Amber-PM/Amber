@@ -45,6 +45,7 @@ use pocketmine\entity\projectile\Arrow;
 use pocketmine\entity\projectile\Egg;
 use pocketmine\entity\projectile\EnderPearl;
 use pocketmine\entity\projectile\ExperienceBottle;
+use pocketmine\entity\projectile\FishingHook;
 use pocketmine\entity\projectile\IceBomb;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
@@ -55,7 +56,10 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\NbtException;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\DoubleTag;
+use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
+use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\ShortTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\utils\SingletonTrait;
@@ -140,6 +144,10 @@ final class EntityFactory{
 		$this->register(IceBomb::class, function(World $world, CompoundTag $nbt) : IceBomb{
 			return new IceBomb(Helper::parseLocation($nbt, $world), null, $nbt);
 		}, ['minecraft:ice_bomb']);
+
+		$this->register(FishingHook::class, function(World $world, CompoundTag $nbt) : FishingHook{
+			return new FishingHook(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['FishingHook', 'minecraft:fishing_hook']);
 
 		$this->register(ItemEntity::class, function(World $world, CompoundTag $nbt) : ItemEntity{
 			$itemTag = $nbt->getCompoundTag(ItemEntity::TAG_ITEM);
@@ -320,5 +328,52 @@ final class EntityFactory{
 			return $this->saveNames[$class];
 		}
 		throw new \InvalidArgumentException("Entity $class is not registered");
+	}
+
+	/**
+	 * Creates a new instance of an entity given its save identifier or alias.
+	 */
+	public function create(string $identifier, Location $location, ?CompoundTag $nbt = null) : ?Entity{
+		$cleanId = $identifier;
+		$func = $this->creationFuncs[$cleanId] ?? null;
+		if($func === null){
+			if(str_starts_with($cleanId, "minecraft:")){
+				$func = $this->creationFuncs[substr($cleanId, 10)] ?? null;
+			}else{
+				$func = $this->creationFuncs["minecraft:" . $cleanId] ?? null;
+			}
+		}
+
+		if($func === null){
+			$lower = strtolower($cleanId);
+			foreach($this->creationFuncs as $saveName => $f){
+				if(strtolower((string) $saveName) === $lower || strtolower((string) $saveName) === "minecraft:" . $lower){
+					$func = $f;
+					break;
+				}
+			}
+		}
+
+		if($func === null){
+			return null;
+		}
+
+		$nbt ??= CompoundTag::create();
+		$nbt->setTag("Pos", new ListTag([
+			new DoubleTag($location->x),
+			new DoubleTag($location->y),
+			new DoubleTag($location->z)
+		]));
+		$nbt->setTag("Motion", new ListTag([
+			new DoubleTag(0.0),
+			new DoubleTag(0.0),
+			new DoubleTag(0.0)
+		]));
+		$nbt->setTag("Rotation", new ListTag([
+			new FloatTag($location->yaw),
+			new FloatTag($location->pitch)
+		]));
+
+		return $func($location->getWorld(), $nbt);
 	}
 }

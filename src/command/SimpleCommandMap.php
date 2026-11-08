@@ -36,6 +36,7 @@ use pocketmine\command\defaults\DumpMemoryCommand;
 use pocketmine\command\defaults\EffectCommand;
 use pocketmine\command\defaults\EnchantCommand;
 use pocketmine\command\defaults\GamemodeCommand;
+use pocketmine\command\defaults\GameRuleCommand;
 use pocketmine\command\defaults\GarbageCollectorCommand;
 use pocketmine\command\defaults\GiveCommand;
 use pocketmine\command\defaults\HelpCommand;
@@ -58,6 +59,7 @@ use pocketmine\command\defaults\SetWorldSpawnCommand;
 use pocketmine\command\defaults\SpawnpointCommand;
 use pocketmine\command\defaults\StatusCommand;
 use pocketmine\command\defaults\StopCommand;
+use pocketmine\command\defaults\SummonCommand;
 use pocketmine\command\defaults\TeleportCommand;
 use pocketmine\command\defaults\TellCommand;
 use pocketmine\command\defaults\TimeCommand;
@@ -66,6 +68,7 @@ use pocketmine\command\defaults\TitleCommand;
 use pocketmine\command\defaults\TransferServerCommand;
 use pocketmine\command\defaults\VanillaCommand;
 use pocketmine\command\defaults\VersionCommand;
+use pocketmine\command\defaults\WeatherCommand;
 use pocketmine\command\defaults\WhitelistCommand;
 use pocketmine\command\defaults\WorldCommand;
 use pocketmine\command\defaults\XpCommand;
@@ -111,6 +114,7 @@ class SimpleCommandMap implements CommandMap{
 			new EffectCommand(),
 			new EnchantCommand(),
 			new GamemodeCommand(),
+			new GameRuleCommand(),
 			new GarbageCollectorCommand(),
 			new GiveCommand(),
 			new HelpCommand(),
@@ -134,6 +138,7 @@ class SimpleCommandMap implements CommandMap{
 			new SpawnpointCommand(),
 			new StatusCommand(),
 			new StopCommand(),
+			new SummonCommand(),
 			new TeleportCommand(),
 			new TellCommand(),
 			new TimeCommand(),
@@ -141,6 +146,7 @@ class SimpleCommandMap implements CommandMap{
 			new TitleCommand(),
 			new TransferServerCommand(),
 			new VersionCommand(),
+			new WeatherCommand(),
 			new WhitelistCommand(),
 			new WorldCommand(),
 			new XpCommand(),

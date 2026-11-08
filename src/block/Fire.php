@@ -30,7 +30,9 @@ use pocketmine\block\utils\SupportType;
 use pocketmine\event\block\BlockBurnEvent;
 use pocketmine\math\Facing;
 use pocketmine\world\format\Chunk;
+use pocketmine\world\gamerule\GameRules;
 use pocketmine\world\World;
+use function get_class;
 use function intdiv;
 use function max;
 use function min;
@@ -66,6 +68,14 @@ class Fire extends BaseFire implements Ageable{
 	}
 
 	public function onRandomTick() : void{
+		try{
+			$rules = $this->position->getWorld()->getGameRules();
+			if($rules !== null && get_class($rules) === GameRules::class && !$rules->getBool(GameRules::DO_FIRE_TICK)){
+				return;
+			}
+		}catch(\Throwable){
+		}
+
 		$down = $this->getSide(Facing::DOWN);
 
 		$result = null;
