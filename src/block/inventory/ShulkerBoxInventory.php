@@ -24,7 +24,10 @@ declare(strict_types=1);
 namespace pocketmine\block\inventory;
 
 use pocketmine\block\BlockTypeIds;
+use pocketmine\inventory\Inventory;
 use pocketmine\inventory\SimpleInventory;
+use pocketmine\inventory\transaction\action\validator\CallbackSlotValidator;
+use pocketmine\inventory\transaction\TransactionValidationException;
 use pocketmine\item\Item;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\network\mcpe\protocol\BlockEventPacket;
@@ -40,6 +43,9 @@ class ShulkerBoxInventory extends SimpleInventory implements BlockInventory{
 	public function __construct(Position $holder){
 		$this->holder = $holder;
 		parent::__construct(27);
+		$this->validators->add(new CallbackSlotValidator(static function(Inventory $inventory, Item $item, int $slot) : ?TransactionValidationException{
+			return self::isShulkerBox($item) ? new TransactionValidationException("Shulker boxes cannot be placed inside shulker boxes") : null;
+		}));
 	}
 
 	protected function getOpenSound() : Sound{
@@ -50,9 +56,13 @@ class ShulkerBoxInventory extends SimpleInventory implements BlockInventory{
 		return new ShulkerBoxCloseSound();
 	}
 
-	public function canAddItem(Item $item) : bool{
+	private static function isShulkerBox(Item $item) : bool{
 		$blockTypeId = ItemTypeIds::toBlockTypeId($item->getTypeId());
-		if($blockTypeId === BlockTypeIds::SHULKER_BOX || $blockTypeId === BlockTypeIds::DYED_SHULKER_BOX){
+		return $blockTypeId === BlockTypeIds::SHULKER_BOX || $blockTypeId === BlockTypeIds::DYED_SHULKER_BOX;
+	}
+
+	public function canAddItem(Item $item) : bool{
+		if(self::isShulkerBox($item)){
 			return false;
 		}
 		return parent::canAddItem($item);
