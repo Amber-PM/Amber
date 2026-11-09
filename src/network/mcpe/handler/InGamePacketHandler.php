@@ -139,6 +139,7 @@ class InGamePacketHandler extends PacketHandler{
 	//allowing input beyond 256 chars. Use a slightly higher bounded soft limit to
 	//prevent rejected edits while still mitigating book-bomb attacks
 	private const PAGE_LENGTH_SOFT_LIMIT_CHARS = 512;
+	private const MAX_BOOK_PAGES = 50;
 
 	protected float $lastRightClickTime = 0.0;
 	protected ?UseItemTransactionData $lastRightClickData = null;
@@ -907,6 +908,10 @@ class InGamePacketHandler extends PacketHandler{
 				if($packet->pageNumber < 0){
 					throw new PacketHandlingException("Page number cannot be negative");
 				}
+				if($packet->pageNumber >= self::MAX_BOOK_PAGES && !$newBook->pageExists($packet->pageNumber)){
+					//setPageText() would allocate every page up to this number before the page count limit is checked
+					return false;
+				}
 				$newBook->setPageText($packet->pageNumber, $text);
 				$modifiedPages[] = $packet->pageNumber;
 				break;
@@ -932,6 +937,10 @@ class InGamePacketHandler extends PacketHandler{
 					throw new PacketHandlingException("Page numbers cannot be negative");
 				}
 				if(!$newBook->pageExists($packet->pageNumber) || !$newBook->pageExists($packet->secondaryPageNumber)){
+					if(max($packet->pageNumber, $packet->secondaryPageNumber) >= self::MAX_BOOK_PAGES){
+						//addPage() would allocate every page up to this number before the page count limit is checked
+						return false;
+					}
 					//the client will create pages on its own without telling us until it tries to switch them
 					$newBook->addPage(max($packet->pageNumber, $packet->secondaryPageNumber));
 				}
@@ -969,7 +978,7 @@ class InGamePacketHandler extends PacketHandler{
 		 */
 		$oldPageCount = count($oldBook->getPages());
 		$newPageCount = count($newBook->getPages());
-		if(($newPageCount > $oldPageCount && $newPageCount > 50)){
+		if(($newPageCount > $oldPageCount && $newPageCount > self::MAX_BOOK_PAGES)){
 			$this->session->getLogger()->debug("Cancelled book edit due to adding too many pages (new page count would be $newPageCount)");
 			$cancel = true;
 		}
