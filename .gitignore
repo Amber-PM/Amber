@@ -60,3 +60,5 @@ Documentation/*
 
 # Native release build inputs and products
 /.native-rtc/
+
+.phpactor.json
