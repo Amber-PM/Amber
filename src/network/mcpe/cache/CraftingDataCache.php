@@ -161,12 +161,10 @@ final class CraftingDataCache{
 				FurnaceType::CAMPFIRE => FurnaceRecipeBlockName::CAMPFIRE,
 				FurnaceType::SOUL_CAMPFIRE => FurnaceRecipeBlockName::SOUL_CAMPFIRE
 			};
-			if($this->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20){
-				$recipeNetId++;
-			}
 			foreach($manager->getFurnaceRecipeManager($furnaceType)->getAll() as $recipe){
 				try{
 					if($this->getProtocolId() >= ProtocolInfo::PROTOCOL_1_26_20){
+						$recipeNetId++;
 						$shapelessRecipes[] = new ProtocolShapelessRecipe(
 							BE::packUnsignedInt($recipeNetId), //TODO: this should probably be changed to something human-readable
 							[$converter->coreRecipeIngredientToNet($recipe->getInput())],
