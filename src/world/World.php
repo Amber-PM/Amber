@@ -116,6 +116,7 @@ use pocketmine\world\particle\ItemParticle;
 use pocketmine\world\particle\Particle;
 use pocketmine\world\particle\ProtocolParticle;
 use pocketmine\world\redstone\RedstoneEngine;
+use pocketmine\world\weather\WeatherEngine;
 use pocketmine\world\shape\Shape;
 use pocketmine\world\shape\ShapeGroup;
 use pocketmine\world\shape\ShapeHandle;
@@ -339,6 +340,7 @@ class World implements ChunkManager{
 	private \SplQueue $neighbourBlockUpdateQueue;
 	private ?RedstoneEngine $redstone = null;
 	private ?HopperTicker $hopperTicker = null;
+	private WeatherEngine $weather;
 	private array $movingBlocksByChunk = [];
 	/**
 	 * @var true[] blockhash => dummy
@@ -527,6 +529,7 @@ class World implements ChunkManager{
 		$cfg = $this->server->getConfigGroup();
 		$this->damageY = $cfg->getPropertyInt(YmlServerProperties::LEVEL_SETTINGS_MIN_Y, 0);
 		$this->hopperTicker = new HopperTicker($this);
+		$this->weather = new WeatherEngine($this);
 		if($cfg->getPropertyBool(YmlServerProperties::REDSTONE_ENABLED, true)){
 			$this->redstone = new RedstoneEngine($this, max(1, $cfg->getPropertyInt(YmlServerProperties::REDSTONE_MAX_UPDATES_PER_TICK, 2000)));
 		}
@@ -1123,6 +1126,18 @@ class World implements ChunkManager{
 		return $this->hopperTicker;
 	}
 
+	public function getWeather() : WeatherEngine{
+		return $this->weather;
+	}
+
+	public function isRaining() : bool{
+		return $this->weather->isRaining();
+	}
+
+	public function isThundering() : bool{
+		return $this->weather->isThundering();
+	}
+
 	protected function actuallyDoTick(int $currentTick) : void{
 		if(!$this->stopTime){
 			//this simulates an overflow, as would happen in any language which doesn't do stupid things to var types
@@ -1132,6 +1147,8 @@ class World implements ChunkManager{
 				$this->time++;
 			}
 		}
+
+		$this->weather->tick();
 
 		if(isset($this->temporaryShapeTimers[$currentTick])){
 			foreach($this->temporaryShapeTimers[$currentTick] as $handle){
@@ -2005,7 +2022,9 @@ class World implements ChunkManager{
 	public function computeSkyLightReduction() : int{
 		$percentage = max(0, min(1, -(cos($this->getSunAngleRadians()) * 2 - 0.5)));
 
-		//TODO: check rain and thunder level
+		if($this->weather->isRaining()){
+			$percentage = max($percentage, (float) ($this->weather->getRainLevel() * 0.3));
+		}
 
 		return (int) ($percentage * 11);
 	}
