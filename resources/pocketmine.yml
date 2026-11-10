@@ -92,6 +92,11 @@ network:
   #Threshold for batching packets, in bytes. Only these packets will be compressed
   #Set to 0 to compress everything, -1 to disable.
   batch-threshold: 256
+  #Compression algorithm for network batches: zlib (default) or snappy.
+  #Snappy needs ext-snappy (falls back to zlib if missing). It uses far less CPU than zlib, but sends about 1.2x the bytes
+  #on small batches and about 2x on chunk data, so only use it if the server is CPU-bound and has bandwidth to spare.
+  #compression-level is ignored with snappy; batch-threshold still applies.
+  compression-algorithm: zlib
   #Compression level used when sending batched packets. Higher = more CPU, less bandwidth usage
   compression-level: 6
   #Use AsyncTasks for compression during the main game session. Increases latency, but may reduce main thread load

@@ -56,6 +56,7 @@ use pocketmine\network\mcpe\auth\AuthKeyProvider;
 use pocketmine\network\mcpe\compression\CompressBatchPromise;
 use pocketmine\network\mcpe\compression\CompressBatchTask;
 use pocketmine\network\mcpe\compression\Compressor;
+use pocketmine\network\mcpe\compression\SnappyCompressor;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\encryption\EncryptionContext;
@@ -281,6 +282,7 @@ class Server{
 	private AuthKeyProvider $authKeyProvider;
 
 	private Network $network;
+	private Compressor $networkCompressor;
 	private bool $networkCompressionAsync = true;
 	private int $networkCompressionAsyncThreshold = self::DEFAULT_ASYNC_COMPRESSION_THRESHOLD;
 
@@ -1038,6 +1040,21 @@ class Server{
 				$netCompressionLevel = 6;
 			}
 			ZlibCompressor::setInstance(new ZlibCompressor($netCompressionLevel, $netCompressionThreshold, ZlibCompressor::DEFAULT_MAX_DECOMPRESSION_SIZE));
+
+			$netCompressionAlgorithm = strtolower($this->configGroup->getPropertyString(Yml::NETWORK_COMPRESSION_ALGORITHM, "zlib"));
+			if($netCompressionAlgorithm === "snappy"){
+				if(SnappyCompressor::isAvailable()){
+					$this->networkCompressor = new SnappyCompressor($netCompressionThreshold);
+				}else{
+					$this->logger->warning("network.compression-algorithm is set to snappy, but ext-snappy is not loaded. Falling back to zlib");
+					$this->networkCompressor = ZlibCompressor::getInstance();
+				}
+			}else{
+				if($netCompressionAlgorithm !== "zlib"){
+					$this->logger->warning("Invalid network compression algorithm \"$netCompressionAlgorithm\" set, setting to default zlib");
+				}
+				$this->networkCompressor = ZlibCompressor::getInstance();
+			}
 
 			$this->networkCompressionAsync = $this->configGroup->getPropertyBool(Yml::NETWORK_ASYNC_COMPRESSION, true);
 			$this->networkCompressionAsyncThreshold = max(
@@ -1999,6 +2016,13 @@ class Server{
 
 	public function getNetwork() : Network{
 		return $this->network;
+	}
+
+	/**
+	 * Returns the compressor negotiated with clients for network batches (selected by network.compression-algorithm).
+	 */
+	public function getNetworkCompressor() : Compressor{
+		return $this->networkCompressor;
 	}
 
 	public function getMemoryManager() : MemoryManager{

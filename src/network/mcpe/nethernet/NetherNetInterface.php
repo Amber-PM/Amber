@@ -35,7 +35,6 @@ use amber\nethernet\SignalingPeerConnection;
 use amber\nethernet\Transport;
 use amber\nethernet\TransportListener;
 use pocketmine\network\AdvancedNetworkInterface;
-use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\EntityEventBroadcaster;
 use pocketmine\network\mcpe\NetworkSession;
@@ -210,7 +209,7 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 		$this->clients[$id] = ['connection' => $connection, 'sender' => $sender, 'address' => $address, 'session' => null];
 		$this->connectionsByIp[$address->ip] = ($this->connectionsByIp[$address->ip] ?? 0) + 1;
 		try{
-			$session = $this->sessionFactory !== null ? ($this->sessionFactory)($connection, $sender, $address) : new NetworkSession($this->server, $this->network->getSessionManager(), PacketPool::getInstance(), $sender, $this->broadcaster, $this->entities, ZlibCompressor::getInstance(), $this->converter, $address->ip, $address->port, new NetherNetSessionPolicy($connection->getIdentity()));
+			$session = $this->sessionFactory !== null ? ($this->sessionFactory)($connection, $sender, $address) : new NetworkSession($this->server, $this->network->getSessionManager(), PacketPool::getInstance(), $sender, $this->broadcaster, $this->entities, $this->server->getNetworkCompressor(), $this->converter, $address->ip, $address->port, new NetherNetSessionPolicy($connection->getIdentity()));
 		}catch(\Throwable $e){
 			$this->release($id, 'NetherNet session construction failed');
 			$this->logger->error('NetherNet session construction failed (' . get_class($e) . ')');
