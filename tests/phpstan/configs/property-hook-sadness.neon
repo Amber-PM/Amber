@@ -57,5 +57,5 @@ parameters:
 		-
 			message: '#^Cannot unset property pocketmine\\world\\format\\io\\leveldb\\LevelDB\:\:\$db because it might have hooks in a subclass\.$#'
 			identifier: unset.possiblyHookedProperty
-			count: 1
+			count: 2
 			path: ../../../src/world/format/io/leveldb/LevelDB.php

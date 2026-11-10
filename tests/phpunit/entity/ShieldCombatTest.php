@@ -60,7 +60,7 @@ class ShieldCombatTest extends TestCase{
 		$this->testWorld = $world;
 	}
 
-	private function createHuman(float $yaw = 0.0, Vector3 $pos = null, bool $expectBlockedFeedback = false) : Human{
+	private function createHuman(float $yaw = 0.0, ?Vector3 $pos = null, bool $expectBlockedFeedback = false) : Human{
 		static $idCounter = 1;
 		$id = $idCounter++;
 		if($expectBlockedFeedback){

@@ -23,7 +23,7 @@ use ReflectionProperty;
 
 class ShieldAxeDisablingTest extends TestCase{
 
-	private function createHuman(float $yaw = 0.0, Vector3 $pos = null) : Human{
+	private function createHuman(float $yaw = 0.0, ?Vector3 $pos = null) : Human{
 		static $idCounter = 100;
 		$human = (new ReflectionClass(Human::class))->newInstanceWithoutConstructor();
 		(new ReflectionProperty(Entity::class, "id"))->setValue($human, $idCounter++);

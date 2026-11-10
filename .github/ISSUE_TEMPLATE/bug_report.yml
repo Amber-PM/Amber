@@ -31,7 +31,7 @@ body:
     attributes:
       label: PHP Version & OS
       description: Provide the output of `php -v` and your Operating System.
-      placeholder: "PHP 8.2.30 (Linux x86_64 / Windows 11)"
+      placeholder: "PHP 8.4.27 (Linux x86_64 / Windows 11)"
     validations:
       required: true
 

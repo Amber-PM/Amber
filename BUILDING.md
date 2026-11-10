@@ -16,7 +16,7 @@ To launch, use the startup scripts from the AmberPM source checkout (`start.cmd`
 
 ## Build from stable source
 
-Requirements: Git, Composer, and PHP **8.1 or newer**, 64-bit, with the extensions listed in `composer.json`.
+Requirements: Git, Composer, and PHP **8.4 or newer**, 64-bit, with the extensions listed in `composer.json`.
 
 ```sh
 git clone --branch main https://github.com/Amber-PM/Amber.git

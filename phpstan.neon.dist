@@ -1,3 +1,6 @@
+includes:
+	- tests/phpstan/configs/property-hook-sadness.neon
+
 parameters:
 	level: 2
 	checkMissingCallableSignature: false

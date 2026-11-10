@@ -22,7 +22,7 @@ body:
     attributes:
       label: PHP Version & OS
       description: Output of `php -v` and your host OS.
-      placeholder: "PHP 8.2.30 (Linux x86_64)"
+      placeholder: "PHP 8.4.27 (Linux x86_64)"
     validations:
       required: true
 
