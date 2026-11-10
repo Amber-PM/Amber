@@ -76,6 +76,7 @@ final class YmlServerProperties{
 	public const EDUCATION_ENABLED = 'education.enabled';
 	public const LEVEL_SETTINGS = 'level-settings';
 	public const LEVEL_SETTINGS_DEFAULT_FORMAT = 'level-settings.default-format';
+	public const LEVEL_SETTINGS_LEVELDB_BLOCK_CACHE_MB = 'level-settings.leveldb-block-cache-mb';
 	public const LEVEL_SETTINGS_MIN_Y = 'level-settings.min-y';
 	public const MEMORY = 'memory';
 	public const MEMORY_ASYNC_WORKER_HARD_LIMIT = 'memory.async-worker-hard-limit';

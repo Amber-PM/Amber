@@ -40,14 +40,32 @@ final class WorldProviderManager{
 
 	private WritableWorldProviderManagerEntry $default;
 
+	/** Block cache size in bytes given to every LevelDB world opened from now on. 0 keeps the LevelDB default. */
+	private int $levelDbBlockCacheBytes = 0;
+
 	public function __construct(){
-		$leveldb = new WritableWorldProviderManagerEntry(LevelDB::isValid(...), fn(string $path, \Logger $logger) => new LevelDB($path, $logger), LevelDB::generate(...));
+		$leveldb = new WritableWorldProviderManagerEntry(LevelDB::isValid(...), fn(string $path, \Logger $logger) => new LevelDB($path, $logger, $this->levelDbBlockCacheBytes), LevelDB::generate(...));
 		$this->default = $leveldb;
 		$this->addProvider($leveldb, "leveldb");
 
 		$this->addProvider(new ReadOnlyWorldProviderManagerEntry(Anvil::isValid(...), fn(string $path, \Logger $logger) => new Anvil($path, $logger)), "anvil");
 		$this->addProvider(new ReadOnlyWorldProviderManagerEntry(McRegion::isValid(...), fn(string $path, \Logger $logger) => new McRegion($path, $logger)), "mcregion");
 		$this->addProvider(new ReadOnlyWorldProviderManagerEntry(PMAnvil::isValid(...), fn(string $path, \Logger $logger) => new PMAnvil($path, $logger)), "pmanvil");
+	}
+
+	/**
+	 * Sets the size of the LevelDB block cache of each world opened after this call. The memory is native, not counted
+	 * in the PHP memory limit, and is used per world. 0 keeps the LevelDB default (8 MB).
+	 */
+	public function setLevelDbBlockCacheBytes(int $bytes) : void{
+		if($bytes < 0){
+			throw new \InvalidArgumentException("Block cache size must not be negative");
+		}
+		$this->levelDbBlockCacheBytes = $bytes;
+	}
+
+	public function getLevelDbBlockCacheBytes() : int{
+		return $this->levelDbBlockCacheBytes;
 	}
 
 	/**

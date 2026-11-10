@@ -1129,6 +1129,12 @@ class Server{
 			$this->pluginManager->registerInterface(new ScriptPluginLoader());
 
 			$providerManager = new WorldProviderManager();
+			$levelDbBlockCacheMb = $this->configGroup->getPropertyInt(Yml::LEVEL_SETTINGS_LEVELDB_BLOCK_CACHE_MB, 0);
+			if($levelDbBlockCacheMb < 0 || $levelDbBlockCacheMb > 4096){
+				$this->logger->warning("Invalid level-settings.leveldb-block-cache-mb $levelDbBlockCacheMb (expected 0 to 4096), using the LevelDB default");
+				$levelDbBlockCacheMb = 0;
+			}
+			$providerManager->setLevelDbBlockCacheBytes($levelDbBlockCacheMb * 1024 * 1024);
 			if(
 				($format = $providerManager->getProviderByName($formatName = $this->configGroup->getPropertyString(Yml::LEVEL_SETTINGS_DEFAULT_FORMAT, ""))) !== null &&
 				$format instanceof WritableWorldProviderManagerEntry

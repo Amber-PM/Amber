@@ -87,6 +87,9 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 
 	protected \LevelDB $db;
 
+	/** Block cache size in bytes used whenever the database is (re)opened. 0 means the LevelDB default. */
+	private int $blockCacheBytes = 0;
+
 	private static function checkForLevelDBExtension() : void{
 		if(!extension_loaded('leveldb')){
 			throw new UnsupportedWorldFormatException("The leveldb PHP extension is required to use this world format");
@@ -98,21 +101,50 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 	}
 
 	/**
-	 * @throws \LevelDBException
+	 * Options used to open the database. The extension ignores option names it does not know, so a misspelled key
+	 * would silently do nothing; the tests pin the names used here.
+	 *
+	 * @param int $blockCacheBytes Size of the block cache in bytes. 0 keeps the LevelDB default (8 MB).
+	 *
+	 * @return array<string, int>
+	 * @internal
 	 */
-	private static function createDB(string $path) : \LevelDB{
-		return new \LevelDB(Path::join($path, "db"), [
+	public static function getDatabaseOptions(int $blockCacheBytes = 0) : array{
+		if($blockCacheBytes < 0){
+			throw new \InvalidArgumentException("Block cache size must not be negative");
+		}
+		$options = [
 			"compression" => LEVELDB_ZLIB_RAW_COMPRESSION,
 			"block_size" => 64 * 1024 //64KB, big enough for most chunks
-		]);
+		];
+		if($blockCacheBytes > 0){
+			$options["block_cache_size"] = $blockCacheBytes;
+		}
+		return $options;
 	}
 
-	public function __construct(string $path, \Logger $logger){
+	/**
+	 * @throws \LevelDBException
+	 */
+	private static function createDB(string $path, int $blockCacheBytes = 0) : \LevelDB{
+		return new \LevelDB(Path::join($path, "db"), self::getDatabaseOptions($blockCacheBytes));
+	}
+
+	/**
+	 * @param int $blockCacheBytes Size of this world's LevelDB block cache in bytes (native memory, outside the PHP
+	 *                             memory limit). 0 keeps the LevelDB default of 8 MB. A larger cache makes chunk loading
+	 *                             faster on worlds that do not fit in it.
+	 */
+	public function __construct(string $path, \Logger $logger, int $blockCacheBytes = 0){
 		self::checkForLevelDBExtension();
+		if($blockCacheBytes < 0){
+			throw new \InvalidArgumentException("Block cache size must not be negative");
+		}
 		parent::__construct($path, $logger);
+		$this->blockCacheBytes = $blockCacheBytes;
 
 		try{
-			$this->db = self::createDB($path);
+			$this->db = self::createDB($path, $blockCacheBytes);
 		}catch(\LevelDBException $e){
 			//we can't tell the difference between errors caused by bad permissions and actual corruption :(
 			throw new CorruptedWorldException(trim($e->getMessage()), 0, $e);
@@ -852,7 +884,7 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 		try{
 			$capture();
 		}finally{
-			$this->db = self::createDB($this->getPath());
+			$this->db = self::createDB($this->getPath(), $this->blockCacheBytes);
 		}
 	}
 

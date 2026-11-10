@@ -135,6 +135,11 @@ level-settings:
   #The minimum Y level an entity can go before taking damage from the void
   #Default PM sets this as -80 but NetherGames makes this configurable and the default is 0
   min-y: 0
+  #Size in MB of the LevelDB block cache that each LevelDB world keeps in memory (0 to 4096).
+  #0 keeps the LevelDB default of 8 MB. A larger cache can speed up chunk loading on worlds that are bigger than the
+  #cache, at the cost of memory: it is native memory, not counted in the PHP memory limits, and every world can use up
+  #to this amount. Measure before raising it. Read at startup, a restart is needed to change it.
+  leveldb-block-cache-mb: 0
 
 chunk-sending:
   #To change server normal render distance, change view-distance in server.properties.
