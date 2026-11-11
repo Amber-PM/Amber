@@ -41,6 +41,7 @@ use pocketmine\data\bedrock\EnchantmentIdMap;
 use pocketmine\inventory\Inventory;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\inventory\transaction\InventoryTransaction;
+use pocketmine\inventory\villager\TradeInventory;
 use pocketmine\item\enchantment\EnchantingOption;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\Item;
@@ -54,6 +55,7 @@ use pocketmine\network\mcpe\protocol\InventorySlotPacket;
 use pocketmine\network\mcpe\protocol\MobEquipmentPacket;
 use pocketmine\network\mcpe\protocol\PlayerEnchantOptionsPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\network\mcpe\protocol\UpdateTradePacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\Enchant;
 use pocketmine\network\mcpe\protocol\types\EnchantOption as ProtocolEnchantOption;
@@ -132,6 +134,12 @@ class InventoryManager{
 	){
 		$this->containerOpenCallbacks = new ObjectSet();
 		$this->containerOpenCallbacks->add(self::createContainerOpen(...));
+		$this->containerOpenCallbacks->add(function(int $id, Inventory $inv) : ?array{
+			if($inv instanceof TradeInventory){
+				return [$inv->getVillager()->createUpdateTradePacket($id, $this->player)];
+			}
+			return null;
+		});
 
 		$this->add(ContainerIds::INVENTORY, $this->player->getInventory());
 		$this->add(ContainerIds::OFFHAND, $this->player->getOffHandInventory());
@@ -330,6 +338,7 @@ class InventoryManager{
 			$inventory instanceof CraftingTableInventory => UIInventorySlotOffset::CRAFTING3X3_INPUT,
 			$inventory instanceof CartographyTableInventory => UIInventorySlotOffset::CARTOGRAPHY_TABLE,
 			$inventory instanceof SmithingTableInventory => UIInventorySlotOffset::SMITHING_TABLE,
+			$inventory instanceof TradeInventory => UIInventorySlotOffset::TRADE2_INGREDIENT,
 			default => null,
 		};
 	}
@@ -352,6 +361,8 @@ class InventoryManager{
 						if($pk instanceof ContainerOpenPacket){
 							//workaround useless bullshit in 1.21 - ContainerClose requires a type now for some reason
 							$windowType = $pk->windowType;
+						}elseif($pk instanceof UpdateTradePacket){
+							$windowType = WindowTypes::TRADING;
 						}
 						$this->session->sendDataPacket($pk);
 					}
