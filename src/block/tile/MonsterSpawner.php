@@ -24,11 +24,13 @@ declare(strict_types=1);
 namespace pocketmine\block\tile;
 
 use pocketmine\data\bedrock\LegacyEntityIdToStringIdMap;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
+use function mt_rand;
 
 /**
  * @deprecated
@@ -202,4 +204,46 @@ class MonsterSpawner extends Spawnable{
 		$this->spawnPerAttempt = $count;
 	}
 
+	public function hasNearbyPlayer() : bool{
+		if(!isset($this->position) || !$this->position->isValid()){
+			return false;
+		}
+		$world = $this->position->getWorld();
+		$rangeSquared = $this->requiredPlayerRange * $this->requiredPlayerRange;
+		foreach($world->getPlayers() as $player){
+			if($player->isSpectator()){
+				continue;
+			}
+			if($this->position->distanceSquared($player->getPosition()) <= $rangeSquared){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public function resetSpawnDelay() : void{
+		$this->spawnDelay = mt_rand($this->minSpawnDelay, $this->maxSpawnDelay);
+	}
+
+	public function tickSpawnDelay(int $diff = 1) : bool{
+		if($this->spawnDelay > 0){
+			$this->spawnDelay -= $diff;
+		}
+		return $this->spawnDelay <= 0;
+	}
+
+	public function getNearbyEntityBoundingBox() : AxisAlignedBB{
+		$x = $this->position->x;
+		$y = $this->position->y;
+		$z = $this->position->z;
+		$horizontal = $this->spawnRange * 2;
+		return new AxisAlignedBB(
+			$x - $horizontal,
+			$y - 4,
+			$z - $horizontal,
+			$x + $horizontal + 1,
+			$y + 4,
+			$z + $horizontal + 1
+		);
+	}
 }
