@@ -233,6 +233,42 @@ final class EntityFactory{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
 
+		$this->register(Drowned::class, function(World $world, CompoundTag $nbt) : Drowned{
+			return new Drowned(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Drowned', 'minecraft:drowned']);
+
+		$this->register(Creeper::class, function(World $world, CompoundTag $nbt) : Creeper{
+			return new Creeper(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Creeper', 'minecraft:creeper']);
+
+		$this->register(Enderman::class, function(World $world, CompoundTag $nbt) : Enderman{
+			return new Enderman(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Enderman', 'minecraft:enderman']);
+
+		$this->register(Slime::class, function(World $world, CompoundTag $nbt) : Slime{
+			return new Slime(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Slime', 'minecraft:slime']);
+
+		$this->register(MagmaCube::class, function(World $world, CompoundTag $nbt) : MagmaCube{
+			return new MagmaCube(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['MagmaCube', 'minecraft:magma_cube']);
+
+		$this->register(Phantom::class, function(World $world, CompoundTag $nbt) : Phantom{
+			return new Phantom(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Phantom', 'minecraft:phantom']);
+
+		$this->register(Witch::class, function(World $world, CompoundTag $nbt) : Witch{
+			return new Witch(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Witch', 'minecraft:witch']);
+
+		$this->register(Guardian::class, function(World $world, CompoundTag $nbt) : Guardian{
+			return new Guardian(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Guardian', 'minecraft:guardian']);
+
+		$this->register(ElderGuardian::class, function(World $world, CompoundTag $nbt) : ElderGuardian{
+			return new ElderGuardian(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['ElderGuardian', 'minecraft:elder_guardian']);
+
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
 		}, ['Human']);

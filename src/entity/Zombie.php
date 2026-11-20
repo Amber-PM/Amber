@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \   _ __ ___ | |__   ___ _ __
  *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
- *  / ___ \| | | | | | |_) |  __/ |   
- * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *  / ___ \| | | | | | |_) |  __/ |
+ * /_/   \_\_| |_| |_|_.__/ \___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,10 +25,19 @@ namespace pocketmine\entity;
 
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use function mt_rand;
 
 class Zombie extends Living{
+
+	public const TAG_DROWNED_CONVERSION_TIME = "DrownedConversionTime";
+	public const SUBMERGED_TICKS_BEFORE_CONVERSION = 600; // 30 seconds
+	public const CONVERSION_DURATION_TICKS = 300; // 15 seconds
+
+	protected int $submergedTicks = 0;
+	protected int $conversionTicks = -1;
 
 	public static function getNetworkTypeId() : string{ return EntityIds::ZOMBIE; }
 
@@ -38,6 +47,97 @@ class Zombie extends Living{
 
 	public function getName() : string{
 		return "Zombie";
+	}
+
+	public function getDefaultMaxHealth() : int{
+		return 20;
+	}
+
+	protected function initEntity(CompoundTag $nbt) : void{
+		$this->setMaxHealth(20);
+		parent::initEntity($nbt);
+		if($nbt->getTag("Health") === null){
+			$this->setHealth(20.0);
+		}
+
+		$this->conversionTicks = $nbt->getInt(self::TAG_DROWNED_CONVERSION_TIME, -1);
+	}
+
+	public function saveNBT() : CompoundTag{
+		$nbt = parent::saveNBT();
+		$nbt->setInt(self::TAG_DROWNED_CONVERSION_TIME, $this->conversionTicks);
+		return $nbt;
+	}
+
+	public function isConvertingToDrowned() : bool{
+		return $this->conversionTicks >= 0;
+	}
+
+	public function getConversionTicks() : int{
+		return $this->conversionTicks;
+	}
+
+	public function setConversionTicks(int $ticks) : void{
+		$this->conversionTicks = $ticks;
+	}
+
+	public function getSubmergedTicks() : int{
+		return $this->submergedTicks;
+	}
+
+	public function setSubmergedTicks(int $ticks) : void{
+		$this->submergedTicks = $ticks;
+	}
+
+	public function convertToDrowned() : Drowned{
+		$drowned = new Drowned($this->location);
+		$drowned->setHealth($this->getHealth());
+		$this->flagForDespawn();
+		$drowned->spawnToAll();
+		return $drowned;
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+
+		if(!$this->isAlive()){
+			return $hasUpdate;
+		}
+
+		$world = $this->getWorld();
+
+		// Sunlight burning only when NOT in water
+		$time = $world->getTime() % 24000;
+		if($time >= 0 && $time < 12000 && !$this->isUnderwater()){
+			$highestBlockAtPos = $world->getHighestBlockAt((int) $this->location->x, (int) $this->location->z);
+			if($highestBlockAtPos === null || $highestBlockAtPos <= $this->location->y){
+				$this->setOnFire(8);
+				$hasUpdate = true;
+			}
+		}
+
+		// Drowning conversion to Drowned
+		if($this->isUnderwater()){
+			if($this->conversionTicks >= 0){
+				$this->conversionTicks -= $tickDiff;
+				$hasUpdate = true;
+				if($this->conversionTicks <= 0){
+					$this->convertToDrowned();
+					return false;
+				}
+			}else{
+				$this->submergedTicks += $tickDiff;
+				$hasUpdate = true;
+				if($this->submergedTicks >= self::SUBMERGED_TICKS_BEFORE_CONVERSION){
+					$this->conversionTicks = self::CONVERSION_DURATION_TICKS;
+				}
+			}
+		}else{
+			$this->submergedTicks = 0;
+			$this->conversionTicks = -1;
+		}
+
+		return $hasUpdate;
 	}
 
 	public function getDrops() : array{
