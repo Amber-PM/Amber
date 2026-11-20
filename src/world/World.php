@@ -34,6 +34,7 @@ use pocketmine\block\Air;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\block\tile\Chest;
 use pocketmine\block\tile\Spawnable;
 use pocketmine\block\tile\Tile;
 use pocketmine\block\tile\TileFactory;
@@ -75,6 +76,8 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\StringTag;
+use pocketmine\nbt\NbtException;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkBroadcastUtils;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
@@ -2987,6 +2990,21 @@ class World implements ChunkManager{
 		unset($this->changedBlocks[$chunkHash]);
 		$chunk->setTerrainDirty();
 		$this->markTickingChunkForRecheck($chunkX, $chunkZ); //this replacement chunk may not meet the conditions for ticking
+		$chunkBlockX = $chunkX << Chunk::COORD_BIT_SIZE;
+		$chunkBlockZ = $chunkZ << Chunk::COORD_BIT_SIZE;
+		foreach($chunk->drainPendingBlockEntityData() as $nbt){
+			// Deferred payloads store both the tile and its partner relative to this chunk.
+			if(($pairX = $nbt->getTag(Chest::TAG_PAIRX)) instanceof IntTag && ($pairZ = $nbt->getTag(Chest::TAG_PAIRZ)) instanceof IntTag){
+				$nbt = (clone $nbt)->setInt(Chest::TAG_PAIRX, $chunkBlockX + $pairX->getValue())
+					->setInt(Chest::TAG_PAIRZ, $chunkBlockZ + $pairZ->getValue());
+			}
+			$this->applyStructureBlockEntityData(
+				$chunkBlockX + $nbt->getInt(Tile::TAG_X),
+				$nbt->getInt(Tile::TAG_Y),
+				$chunkBlockZ + $nbt->getInt(Tile::TAG_Z),
+				$nbt
+			);
+		}
 
 		if(!$this->isChunkInUse($chunkX, $chunkZ)){
 			$this->unloadChunkRequest($chunkX, $chunkZ);
@@ -3013,6 +3031,31 @@ class World implements ChunkManager{
 				}
 			}
 		}
+	}
+
+	/** @internal Applies deferred block entity data once its block is in a live world. */
+	public function applyStructureBlockEntityData(int $x, int $y, int $z, CompoundTag $nbt) : void{
+		if(!$this->isInWorld($x, $y, $z)){
+			return;
+		}
+		$chunk = $this->getChunk($x >> Chunk::COORD_BIT_SIZE, $z >> Chunk::COORD_BIT_SIZE);
+		if($chunk === null){
+			return;
+		}
+		$stateId = $chunk->getBlockStateId($x & Chunk::COORD_MASK, $y, $z & Chunk::COORD_MASK);
+		$tileClass = $this->blockStateRegistry->fromStateId($stateId)->getIdInfo()->getTileClass();
+		if($tileClass === null){
+			return;
+		}
+		$tile = new $tileClass($this, new Vector3($x, $y, $z));
+		try{
+			$tile->readSaveData((clone $nbt)->setInt(Tile::TAG_X, $x)->setInt(Tile::TAG_Y, $y)->setInt(Tile::TAG_Z, $z));
+		}catch(NbtException $e){
+			$this->logger->error("Bad structure block entity data at $x,$y,$z: " . $e->getMessage());
+			return;
+		}
+		$this->addTile($tile);
+		$this->invalidateBlockCache(new Vector3($x, $y, $z));
 	}
 
 	/**
