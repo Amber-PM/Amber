@@ -2993,7 +2993,7 @@ class World implements ChunkManager{
 		foreach($chunk->drainPendingBlockEntityData() as $nbt){
 			// Deferred payloads store both the tile and its partner relative to this chunk.
 			if(($pairX = $nbt->getTag(Chest::TAG_PAIRX)) instanceof IntTag && ($pairZ = $nbt->getTag(Chest::TAG_PAIRZ)) instanceof IntTag){
-				$nbt->setInt(Chest::TAG_PAIRX, $chunkBlockX + $pairX->getValue())
+				$nbt = (clone $nbt)->setInt(Chest::TAG_PAIRX, $chunkBlockX + $pairX->getValue())
 					->setInt(Chest::TAG_PAIRZ, $chunkBlockZ + $pairZ->getValue());
 			}
 			$this->applyStructureBlockEntityData(

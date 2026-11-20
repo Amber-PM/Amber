@@ -249,6 +249,32 @@ final class StructureTemplateTest extends TestCase{
 		self::assertSame([...$expected, ...$expected], $applied);
 	}
 
+	public function testInstallingChunkClonesDoesNotChangeSharedChestPairCoordinates() : void{
+		$chunk = new Chunk([], false);
+		$chunk->setBlockStateId(2, 64, 4, VanillaBlocks::CHEST()->getStateId());
+		$chunk->queueBlockEntityData(2, 64, 4, CompoundTag::create()->setInt(Chest::TAG_PAIRX, 3)->setInt(Chest::TAG_PAIRZ, 4));
+
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
+			->onlyMethods(["loadChunk", "isChunkInUse", "applyStructureBlockEntityData"])->getMock();
+		(new \ReflectionProperty(World::class, "blockStateRegistry"))->setValue($world, RuntimeBlockStateRegistry::getInstance());
+		$world->method("loadChunk")->willReturn(null);
+		$world->method("isChunkInUse")->willReturn(true);
+		$applied = [];
+		$world->method("applyStructureBlockEntityData")->willReturnCallback(static function(int $x, int $y, int $z, CompoundTag $nbt) use (&$applied) : void{
+			$applied[] = [$x, $y, $z, $nbt->getInt(Chest::TAG_PAIRX), $nbt->getInt(Chest::TAG_PAIRZ)];
+		});
+
+		$first = clone $chunk;
+		$second = clone $chunk;
+		$world->setChunk(-1, 2, $first);
+		$world->setChunk(3, -4, $second);
+
+		self::assertSame([[-14, 64, 36, -13, 36], [50, 64, -60, 51, -60]], $applied);
+		$pending = $chunk->getPendingBlockEntityData()[Chunk::blockHash(2, 64, 4)];
+		self::assertSame(3, $pending->getInt(Chest::TAG_PAIRX));
+		self::assertSame(4, $pending->getInt(Chest::TAG_PAIRZ));
+	}
+
 	public function testSecondaryOnlyPlacementLoadsExistingWorldChunk() : void{
 		$water = VanillaBlocks::WATER()->getStateId();
 		$template = new StructureTemplate(new Vector3(1, 1, 1), new Vector3(0, 0, 0), [$water], [-1], [0]);
