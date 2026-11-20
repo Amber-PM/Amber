@@ -47,6 +47,7 @@ final class VanillaEnchantments{
 	private static Enchantment $_mFROST_WALKER;
 	private static Enchantment $_mINFINITY;
 	private static KnockbackEnchantment $_mKNOCKBACK;
+	private static Enchantment $_mLOOTING;
 	private static Enchantment $_mMENDING;
 	private static Enchantment $_mMULTISHOT;
 	private static Enchantment $_mPIERCING;
@@ -58,6 +59,7 @@ final class VanillaEnchantments{
 	private static Enchantment $_mRESPIRATION;
 	private static SharpnessEnchantment $_mSHARPNESS;
 	private static Enchantment $_mSILK_TOUCH;
+	private static Enchantment $_mSOUL_SPEED;
 	private static Enchantment $_mSWIFT_SNEAK;
 	private static Enchantment $_mTHORNS;
 	private static Enchantment $_mUNBREAKING;
@@ -107,6 +109,7 @@ final class VanillaEnchantments{
 			"FROST_WALKER" => fn(Enchantment $v) => self::$_mFROST_WALKER = $v,
 			"INFINITY" => fn(Enchantment $v) => self::$_mINFINITY = $v,
 			"KNOCKBACK" => fn(KnockbackEnchantment $v) => self::$_mKNOCKBACK = $v,
+			"LOOTING" => fn(Enchantment $v) => self::$_mLOOTING = $v,
 			"MENDING" => fn(Enchantment $v) => self::$_mMENDING = $v,
 			"MULTISHOT" => fn(Enchantment $v) => self::$_mMULTISHOT = $v,
 			"PIERCING" => fn(Enchantment $v) => self::$_mPIERCING = $v,
@@ -118,6 +121,7 @@ final class VanillaEnchantments{
 			"RESPIRATION" => fn(Enchantment $v) => self::$_mRESPIRATION = $v,
 			"SHARPNESS" => fn(SharpnessEnchantment $v) => self::$_mSHARPNESS = $v,
 			"SILK_TOUCH" => fn(Enchantment $v) => self::$_mSILK_TOUCH = $v,
+			"SOUL_SPEED" => fn(Enchantment $v) => self::$_mSOUL_SPEED = $v,
 			"SWIFT_SNEAK" => fn(Enchantment $v) => self::$_mSWIFT_SNEAK = $v,
 			"THORNS" => fn(Enchantment $v) => self::$_mTHORNS = $v,
 			"UNBREAKING" => fn(Enchantment $v) => self::$_mUNBREAKING = $v,
@@ -215,6 +219,11 @@ final class VanillaEnchantments{
 		return self::$_mKNOCKBACK;
 	}
 
+	public static function LOOTING() : Enchantment{
+		if(!isset(self::$_mLOOTING)){ self::init(); }
+		return self::$_mLOOTING;
+	}
+
 	public static function MENDING() : Enchantment{
 		if(!isset(self::$_mMENDING)){ self::init(); }
 		return self::$_mMENDING;
@@ -268,6 +277,11 @@ final class VanillaEnchantments{
 	public static function SILK_TOUCH() : Enchantment{
 		if(!isset(self::$_mSILK_TOUCH)){ self::init(); }
 		return self::$_mSILK_TOUCH;
+	}
+
+	public static function SOUL_SPEED() : Enchantment{
+		if(!isset(self::$_mSOUL_SPEED)){ self::init(); }
+		return self::$_mSOUL_SPEED;
 	}
 
 	public static function SWIFT_SNEAK() : Enchantment{

@@ -302,6 +302,7 @@ final class VanillaBlocks{
 	private static DoublePitcherCrop $_mDOUBLE_PITCHER_CROP;
 	private static DoubleTallGrass $_mDOUBLE_TALLGRASS;
 	private static DragonEgg $_mDRAGON_EGG;
+	private static DriedGhast $_mDRIED_GHAST;
 	private static DriedKelp $_mDRIED_KELP;
 	private static Dropper $_mDROPPER;
 	private static DyedCandle $_mDYED_CANDLE;
@@ -1143,6 +1144,7 @@ final class VanillaBlocks{
 			"double_pitcher_crop" => fn(DoublePitcherCrop $v) => self::$_mDOUBLE_PITCHER_CROP = $v,
 			"double_tallgrass" => fn(DoubleTallGrass $v) => self::$_mDOUBLE_TALLGRASS = $v,
 			"dragon_egg" => fn(DragonEgg $v) => self::$_mDRAGON_EGG = $v,
+			"dried_ghast" => fn(DriedGhast $v) => self::$_mDRIED_GHAST = $v,
 			"dried_kelp" => fn(DriedKelp $v) => self::$_mDRIED_KELP = $v,
 			"dropper" => fn(Dropper $v) => self::$_mDROPPER = $v,
 			"dyed_candle" => fn(DyedCandle $v) => self::$_mDYED_CANDLE = $v,
@@ -3042,6 +3044,11 @@ final class VanillaBlocks{
 	public static function DRAGON_EGG() : DragonEgg{
 		if(!isset(self::$_mDRAGON_EGG)){ self::init(); }
 		return clone self::$_mDRAGON_EGG;
+	}
+
+	public static function DRIED_GHAST() : DriedGhast{
+		if(!isset(self::$_mDRIED_GHAST)){ self::init(); }
+		return clone self::$_mDRIED_GHAST;
 	}
 
 	public static function DRIED_KELP() : DriedKelp{

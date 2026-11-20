@@ -81,6 +81,7 @@ final class BlockStateFallbacks{
 		'/^(bush|firefly_bush)$/' => 'short_grass',
 		'/^(short|tall)_dry_grass$/' => 'deadbush',
 		'/^(leaf_litter|wildflowers)$/' => 'pink_petals',
+		'/^dried_ghast$/' => 'skeleton_skull',
 		//1.26.x
 		'/^(.+)_(wool|concrete)_(slab|double_slab|stairs)$/' => '$1_$2',
 		'/^(.+)_cushion$/' => '$1_carpet',

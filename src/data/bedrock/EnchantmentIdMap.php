@@ -54,6 +54,8 @@ final class EnchantmentIdMap{
 		$this->register(EnchantmentIds::EFFICIENCY, VanillaEnchantments::EFFICIENCY());
 		$this->register(EnchantmentIds::FORTUNE, VanillaEnchantments::FORTUNE());
 		$this->register(EnchantmentIds::SILK_TOUCH, VanillaEnchantments::SILK_TOUCH());
+		$this->register(EnchantmentIds::LOOTING, VanillaEnchantments::LOOTING());
+		$this->register(EnchantmentIds::SOUL_SPEED, VanillaEnchantments::SOUL_SPEED());
 		$this->register(EnchantmentIds::UNBREAKING, VanillaEnchantments::UNBREAKING());
 
 		$this->register(EnchantmentIds::POWER, VanillaEnchantments::POWER());

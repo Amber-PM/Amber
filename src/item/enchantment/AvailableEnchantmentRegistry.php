@@ -62,6 +62,7 @@ final class AvailableEnchantmentRegistry{
 		$this->register(Enchantments::SHARPNESS(), [Tags::SWORD, Tags::AXE], []);
 		$this->register(Enchantments::KNOCKBACK(), [Tags::SWORD], []);
 		$this->register(Enchantments::FIRE_ASPECT(), [Tags::SWORD], []);
+		$this->register(Enchantments::LOOTING(), [Tags::SWORD], []);
 		$this->register(Enchantments::EFFICIENCY(), [Tags::BLOCK_TOOLS], [Tags::SHEARS]);
 		$this->register(Enchantments::FORTUNE(), [Tags::BLOCK_TOOLS], []);
 		$this->register(Enchantments::SILK_TOUCH(), [Tags::BLOCK_TOOLS], [Tags::SHEARS]);
@@ -82,6 +83,7 @@ final class AvailableEnchantmentRegistry{
 		);
 		$this->register(Enchantments::VANISHING(), [], [Tags::ALL]);
 		$this->register(Enchantments::SWIFT_SNEAK(), [], [Tags::LEGGINGS]);
+		$this->register(Enchantments::SOUL_SPEED(), [], [Tags::BOOTS]);
 		$this->register(Enchantments::MULTISHOT(), [Tags::CROSSBOW], []);
 		$this->register(Enchantments::PIERCING(), [Tags::CROSSBOW], []);
 		$this->register(Enchantments::QUICK_CHARGE(), [Tags::CROSSBOW], []);
