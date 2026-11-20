@@ -30,6 +30,7 @@ use pocketmine\block\TNT;
 use pocketmine\block\utils\SupportType;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Living;
 use pocketmine\event\block\BlockExplodeEvent;
 use pocketmine\event\entity\EntityDamageByBlockEvent;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
@@ -235,7 +236,9 @@ class Explosion{
 				}
 
 				$entity->attack($ev);
-				$entity->setMotion($entity->getMotion()->addVector($motion->multiply($impact)));
+				if(!($entity instanceof Living) || !$entity->resistsKnockback()){
+					$entity->setMotion($entity->getMotion()->addVector($motion->multiply($impact)));
+				}
 			}
 		}
 
