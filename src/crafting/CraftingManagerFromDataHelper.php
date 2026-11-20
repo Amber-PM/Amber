@@ -29,6 +29,8 @@ use pocketmine\crafting\json\PotionTypeRecipeData;
 use pocketmine\crafting\json\RecipeIngredientData;
 use pocketmine\crafting\json\ShapedRecipeData;
 use pocketmine\crafting\json\ShapelessRecipeData;
+use pocketmine\crafting\json\SmithingTransformRecipeData;
+use pocketmine\crafting\json\SmithingTrimRecipeData;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\ItemTypeDeserializeException;
@@ -325,7 +327,39 @@ final class CraftingManagerFromDataHelper{
 			));
 		}
 
-		//TODO: smithing
+		$smithingPath = Path::join($directoryPath, 'smithing.json');
+		if(file_exists($smithingPath)){
+			foreach(self::loadJsonArrayOfObjectsFile($smithingPath, SmithingTransformRecipeData::class) as $recipe){
+				$template = self::deserializeIngredient($recipe->template);
+				$input = self::deserializeIngredient($recipe->input);
+				$addition = self::deserializeIngredient($recipe->addition);
+				$output = self::deserializeItemStackFromFields($recipe->output, null, null, null, null, [], []);
+				if($template !== null && $input !== null && $addition !== null && $output !== null){
+					$result->registerSmithingTransformRecipe(new SmithingTransformRecipe(
+						$template,
+						$input,
+						$addition,
+						$output
+					));
+				}
+			}
+		}
+
+		$smithingTrimPath = Path::join($directoryPath, 'smithing_trim.json');
+		if(file_exists($smithingTrimPath)){
+			foreach(self::loadJsonArrayOfObjectsFile($smithingTrimPath, SmithingTrimRecipeData::class) as $recipe){
+				$template = self::deserializeIngredient($recipe->template);
+				$input = self::deserializeIngredient($recipe->input);
+				$addition = self::deserializeIngredient($recipe->addition);
+				if($template !== null && $input !== null && $addition !== null){
+					$result->registerSmithingTrimRecipe(new SmithingTrimRecipe(
+						$template,
+						$input,
+						$addition
+					));
+				}
+			}
+		}
 
 		return $result;
 	}

@@ -30,6 +30,8 @@ use pocketmine\crafting\MetaWildcardRecipeIngredient;
 use pocketmine\crafting\ShapedRecipe;
 use pocketmine\crafting\ShapelessRecipe;
 use pocketmine\crafting\ShapelessRecipeType;
+use pocketmine\crafting\SmithingTransformRecipe;
+use pocketmine\crafting\SmithingTrimRecipe;
 use pocketmine\crafting\TagWildcardRecipeIngredient;
 use pocketmine\data\bedrock\item\ItemTypeSerializeException;
 use pocketmine\data\bedrock\ItemTagDowngrader;
@@ -47,6 +49,8 @@ use pocketmine\network\mcpe\protocol\types\recipe\RecipeUnlockingContext;
 use pocketmine\network\mcpe\protocol\types\recipe\RecipeUnlockingRequirement;
 use pocketmine\network\mcpe\protocol\types\recipe\ShapedRecipe as ProtocolShapedRecipe;
 use pocketmine\network\mcpe\protocol\types\recipe\ShapelessRecipe as ProtocolShapelessRecipe;
+use pocketmine\network\mcpe\protocol\types\recipe\SmithingTransformRecipe as ProtocolSmithingTransformRecipe;
+use pocketmine\network\mcpe\protocol\types\recipe\SmithingTrimRecipe as ProtocolSmithingTrimRecipe;
 use pocketmine\timings\Timings;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\ProtocolSingletonTrait;
@@ -94,6 +98,8 @@ final class CraftingDataCache{
 		$itemTagDowngrader = ItemTagDowngrader::getInstance($this->protocolId);
 		$shapedRecipes = [];
 		$shapelessRecipes = [];
+		$smithingTransformRecipes = [];
+		$smithingTrimRecipes = [];
 		$furnaceRecipes = [];
 
 		$noUnlockingRequirement = new RecipeUnlockingRequirement(RecipeUnlockingContext::ALWAYS_UNLOCKED, null);
@@ -147,6 +153,33 @@ final class CraftingDataCache{
 					}catch(\InvalidArgumentException|ItemTypeSerializeException) {
 						continue;
 					}
+				}
+			}elseif($recipe instanceof SmithingTransformRecipe){
+				try{
+					$smithingTransformRecipes[] = new ProtocolSmithingTransformRecipe(
+						BE::packUnsignedInt($recipeNetId),
+						$converter->coreRecipeIngredientToNet($recipe->getTemplate()),
+						$converter->coreRecipeIngredientToNet($recipe->getInput()),
+						$converter->coreRecipeIngredientToNet($recipe->getAddition()),
+						$converter->coreItemStackToNet($recipe->getOutput()),
+						CraftingRecipeBlockName::SMITHING_TABLE,
+						$recipeNetId
+					);
+				}catch(\InvalidArgumentException|ItemTypeSerializeException){
+					continue;
+				}
+			}elseif($recipe instanceof SmithingTrimRecipe){
+				try{
+					$smithingTrimRecipes[] = new ProtocolSmithingTrimRecipe(
+						BE::packUnsignedInt($recipeNetId),
+						$converter->coreRecipeIngredientToNet($recipe->getTemplate()),
+						$converter->coreRecipeIngredientToNet($recipe->getInput()),
+						$converter->coreRecipeIngredientToNet($recipe->getAddition()),
+						CraftingRecipeBlockName::SMITHING_TABLE,
+						$recipeNetId
+					);
+				}catch(\InvalidArgumentException|ItemTypeSerializeException){
+					continue;
 				}
 			}else{
 				//TODO: probably special recipe types
@@ -261,8 +294,8 @@ final class CraftingDataCache{
 			[],
 			[],
 			[],
-			[],
-			[],
+			$smithingTransformRecipes,
+			$smithingTrimRecipes,
 			$furnaceRecipes,
 			$potionTypeRecipes,
 			$potionContainerChangeRecipes,

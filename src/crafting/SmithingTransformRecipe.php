@@ -1,0 +1,93 @@
+<?php
+
+/*
+ *
+ *     _             _               
+ *    / \   _ __ ___ | |__   ___ _ __ 
+ *   / _ \ | '_ ` _ \| '_ \ / _ \ '__|
+ *  / ___ \| | | | | | |_) |  __/ |   
+ * /_/   \_\_| |_| |_|_.__/ \___|_|   
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * @author AmberPM Team
+ * @link https://github.com/Amber-PM/Amber
+ *
+ *
+ */
+
+declare(strict_types=1);
+
+namespace pocketmine\crafting;
+
+use pocketmine\item\Armor;
+use pocketmine\item\Durable;
+use pocketmine\item\Item;
+use function min;
+
+final class SmithingTransformRecipe implements CraftingRecipe{
+
+	public function __construct(
+		private RecipeIngredient $template,
+		private RecipeIngredient $input,
+		private RecipeIngredient $addition,
+		private Item $output
+	){}
+
+	public function getTemplate() : RecipeIngredient{
+		return $this->template;
+	}
+
+	public function getInput() : RecipeIngredient{
+		return $this->input;
+	}
+
+	public function getAddition() : RecipeIngredient{
+		return $this->addition;
+	}
+
+	public function getOutput() : Item{
+		return clone $this->output;
+	}
+
+	public function transform(Item $input) : Item{
+		$result = clone $this->output;
+		foreach($input->getEnchantments() as $ench){
+			$result->addEnchantment($ench);
+		}
+		if($result instanceof Durable && $input instanceof Durable){
+			$result->setDamage(min($result->getMaxDurability(), $input->getDamage()));
+		}
+		if($input->hasCustomName()){
+			$result->setCustomName($input->getCustomName());
+		}
+		if($input->getLore() !== []){
+			$result->setLore($input->getLore());
+		}
+		if($result instanceof Armor && $input instanceof Armor && $input->getTrim() !== null){
+			$result->setTrim($input->getTrim());
+		}
+		return $result;
+	}
+
+	/**
+	 * @return RecipeIngredient[]
+	 */
+	public function getIngredientList() : array{
+		return [$this->template, $this->input, $this->addition];
+	}
+
+	/**
+	 * @return Item[]
+	 */
+	public function getResultsFor(CraftingGrid $grid) : array{
+		return [clone $this->output];
+	}
+
+	public function matchesCraftingGrid(CraftingGrid $grid) : bool{
+		return false;
+	}
+}

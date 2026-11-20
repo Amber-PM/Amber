@@ -23,11 +23,41 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\inventory\BeaconInventory;
+use pocketmine\block\tile\Beacon as TileBeacon;
+use pocketmine\item\Item;
+use pocketmine\math\Vector3;
+use pocketmine\player\Player;
+
 final class Beacon extends Transparent{
+
+	public const TICK_INTERVAL = 80;
 
 	public function getLightLevel() : int{
 		return 15;
 	}
 
-	//TODO
+	public function onPostPlace() : void{
+		$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, self::TICK_INTERVAL);
+	}
+
+	public function onScheduledUpdate() : void{
+		$tile = $this->position->getWorld()->getTile($this->position);
+		if($tile instanceof TileBeacon){
+			$tile->applyEffects();
+		}
+		$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, self::TICK_INTERVAL);
+	}
+
+	public function onNearbyBlockChange() : void{
+		$this->position->getWorld()->scheduleDelayedBlockUpdate($this->position, 1);
+	}
+
+	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null, array &$returnedItems = []) : bool{
+		if($player !== null){
+			$player->setCurrentWindow(new BeaconInventory($this->position));
+		}
+
+		return true;
+	}
 }

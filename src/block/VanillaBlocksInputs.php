@@ -902,6 +902,8 @@ final class VanillaBlocksInputs extends RegistrySource{
 		self::register("fletching_table", fn(BID $id) => new FletchingTable($id, "Fletching Table", $craftingBlockBreakInfo));
 		self::register("loom", fn(BID $id) => new Loom($id, "Loom", $craftingBlockBreakInfo));
 		self::register("smithing_table", fn(BID $id) => new SmithingTable($id, "Smithing Table", $craftingBlockBreakInfo));
+		self::register("grindstone", fn(BID $id) => new Grindstone($id, "Grindstone", new Info(BreakInfo::pickaxe(2.0, ToolTier::WOOD, 30.0))));
+		self::register("composter", fn(BID $id) => new Composter($id, "Composter", new Info(BreakInfo::axe(0.6, blastResistance: 3.0))));
 	}
 
 	private function registerChorusBlocks() : void{

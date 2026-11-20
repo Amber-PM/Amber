@@ -39,10 +39,14 @@ use function mt_rand;
 class Armor extends Durable{
 
 	public const TAG_CUSTOM_COLOR = "customColor"; //TAG_Int
+	public const TAG_TRIM = "Trim";
+	public const TAG_TRIM_MATERIAL = "Material";
+	public const TAG_TRIM_PATTERN = "Pattern";
 
 	private ArmorTypeInfo $armorInfo;
 
 	protected ?Color $customColor = null;
+	protected ?ArmorTrim $trim = null;
 
 	/**
 	 * @param string[] $enchantmentTags
@@ -161,12 +165,27 @@ class Armor extends Durable{
 		return ItemUseResult::SUCCESS;
 	}
 
+	public function getTrim() : ?ArmorTrim{
+		return $this->trim;
+	}
+
+	public function setTrim(?ArmorTrim $trim) : self{
+		$this->trim = $trim;
+		return $this;
+	}
+
 	protected function deserializeCompoundTag(CompoundTag $tag) : void{
 		parent::deserializeCompoundTag($tag);
 		if(($colorTag = $tag->getTag(self::TAG_CUSTOM_COLOR)) instanceof IntTag){
 			$this->customColor = Color::fromARGB(Binary::unsignInt($colorTag->getValue()));
 		}else{
 			$this->customColor = null;
+		}
+
+		if(($trimTag = $tag->getCompoundTag(self::TAG_TRIM)) !== null){
+			$this->trim = ArmorTrim::fromNbt($trimTag);
+		}else{
+			$this->trim = null;
 		}
 	}
 
@@ -175,5 +194,9 @@ class Armor extends Durable{
 		$this->customColor !== null ?
 			$tag->setInt(self::TAG_CUSTOM_COLOR, Binary::signInt($this->customColor->toARGB())) :
 			$tag->removeTag(self::TAG_CUSTOM_COLOR);
+
+		$this->trim !== null ?
+			$tag->setTag(self::TAG_TRIM, $this->trim->toNbt()) :
+			$tag->removeTag(self::TAG_TRIM);
 	}
 }

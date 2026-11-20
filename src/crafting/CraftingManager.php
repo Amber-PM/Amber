@@ -76,6 +76,18 @@ class CraftingManager{
 	protected array $potionContainerChangeRecipes = [];
 
 	/**
+	 * @var SmithingTransformRecipe[]
+	 * @phpstan-var list<SmithingTransformRecipe>
+	 */
+	protected array $smithingTransformRecipes = [];
+
+	/**
+	 * @var SmithingTrimRecipe[]
+	 * @phpstan-var list<SmithingTrimRecipe>
+	 */
+	protected array $smithingTrimRecipes = [];
+
+	/**
 	 * @var BrewingRecipe[][]
 	 * @phpstan-var array<int, array<int, BrewingRecipe>>
 	 */
@@ -218,6 +230,40 @@ class CraftingManager{
 
 	public function registerPotionContainerChangeRecipe(PotionContainerChangeRecipe $recipe) : void{
 		$this->potionContainerChangeRecipes[] = $recipe;
+
+		foreach($this->recipeRegisteredCallbacks as $callback){
+			$callback();
+		}
+	}
+
+	/**
+	 * @return SmithingTransformRecipe[]
+	 * @phpstan-return list<SmithingTransformRecipe>
+	 */
+	public function getSmithingTransformRecipes() : array{
+		return $this->smithingTransformRecipes;
+	}
+
+	/**
+	 * @return SmithingTrimRecipe[]
+	 * @phpstan-return list<SmithingTrimRecipe>
+	 */
+	public function getSmithingTrimRecipes() : array{
+		return $this->smithingTrimRecipes;
+	}
+
+	public function registerSmithingTransformRecipe(SmithingTransformRecipe $recipe) : void{
+		$this->smithingTransformRecipes[] = $recipe;
+		$this->craftingRecipeIndex[] = $recipe;
+
+		foreach($this->recipeRegisteredCallbacks as $callback){
+			$callback();
+		}
+	}
+
+	public function registerSmithingTrimRecipe(SmithingTrimRecipe $recipe) : void{
+		$this->smithingTrimRecipes[] = $recipe;
+		$this->craftingRecipeIndex[] = $recipe;
 
 		foreach($this->recipeRegisteredCallbacks as $callback){
 			$callback();
