@@ -87,7 +87,7 @@ class WitherSkeleton extends Living{
 
 		$this->meleeCooldown = max(0, $this->meleeCooldown - $tickDiff);
 		$target = $this->findHostilePlayer(16);
-		if($target !== null && $this->meleeCooldown === 0 && $this->location->distanceSquared($target->getLocation()) <= 2.25){
+		if($target !== null && $this->meleeCooldown === 0 && $this->canReachPlayerForMelee($target)){
 			$this->meleeCooldown = 20;
 			$this->attackTarget($target);
 		}

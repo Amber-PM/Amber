@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\math\VoxelRayTrace;
 use pocketmine\player\Player;
 
 /** @phpstan-require-extends Living */
@@ -32,6 +33,22 @@ trait HostilePlayerTargeting{
 
 	protected function canTargetPlayer(Player $player) : bool{
 		return !$player->isClosed() && $player->isAlive() && !$player->isCreative() && !$player->isSpectator() && $player->getWorld() === $this->getWorld();
+	}
+
+	protected function canReachPlayerForMelee(Player $target) : bool{
+		if($this->location->distanceSquared($target->getLocation()) > 2.25){
+			return false;
+		}
+
+		$start = $this->getEyePos();
+		$end = $target->getEyePos();
+		$world = $this->getWorld();
+		foreach(VoxelRayTrace::betweenPoints($start, $end) as $pos){
+			if($world->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ())->calculateIntercept($start, $end) !== null){
+				return false;
+			}
+		}
+		return true;
 	}
 
 	protected function findHostilePlayer(float $range) : ?Player{

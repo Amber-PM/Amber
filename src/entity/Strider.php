@@ -125,8 +125,10 @@ class Strider extends Living{
 
 		if($item->getTypeId() === ItemTypeIds::SADDLE && !$this->saddled){
 			$this->setSaddled(true);
-			$item->pop();
-			$player->getInventory()->setItemInHand($item);
+			if($player->hasFiniteResources()){
+				$item->pop();
+				$player->getInventory()->setItemInHand($item);
+			}
 			$this->broadcastSound(new PopSound());
 			return true;
 		}

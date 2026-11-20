@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\entity;
 
 use pocketmine\block\VanillaBlocks;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
@@ -55,6 +57,7 @@ class Piglin extends Living{
 	protected bool $admiring = false;
 	protected int $admiringTicks = 0;
 	private ?int $barterStartedAt = null;
+	private int $meleeCooldown = 0;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::PIGLIN;
@@ -168,7 +171,12 @@ class Piglin extends Living{
 			}
 		}
 
-		$this->findHostilePlayer(16);
+		$this->meleeCooldown = max(0, $this->meleeCooldown - $tickDiff);
+		$target = $this->findHostilePlayer(16);
+		if(!$this->admiring && $target !== null && $this->meleeCooldown === 0 && $this->canReachPlayerForMelee($target)){
+			$this->meleeCooldown = 20;
+			$target->attack(new EntityDamageByEntityEvent($this, $target, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 5.0));
+		}
 		return true;
 	}
 

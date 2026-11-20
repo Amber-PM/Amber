@@ -23,18 +23,47 @@ declare(strict_types=1);
 
 namespace pocketmine\entity\projectile;
 
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityPreExplodeEvent;
 use pocketmine\event\entity\ProjectileHitEvent;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\player\Player;
 use pocketmine\world\Explosion;
 
 class Fireball extends SmallFireball{
 
 	public static function getNetworkTypeId() : string{ return EntityIds::FIREBALL; }
 
+	public function attack(EntityDamageEvent $source) : void{
+		if(!$source instanceof EntityDamageByEntityEvent || $source->getCause() !== EntityDamageEvent::CAUSE_ENTITY_ATTACK){
+			parent::attack($source);
+			return;
+		}
+
+		$attacker = $source->getDamager();
+		if(!$attacker instanceof Player || $attacker->isSpectator()){
+			return;
+		}
+		$source->call();
+		if($source->isCancelled() || $this->isClosed() || $this->isFlaggedForDespawn() ||
+			$attacker->isClosed() || !$attacker->isAlive() || $attacker->getWorld() !== $this->getWorld()){
+			return;
+		}
+
+		$speed = $this->motion->length();
+		if($this->setMotion($attacker->getDirectionVector()->multiply($speed > 0 ? $speed : 0.8))){
+			$this->setOwningEntity($attacker);
+			$this->ignoreOwnerUntilAge = $this->ticksLived + 5;
+		}else{
+			$source->cancel();
+		}
+	}
+
 	protected function onHit(ProjectileHitEvent $event) : void{
 		$this->flagForDespawn();
 		$explode = new EntityPreExplodeEvent($this, 1.0);
+		$explode->setIncendiary(true);
 		$explode->call();
 		if(!$explode->isCancelled()){
 			$explosion = new Explosion($this->getPosition(), $explode->getRadius(), $this, $explode->getFireChance());

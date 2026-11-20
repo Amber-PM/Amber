@@ -37,6 +37,8 @@ use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityTeleportEvent;
+use pocketmine\event\entity\EntityPreExplodeEvent;
+use pocketmine\event\entity\ProjectileHitBlockEvent;
 use pocketmine\event\EventPriority;
 use pocketmine\event\HandlerListManager;
 use pocketmine\event\RegisteredListener;
@@ -49,6 +51,7 @@ use pocketmine\item\ItemTypeIds;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
+use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\ByteMetadataProperty;
@@ -110,7 +113,7 @@ class NetherAndEndEntitiesTest extends TestCase{
 		return $this->defaultWorld;
 	}
 
-	private function createPlayer(string $name = "Steve", ?Item $heldItem = null, ?World $world = null, ?Vector3 $pos = null) : Player{
+	private function createPlayer(string $name = "Steve", ?Item $heldItem = null, ?World $world = null, ?Vector3 $pos = null, bool $creative = false) : Player{
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
 			->onlyMethods(["getName", "getUniqueId", "isSneaking", "isCreative", "isSpectator", "getInventory", "hasFiniteResources", "getViewers", "canInteract", "broadcastSound", "broadcastAnimation", "isConnected", "isOnline", "isAlive", "getArmorInventory", "close", "onDispose"])
@@ -119,9 +122,9 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$player->method("getName")->willReturn($name);
 		$player->method("getUniqueId")->willReturn(Uuid::uuid4());
 		$player->method("isSneaking")->willReturn(false);
-		$player->method("isCreative")->willReturn(false);
+		$player->method("isCreative")->willReturn($creative);
 		$player->method("isSpectator")->willReturn(false);
-		$player->method("hasFiniteResources")->willReturn(true);
+		$player->method("hasFiniteResources")->willReturn(!$creative);
 		$player->method("getViewers")->willReturn([]);
 		$player->method("canInteract")->willReturn(true);
 		$player->method("isConnected")->willReturn(true);
@@ -329,6 +332,48 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertFalse($ghast->isChargingFireball());
 	}
 
+	public function testGhastFireballCanBeDeflectedAndPrimesAnIncendiaryExplosion() : void{
+		$world = $this->getDefaultWorld();
+		$ghast = $this->createGhast();
+		$player = $this->createPlayer();
+		$fireball = new Fireball(new Location(0, 0, 0, $world, 0, 0), $ghast);
+		$this->createdEntities[] = $fireball;
+		$fireball->setMotion(new Vector3(0.8, 0, 0));
+		$fireball->ticksLived = 40;
+
+		$cancelledAttack = $this->createDamageByEntityEvent($player, $fireball);
+		$cancelledAttack->cancel();
+		$fireball->attack($cancelledAttack);
+		self::assertSame($ghast->getId(), $fireball->getOwningEntityId());
+		self::assertEqualsWithDelta(0.8, $fireball->getMotion()->x, 1e-6);
+
+		$fireball->attack($this->createDamageByEntityEvent($player, $fireball));
+		self::assertSame($player->getId(), $fireball->getOwningEntityId());
+		self::assertEqualsWithDelta(0.8, $fireball->getMotion()->z, 1e-6);
+		self::assertEqualsWithDelta(0, $fireball->getMotion()->x, 1e-6);
+		self::assertSame(40, $fireball->ticksLived);
+
+		$called = false;
+		HandlerListManager::global()->getListFor(EntityPreExplodeEvent::class)->register(new RegisteredListener(
+			static function(EntityPreExplodeEvent $event) use (&$called) : void{
+				$called = true;
+				self::assertTrue($event->isIncendiary());
+				$event->setIncendiary(false);
+				self::assertFalse($event->isIncendiary());
+				$event->cancel();
+			},
+			EventPriority::NORMAL,
+			$this->createMock(Plugin::class),
+			false,
+			new TimingsHandler("fireball prime")
+		));
+		$block = VanillaBlocks::STONE();
+		$hit = new RayTraceResult(AxisAlignedBB::one(), Facing::WEST, Vector3::zero());
+		(new ReflectionMethod(Fireball::class, "onHit"))->invoke($fireball, new ProjectileHitBlockEvent($fireball, $hit, $block));
+		self::assertTrue($called);
+		self::assertTrue($fireball->isFlaggedForDespawn());
+	}
+
 	// ---------------- BLAZE TESTS ---------------- //
 
 	public function testBlazeInitializationAndWaterDamage() : void{
@@ -362,10 +407,18 @@ class NetherAndEndEntitiesTest extends TestCase{
 	// ---------------- WITHER SKELETON TESTS ---------------- //
 
 	public function testWitherSkeletonInitializationAndWitherAttack() : void{
-		$world = $this->getDefaultWorld();
-		$target = $this->createPlayer(pos: new Vector3(1, 0, 0));
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getDamageY")->willReturn(-64);
+		$wall = true;
+		$world->method("getBlockAt")->willReturnCallback(static function(int $x, int $y, int $z) use ($world, &$wall) : Block{
+			$block = $wall && $x === 0 ? VanillaBlocks::STONE() : VanillaBlocks::AIR();
+			$block->position($world, $x, $y, $z);
+			return $block;
+		});
+		$target = $this->createPlayer(world: $world, pos: new Vector3(1.1, 0, 0.5));
 		$world->method("getNearbyEntities")->willReturn([$target]);
-		$skel = $this->createWitherSkeleton();
+		$skel = $this->createWitherSkeleton($world, new Vector3(-0.25, 0, 0.5));
 		self::assertSame(EntityIds::WITHER_SKELETON, WitherSkeleton::getNetworkTypeId());
 		self::assertSame("Wither Skeleton", $skel->getName());
 		self::assertSame(20, $skel->getDefaultMaxHealth());
@@ -376,6 +429,9 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertFalse($target->getEffects()->has(VanillaEffects::WITHER()));
 
 		$this->tickEntity($skel, 1);
+		self::assertFalse($target->getEffects()->has(VanillaEffects::WITHER()));
+		$wall = false;
+		$this->tickEntity($skel, 2);
 		self::assertTrue($target->getEffects()->has(VanillaEffects::WITHER()));
 		$wither = $target->getEffects()->get(VanillaEffects::WITHER());
 		self::assertNotNull($wither);
@@ -442,6 +498,32 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$nearest->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
 		$this->tickEntity($piglin, 2);
 		self::assertSame($further->getId(), $piglin->getTargetEntityId());
+	}
+
+	public function testPiglinMeleeAttackRespectsGoldArmor() : void{
+		$world = $this->getDefaultWorld();
+		$player = $this->createPlayer(pos: new Vector3(1, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$player]);
+		$world->method("getEntity")->willReturn($player);
+		$piglin = $this->createPiglin();
+		$attacks = 0;
+		HandlerListManager::global()->getListFor(EntityDamageByEntityEvent::class)->register(new RegisteredListener(
+			static function(EntityDamageByEntityEvent $event) use ($player, &$attacks) : void{
+				self::assertSame($player, $event->getEntity());
+				self::assertSame(EntityDamageEvent::CAUSE_ENTITY_ATTACK, $event->getCause());
+				++$attacks;
+			},
+			EventPriority::NORMAL,
+			$this->createMock(Plugin::class),
+			true,
+			new TimingsHandler("Piglin melee")
+		));
+		$this->tickEntity($piglin, 1);
+		self::assertSame(1, $attacks);
+		$player->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
+		$this->tickEntity($piglin, 21, 20);
+		self::assertSame(1, $attacks);
+		self::assertNull($piglin->getTargetEntityId());
 	}
 
 	public function testZombifiedPiglinGroupAnger() : void{
@@ -525,6 +607,16 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertTrue($hasSaddle);
 	}
 
+	public function testCreativePlayerKeepsItsSaddle() : void{
+		$saddle = VanillaItems::SADDLE();
+		self::assertSame(1, $saddle->getMaxStackSize());
+		$player = $this->createPlayer(heldItem: $saddle, creative: true);
+		$strider = $this->createStrider();
+		self::assertTrue($player->interactEntity($strider, Vector3::zero()));
+		self::assertTrue($strider->isSaddled());
+		self::assertTrue($saddle->equalsExact($player->getInventory()->getItemInHand()));
+	}
+
 	// ---------------- SHULKER TESTS ---------------- //
 
 	public function testShulkerDefenseAndPeekState() : void{
@@ -576,6 +668,27 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$shulker->onUpdate(2);
 		self::assertTrue($shulker->hasGravity());
 		self::assertLessThan(10.0, $shulker->getLocation()->y);
+	}
+
+	public function testShulkerNeedsFloorContactAndSyncsGravityChanges() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getBlockAt")->willReturnCallback(static fn(int $x, int $y, int $z) : Block =>
+			$x === 0 && $y === 9 && $z === 0 ? VanillaBlocks::STONE() : VanillaBlocks::AIR()
+		);
+		$detached = $this->createShulker($world, new Vector3(0.5, 10.25, 0.5));
+		self::assertTrue($detached->hasGravity());
+		$attached = $this->createShulker($world, new Vector3(0.5, 10, 0.5));
+		self::assertFalse($attached->hasGravity());
+
+		$dirty = new ReflectionMethod(Entity::class, "getDirtyNetworkData");
+		$dirty->invoke($attached);
+		$attached->getNetworkProperties()->clearDirtyProperties();
+		$attached->setHasGravity(false);
+		self::assertSame([], $dirty->invoke($attached));
+		$attached->setHasGravity(true);
+		$flags = $dirty->invoke($attached)[EntityMetadataProperties::FLAGS];
+		self::assertNotSame(0, $flags->getValue() & (1 << EntityMetadataFlags::AFFECTED_BY_GRAVITY));
 	}
 
 	public function testShulkerDestinationChecksCollisionAndSupportBeforeChangingFace() : void{

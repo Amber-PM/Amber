@@ -60,6 +60,7 @@ abstract class Projectile extends Entity{
 	protected float $damage = 0.0;
 	protected ?Vector3 $blockHit = null;
 	protected bool $hitBlocked = false;
+	protected int $ignoreOwnerUntilAge = 5;
 	protected ?EntityDamageEvent $lastDamageEvent = null;
 
 	public function isHitBlocked() : bool{
@@ -201,7 +202,7 @@ abstract class Projectile extends Entity{
 
 		$newDiff = $end->subtractVector($start);
 		foreach($world->getCollidingEntities($this->boundingBox->addCoord($newDiff->x, $newDiff->y, $newDiff->z)->expand(1, 1, 1), $this) as $entity){
-			if($entity->getId() === $this->getOwningEntityId() && $this->ticksLived < 5){
+			if($entity->getId() === $this->getOwningEntityId() && $this->ticksLived < $this->ignoreOwnerUntilAge){
 				continue;
 			}
 

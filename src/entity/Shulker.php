@@ -28,6 +28,7 @@ use pocketmine\block\utils\SupportType;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
@@ -110,17 +111,31 @@ class Shulker extends Living{
 		$this->networkPropertiesDirty = true;
 	}
 
-	private function hasSupport(Vector3 $position, int $face) : bool{
+	private function hasSupport(Vector3 $position, AxisAlignedBB $bounds, int $face) : bool{
 		if(!in_array($face, Facing::ALL, true)){
 			return false;
 		}
 		$support = $position->getSide($face);
-		$block = $this->getWorld()->getBlockAt($support->getFloorX(), $support->getFloorY(), $support->getFloorZ());
-		return $block->getSupportType(Facing::opposite($face)) === SupportType::FULL;
+		$x = $support->getFloorX();
+		$y = $support->getFloorY();
+		$z = $support->getFloorZ();
+		$cell = AxisAlignedBB::one()->offset($x, $y, $z);
+		// A tiny step towards the supporting face detects contact without treating an overlap as support.
+		if($bounds->intersectsWith($cell) || !$bounds->offsetTowardsCopy($face, 0.00001)->intersectsWith($cell, 0.0)){
+			return false;
+		}
+		return $this->getWorld()->getBlockAt($x, $y, $z)->getSupportType(Facing::opposite($face)) === SupportType::FULL;
+	}
+
+	public function setHasGravity(bool $v = true) : void{
+		if($this->hasGravity() !== $v){
+			parent::setHasGravity($v);
+			$this->networkPropertiesDirty = true;
+		}
 	}
 
 	private function refreshAttachmentGravity() : void{
-		$this->setHasGravity(!$this->hasSupport($this->location, $this->attachFace));
+		$this->setHasGravity(!$this->hasSupport($this->location, $this->boundingBox, $this->attachFace));
 	}
 
 	protected function tryChangeMovement() : void{
@@ -180,16 +195,17 @@ class Shulker extends Living{
 		}
 
 		$offset = $destination->subtractVector($this->location);
-		if($world->getBlockCollisionBoxes($this->boundingBox->offsetCopy($offset->x, $offset->y, $offset->z)) !== []){
+		$bounds = $this->boundingBox->offsetCopy($offset->x, $offset->y, $offset->z);
+		if($world->getBlockCollisionBoxes($bounds) !== []){
 			return false;
 		}
 
 		foreach(Facing::ALL as $face){
-			if($this->hasSupport($destination, $face)){
+			if($this->hasSupport($destination, $bounds, $face)){
 				if(!$this->teleport($destination)){
 					return false;
 				}
-				if($this->hasSupport($this->location, $face)){
+				if($this->hasSupport($this->location, $this->boundingBox, $face)){
 					$this->setAttachFace($face);
 				}else{
 					$this->refreshAttachmentGravity();
