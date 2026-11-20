@@ -55,7 +55,10 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\NbtException;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\DoubleTag;
+use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
+use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\ShortTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\utils\SingletonTrait;
@@ -302,6 +305,33 @@ final class EntityFactory{
 		}catch(NbtException $e){
 			throw new SavedDataLoadingException($e->getMessage(), 0, $e);
 		}
+	}
+
+	/**
+	 * Creates an entity instance by its identifier string (e.g. "minecraft:zombie", "Zombie", "skeleton").
+	 */
+	public function create(string $identifier, Location $location, ?CompoundTag $extraNbt = null) : ?Entity{
+		$cleanId = trim($identifier);
+		$func = $this->creationFuncs[$cleanId]
+			?? $this->creationFuncs["minecraft:" . $cleanId]
+			?? $this->creationFuncs[ucfirst($cleanId)]
+			?? null;
+		if($func === null){
+			return null;
+		}
+		$nbt = $extraNbt !== null ? clone $extraNbt : new CompoundTag();
+		$nbt->setTag(Entity::TAG_POS, new ListTag([
+			new DoubleTag($location->x),
+			new DoubleTag($location->y),
+			new DoubleTag($location->z)
+		]));
+		$nbt->setTag(Entity::TAG_ROTATION, new ListTag([
+			new FloatTag($location->yaw),
+			new FloatTag($location->pitch)
+		]));
+		/** @var Entity $entity */
+		$entity = $func($location->getWorld(), $nbt);
+		return $entity;
 	}
 
 	public function injectSaveId(string $class, CompoundTag $saveData) : void{
