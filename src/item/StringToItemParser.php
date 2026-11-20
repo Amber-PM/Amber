@@ -1300,6 +1300,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->register("bowl", fn() => Items::BOWL());
 		$result->register("bread", fn() => Items::BREAD());
 		$result->register("brick", fn() => Items::BRICK());
+		$result->register("brush", fn() => Items::BRUSH());
 		$result->register("bucket", fn() => Items::BUCKET());
 		$result->register("carrot", fn() => Items::CARROT());
 		$result->register("cat_spawn_egg", fn() => Items::CAT_SPAWN_EGG());

@@ -557,7 +557,12 @@ abstract class Entity{
 
 		$this->setLastDamageCause($source);
 
-		$this->setHealth($this->getHealth() - $source->getFinalDamage());
+		$this->setHealth($this->getHealth() - $this->getAcceptedDamage($source));
+	}
+
+	/** Returns the damage to apply after the event has run and was not cancelled. */
+	protected function getAcceptedDamage(EntityDamageEvent $source) : float{
+		return $source->getFinalDamage();
 	}
 
 	public function heal(EntityRegainHealthEvent $source) : void{
