@@ -39,12 +39,14 @@ class Warden extends Living{
 	public const TAG_ANGER = "Anger";
 	public const ANGRY_THRESHOLD = 80;
 	public const MAX_ANGER = 150;
+	private const SONIC_BOOM_TICKS = 20;
 
 	protected int $anger = 0;
 	protected bool $emerging = false;
 	protected bool $digging = false;
 	protected bool $sniffing = false;
 	protected bool $sonicBooming = false;
+	private ?int $sonicBoomEndsAtTick = null;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::WARDEN;
@@ -145,7 +147,17 @@ class Warden extends Living{
 
 	public function setSonicBooming(bool $booming = true) : void{
 		$this->sonicBooming = $booming;
+		$this->sonicBoomEndsAtTick = $booming ? $this->server->getTick() + self::SONIC_BOOM_TICKS : null;
+		$this->scheduleUpdate();
 		$this->networkPropertiesDirty = true;
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		if($this->sonicBoomEndsAtTick !== null && $this->lastUpdate >= $this->sonicBoomEndsAtTick){
+			$this->setSonicBooming(false);
+		}
+
+		return parent::entityBaseTick($tickDiff) || $this->sonicBoomEndsAtTick !== null;
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
@@ -178,8 +190,10 @@ class Warden extends Living{
 		$ev = new EntityDamageEvent($victim, EntityDamageEvent::CAUSE_MAGIC, 10.0);
 		$victim->attack($ev);
 
-		$direction = $victim->getLocation()->subtractVector($this->location)->normalize();
-		$victim->knockBack($direction->x, $direction->z, 2.5, 0.5);
+		if(!$ev->isCancelled()){
+			$direction = $victim->getLocation()->subtractVector($this->location)->normalize();
+			$victim->knockBack($direction->x, $direction->z, 2.5, 0.5);
+		}
 
 		$this->broadcastSound(new ExplodeSound());
 		return true;

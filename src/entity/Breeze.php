@@ -25,9 +25,6 @@ namespace pocketmine\entity;
 
 use pocketmine\entity\projectile\WindCharge;
 use pocketmine\event\entity\EntityDamageEvent;
-use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
-use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -91,11 +88,8 @@ class Breeze extends Living{
 	}
 
 	public function getDrops() : array{
-		$breezeRod = StringToItemParser::getInstance()->parse("breeze_rod")
-			?? new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Breeze Rod");
-		return [
-			$breezeRod->setCount(mt_rand(1, 2))
-		];
+		$breezeRod = StringToItemParser::getInstance()->parse("breeze_rod");
+		return $breezeRod !== null ? [$breezeRod->setCount(mt_rand(1, 2))] : [];
 	}
 
 	public function getXpDropAmount() : int{

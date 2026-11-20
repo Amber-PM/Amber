@@ -29,21 +29,25 @@ use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\player\Player;
 use pocketmine\world\particle\HeartParticle;
 use pocketmine\world\sound\PopSound;
+use Ramsey\Uuid\Uuid;
 
 class Allay extends Living{
 
 	public const TAG_ITEM = "Item";
 	public const TAG_DANCING = "Dancing";
+	public const TAG_OWNER_UUID = TameableAnimal::TAG_OWNER_UUID;
 
 	protected ?Item $heldItem = null;
 	protected bool $dancing = false;
-	protected ?int $ownerId = null;
+	private ?string $ownerUUID = null;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::ALLAY;
@@ -78,6 +82,11 @@ class Allay extends Living{
 			$this->heldItem = Item::nbtDeserialize($itemTag);
 		}
 
+		$ownerTag = $nbt->getTag(self::TAG_OWNER_UUID);
+		if($ownerTag instanceof StringTag && Uuid::isValid($ownerTag->getValue())){
+			$this->ownerUUID = Uuid::fromString($ownerTag->getValue())->toString();
+		}
+
 		$this->dancing = $nbt->getByte(self::TAG_DANCING, 0) !== 0;
 
 		if($nbt->getTag("Health") === null){
@@ -90,6 +99,9 @@ class Allay extends Living{
 		if($this->heldItem !== null && !$this->heldItem->isNull()){
 			$nbt->setTag(self::TAG_ITEM, $this->heldItem->nbtSerialize());
 		}
+		if($this->ownerUUID !== null){
+			$nbt->setString(self::TAG_OWNER_UUID, $this->ownerUUID);
+		}
 		$nbt->setByte(self::TAG_DANCING, $this->dancing ? 1 : 0);
 		return $nbt;
 	}
@@ -97,6 +109,7 @@ class Allay extends Living{
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
 		$properties->setGenericFlag(EntityMetadataFlags::DANCING, $this->dancing);
+		$properties->setLong(EntityMetadataProperties::OWNER_EID, $this->getOwningEntityId() ?? -1);
 	}
 
 	public function getHeldItem() : ?Item{
@@ -116,21 +129,42 @@ class Allay extends Living{
 		$this->networkPropertiesDirty = true;
 	}
 
+	public function getOwningEntity() : ?Entity{
+		return $this->ownerUUID !== null ?
+			$this->server->getPlayerByUUID(Uuid::fromString($this->ownerUUID)) :
+			parent::getOwningEntity();
+	}
+
+	public function getOwningEntityId() : ?int{
+		return $this->ownerUUID !== null ? $this->getOwningEntity()?->getId() : parent::getOwningEntityId();
+	}
+
+	public function setOwningEntity(?Entity $owner) : void{
+		parent::setOwningEntity($owner);
+		$this->ownerUUID = $owner instanceof Player ? $owner->getUniqueId()->toString() : null;
+	}
+
 	public function getOwnerId() : ?int{
-		return $this->ownerId;
+		return $this->getOwningEntityId();
 	}
 
 	public function setOwnerId(?int $ownerId) : void{
+		$owner = $ownerId !== null ? $this->server->getWorldManager()->findEntity($ownerId) : null;
 		$this->ownerId = $ownerId;
+		$this->ownerUUID = $owner instanceof Player ? $owner->getUniqueId()->toString() : null;
+		$this->networkPropertiesDirty = true;
 	}
 
 	public function interact(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
+		$isShard = $item->getTypeId() === VanillaItems::AMETHYST_SHARD()->getTypeId();
 
 		// Duplication with amethyst shard while dancing
-		if($this->dancing && $item->getTypeId() === VanillaItems::AMETHYST_SHARD()->getTypeId()){
-			$item->pop();
-			$player->getInventory()->setItemInHand($item);
+		if($this->dancing && $isShard){
+			if($player->hasFiniteResources()){
+				$item->pop();
+				$player->getInventory()->setItemInHand($item);
+			}
 
 			$clone = new Allay($this->location);
 			$clone->spawnToAll();
@@ -146,10 +180,12 @@ class Allay extends Living{
 			$given->setCount(1);
 			$this->setHeldItem($given);
 
-			$item->pop();
-			$player->getInventory()->setItemInHand($item);
+			if(!$isShard || $player->hasFiniteResources()){
+				$item->pop();
+				$player->getInventory()->setItemInHand($item);
+			}
 
-			$this->ownerId = $player->getId();
+			$this->setOwningEntity($player);
 			$this->broadcastSound(new PopSound());
 			return true;
 		}
@@ -167,20 +203,14 @@ class Allay extends Living{
 
 	public function attack(EntityDamageEvent $source) : void{
 		// Friendly fire prevention from owner
-		if($source instanceof EntityDamageByEntityEvent && $this->ownerId !== null){
+		if($source instanceof EntityDamageByEntityEvent && ($this->ownerUUID !== null || $this->ownerId !== null)){
 			$damager = $source->getDamager();
-			if($damager !== null && $damager->getId() === $this->ownerId){
+			if($this->ownerUUID !== null ?
+				$damager instanceof Player && $damager->getUniqueId()->toString() === $this->ownerUUID :
+				$damager !== null && $damager->getId() === $this->ownerId
+			){
 				$source->cancel();
 				return;
-			}
-			try{
-				$prop = new \ReflectionProperty(EntityDamageByEntityEvent::class, "damagerEntityId");
-				if($prop->getValue($source) === $this->ownerId){
-					$source->cancel();
-					return;
-				}
-			}catch(\ReflectionException){
-				// Ignore
 			}
 		}
 

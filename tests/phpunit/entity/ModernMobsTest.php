@@ -28,6 +28,7 @@ if(!class_exists(\pmmp\encoding\BE::class, false)){
 }
 
 use Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
@@ -42,8 +43,6 @@ use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
-use pocketmine\item\ItemTypeIds;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\RayTraceResult;
@@ -52,11 +51,16 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\player\Player;
+use pocketmine\Server;
 use pocketmine\world\World;
+use pocketmine\world\WorldManager;
 use Ramsey\Uuid\Uuid;
+use Ramsey\Uuid\UuidInterface;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
+use function max;
+use function strtolower;
 
 class ModernMobsTest extends TestCase{
 
@@ -80,7 +84,27 @@ class ModernMobsTest extends TestCase{
 
 	private function getDefaultWorld() : World{
 		if($this->defaultWorld === null){
+			$worldManager = $this->createMock(WorldManager::class);
+			$worldManager->method("findEntity")->willReturnCallback(function(int $id) : ?Entity{
+				foreach($this->createdEntities as $entity){
+					if($entity->getId() === $id){
+						return $entity;
+					}
+				}
+				return null;
+			});
+			$server = $this->createMock(Server::class);
+			$server->method("getWorldManager")->willReturn($worldManager);
+			$server->method("getPlayerByUUID")->willReturnCallback(function(UuidInterface $uuid) : ?Player{
+				foreach($this->createdEntities as $entity){
+					if($entity instanceof Player && $entity->getUniqueId()->equals($uuid)){
+						return $entity;
+					}
+				}
+				return null;
+			});
 			$this->defaultWorld = $this->createMock(World::class);
+			$this->defaultWorld->method("getServer")->willReturn($server);
 			$this->defaultWorld->method("isLoaded")->willReturn(true);
 			$this->defaultWorld->method("getPlayers")->willReturn([]);
 			$this->defaultWorld->method("getDamageY")->willReturn(-64);
@@ -88,7 +112,7 @@ class ModernMobsTest extends TestCase{
 		return $this->defaultWorld;
 	}
 
-	private function createPlayer(string $name = "Steve", ?Item $heldItem = null, ?World $world = null, ?Vector3 $pos = null, bool $isSneaking = false) : Player{
+	private function createPlayer(string $name = "Steve", ?Item $heldItem = null, ?World $world = null, ?Vector3 $pos = null, bool $isSneaking = false, bool $finiteResources = true) : Player{
 		$player = $this->getMockBuilder(Player::class)
 			->disableOriginalConstructor()
 			->onlyMethods(["getName", "getUniqueId", "isSneaking", "isCreative", "isSpectator", "getInventory", "hasFiniteResources", "getViewers", "canInteract", "broadcastSound", "broadcastAnimation", "isConnected", "isOnline", "isAlive", "getArmorInventory", "close", "onDispose", "setMotion"])
@@ -99,7 +123,7 @@ class ModernMobsTest extends TestCase{
 		$player->method("isSneaking")->willReturn($isSneaking);
 		$player->method("isCreative")->willReturn(false);
 		$player->method("isSpectator")->willReturn(false);
-		$player->method("hasFiniteResources")->willReturn(true);
+		$player->method("hasFiniteResources")->willReturn($finiteResources);
 		$player->method("getViewers")->willReturn([]);
 		$player->method("canInteract")->willReturn(true);
 		$player->method("isConnected")->willReturn(true);
@@ -205,6 +229,21 @@ class ModernMobsTest extends TestCase{
 		// 20.0 - 10.0 magic damage = 10.0 HP
 		self::assertSame(10.0, $victim->getHealth());
 		self::assertTrue($warden->isSonicBooming());
+		$warden->lastUpdate = 100;
+		(new ReflectionMethod(Warden::class, "entityBaseTick"))->invoke($warden, 100);
+		self::assertFalse($warden->isSonicBooming());
+	}
+
+	public function testCancelledSonicBoomDoesNotKnockBack() : void{
+		$warden = new Warden(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
+		$this->createdEntities[] = $warden;
+		$victim = $this->createPlayer(pos: new Vector3(10, 0, 0));
+		(new ReflectionProperty(Entity::class, "health"))->setValue($victim, 20.0);
+		(new ReflectionProperty(Entity::class, "noDamageTicks"))->setValue($victim, 1);
+		$victim->expects(self::never())->method("setMotion");
+
+		self::assertTrue($warden->sonicBoom($victim));
+		self::assertSame(20.0, $victim->getHealth());
 	}
 
 	// ---------------- BREEZE TESTS ---------------- //
@@ -244,15 +283,22 @@ class ModernMobsTest extends TestCase{
 	public function testWindChargeProjectileHit() : void{
 		$windCharge = new WindCharge(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
 		$this->createdEntities[] = $windCharge;
+		$windCharge->setMotion(new Vector3(1, 0, 0));
 
 		$victim = $this->createPlayer("Victim");
 		(new ReflectionProperty(Entity::class, "health"))->setValue($victim, 20.0);
 
 		$ev = new ProjectileHitEntityEvent($windCharge, new RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0)), $victim);
+		$largestKnockback = 0.0;
+		$victim->method("setMotion")->willReturnCallback(static function(Vector3 $motion) use (&$largestKnockback) : bool{
+			$largestKnockback = max($largestKnockback, $motion->x);
+			return true;
+		});
 		$method = new ReflectionMethod(WindCharge::class, "onHit");
 		$method->invoke($windCharge, $ev);
 
 		self::assertSame(19.0, $victim->getHealth());
+		self::assertGreaterThan(1.0, $largestKnockback);
 	}
 
 	// ---------------- ALLAY TESTS ---------------- //
@@ -302,12 +348,9 @@ class ModernMobsTest extends TestCase{
 		self::assertFalse($camel->isSaddled());
 		self::assertFalse($camel->isSitting());
 
-		// Saddling
-		$saddle = new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Saddle");
-		$player = $this->createPlayer(heldItem: $saddle);
-		$interacted = $camel->interact($player, new Vector3(0, 0, 0));
-		self::assertTrue($interacted);
-		self::assertTrue($camel->isSaddled());
+		$player = $this->createPlayer(heldItem: VanillaItems::STICK()->setCustomName("Spare Saddle"));
+		self::assertFalse($camel->interact($player, Vector3::zero()));
+		self::assertFalse($camel->isSaddled());
 
 		// Sitting toggle
 		$sneakingPlayer = $this->createPlayer(isSneaking: true);
@@ -359,11 +402,17 @@ class ModernMobsTest extends TestCase{
 		// 4.0 * 0.5 = 2.0 damage -> 8.0 - 2.0 = 6.0 HP
 		self::assertSame(6.0, $armadillo->getHealth());
 
-		// Brushing interaction
-		$brush = new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Brush");
-		$player = $this->createPlayer(heldItem: $brush);
-		$brushed = $armadillo->interact($player, new Vector3(0, 0, 0));
-		self::assertTrue($brushed);
+		$armadillo->lastUpdate = 200;
+		(new ReflectionMethod(Armadillo::class, "entityBaseTick"))->invoke($armadillo, 200);
+		self::assertFalse($armadillo->isRolledUp());
+
+		$fall = new EntityDamageEvent($armadillo, EntityDamageEvent::CAUSE_FALL, 1.0);
+		$armadillo->attack($fall);
+		self::assertFalse($fall->isCancelled());
+		self::assertFalse($armadillo->isRolledUp());
+
+		$player = $this->createPlayer(heldItem: VanillaItems::STICK()->setCustomName("Brush"));
+		self::assertFalse($armadillo->interact($player, Vector3::zero()));
 	}
 
 	// ---------------- BOGGED TESTS ---------------- //
@@ -393,30 +442,97 @@ class ModernMobsTest extends TestCase{
 
 	public function testModernMobsNbtSerialization() : void{
 		$warden = new Warden(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
+		$this->createdEntities[] = $warden;
 		$warden->setAnger(95);
 		$nbt = $warden->saveNBT();
 		self::assertSame(95, $nbt->getInt(Warden::TAG_ANGER));
-		$loadedWarden = new Warden(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0), $nbt);
+		$loadedWarden = EntityFactory::getInstance()->createFromData($this->getDefaultWorld(), $nbt);
+		self::assertInstanceOf(Warden::class, $loadedWarden);
 		$this->createdEntities[] = $loadedWarden;
 		self::assertSame(95, $loadedWarden->getAnger());
 
 		$camel = new Camel(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
+		$this->createdEntities[] = $camel;
 		$camel->setSaddled(true);
 		$camel->setSitting(true);
 		$nbtCamel = $camel->saveNBT();
 		self::assertSame(1, $nbtCamel->getByte(Camel::TAG_SADDLED));
 		self::assertSame(1, $nbtCamel->getByte(Camel::TAG_SITTING));
-		$loadedCamel = new Camel(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0), $nbtCamel);
+		$loadedCamel = EntityFactory::getInstance()->createFromData($this->getDefaultWorld(), $nbtCamel);
+		self::assertInstanceOf(Camel::class, $loadedCamel);
 		$this->createdEntities[] = $loadedCamel;
 		self::assertTrue($loadedCamel->isSaddled());
 		self::assertTrue($loadedCamel->isSitting());
 
 		$bogged = new Bogged(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
+		$this->createdEntities[] = $bogged;
 		$bogged->setSheared(true);
 		$nbtBogged = $bogged->saveNBT();
 		self::assertSame(1, $nbtBogged->getByte(Bogged::TAG_SHEARED));
-		$loadedBogged = new Bogged(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0), $nbtBogged);
+		$loadedBogged = EntityFactory::getInstance()->createFromData($this->getDefaultWorld(), $nbtBogged);
+		self::assertInstanceOf(Bogged::class, $loadedBogged);
 		$this->createdEntities[] = $loadedBogged;
 		self::assertTrue($loadedBogged->isSheared());
+	}
+
+	public function testAllayRestoresOwnerAndHeldShard() : void{
+		$world = $this->getDefaultWorld();
+		$allay = new Allay(new Location(0, 0, 0, $world, 0, 0));
+		$this->createdEntities[] = $allay;
+		$owner = $this->createPlayer(heldItem: VanillaItems::AMETHYST_SHARD(), finiteResources: false);
+		self::assertTrue($allay->interact($owner, Vector3::zero()));
+		self::assertSame(1, $owner->getInventory()->getItemInHand()->getCount());
+
+		$nbt = $allay->saveNBT();
+		self::assertSame($owner->getUniqueId()->toString(), $nbt->getString(Allay::TAG_OWNER_UUID));
+		(new ReflectionProperty(Entity::class, "id"))->setValue($owner, Entity::nextRuntimeId());
+
+		$loaded = EntityFactory::getInstance()->createFromData($world, $nbt);
+		self::assertInstanceOf(Allay::class, $loaded);
+		$this->createdEntities[] = $loaded;
+		self::assertSame($owner->getId(), $loaded->getOwnerId());
+		self::assertTrue($loaded->getHeldItem()?->equalsExact(VanillaItems::AMETHYST_SHARD()));
+
+		$hit = new EntityDamageByEntityEvent($owner, $loaded, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 5);
+		$loaded->attack($hit);
+		self::assertTrue($hit->isCancelled());
+
+		$loaded->setDancing();
+		self::assertTrue($loaded->interact($owner, Vector3::zero()));
+		self::assertSame(1, $owner->getInventory()->getItemInHand()->getCount());
+	}
+
+	/** @return iterable<string, array{string, class-string<Entity>}> */
+	public static function entityAliases() : iterable{
+		yield "WindCharge" => ["WindCharge", WindCharge::class];
+		yield "minecraft:wind_charge_projectile" => ["minecraft:wind_charge_projectile", WindCharge::class];
+		yield "minecraft:breeze_wind_charge_projectile" => ["minecraft:breeze_wind_charge_projectile", WindCharge::class];
+		foreach([
+			"Warden" => Warden::class,
+			"Breeze" => Breeze::class,
+			"Allay" => Allay::class,
+			"Camel" => Camel::class,
+			"Sniffer" => Sniffer::class,
+			"Armadillo" => Armadillo::class,
+			"Bogged" => Bogged::class
+		] as $legacy => $class){
+			yield $legacy => [$legacy, $class];
+			$alias = "minecraft:" . strtolower($legacy);
+			yield $alias => [$alias, $class];
+		}
+	}
+
+	/** @param class-string<Entity> $expectedClass */
+	#[DataProvider("entityAliases")]
+	public function testEntityFactoryAliases(string $alias, string $expectedClass) : void{
+		$world = $this->getDefaultWorld();
+		$source = new $expectedClass(new Location(3, 4, 5, $world, 0, 0));
+		$this->createdEntities[] = $source;
+
+		$nbt = $source->saveNBT()->setString(EntityFactory::TAG_IDENTIFIER, $alias);
+		$loaded = EntityFactory::getInstance()->createFromData($world, $nbt);
+		self::assertInstanceOf($expectedClass, $loaded);
+		$this->createdEntities[] = $loaded;
+		self::assertTrue($loaded->getPosition()->equals(new Vector3(3, 4, 5)));
 	}
 }

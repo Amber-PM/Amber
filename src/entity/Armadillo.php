@@ -24,6 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\entity;
 
 use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\item\Durable;
+use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -33,14 +35,17 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\sound\PopSound;
 use function mt_rand;
-use function str_contains;
-use function strtolower;
 
 class Armadillo extends Living{
 
 	public const TAG_ROLLED_UP = "RolledUp";
 
+	private const UNROLL_TICKS = 100;
+	private const BRUSH_COOLDOWN_TICKS = 10;
+	private const BRUSH_DURABILITY_COST = 16;
+
 	protected bool $rolledUp = false;
+	private ?int $unrollAtTick = null;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::ARMADILLO;
@@ -63,6 +68,7 @@ class Armadillo extends Living{
 		parent::initEntity($nbt);
 
 		$this->rolledUp = $nbt->getByte(self::TAG_ROLLED_UP, 0) !== 0;
+		$this->unrollAtTick = $this->rolledUp ? $this->server->getTick() + self::UNROLL_TICKS : null;
 
 		if($nbt->getTag("Health") === null){
 			$this->setHealth(12.0);
@@ -86,35 +92,50 @@ class Armadillo extends Living{
 
 	public function setRolledUp(bool $rolled = true) : void{
 		$this->rolledUp = $rolled;
+		$this->unrollAtTick = $rolled ? $this->server->getTick() + self::UNROLL_TICKS : null;
+		$this->scheduleUpdate();
 		$this->networkPropertiesDirty = true;
 	}
 
-	public function attack(EntityDamageEvent $source) : void{
-		if($this->rolledUp){
-			// Shell reduces incoming damage by 50%
-			$source->setBaseDamage($source->getBaseDamage() * 0.5);
-		}
+	protected function getAcceptedDamage(EntityDamageEvent $source) : float{
+		$damage = parent::getAcceptedDamage($source);
+		return $this->rolledUp ? $damage * 0.5 : $damage;
+	}
 
+	public function attack(EntityDamageEvent $source) : void{
 		parent::attack($source);
 
-		if(!$source->isCancelled()){
-			// Threat triggers curling into ball
+		if(!$source->isCancelled() && (
+			$source->getCause() === EntityDamageEvent::CAUSE_ENTITY_ATTACK ||
+			$source->getCause() === EntityDamageEvent::CAUSE_PROJECTILE
+		)){
 			$this->setRolledUp(true);
 		}
 	}
 
-	public function interact(Player $player, Vector3 $clickPos) : bool{
-		$item = $player->getInventory()->getItemInHand();
-
-		// Brushing interaction drops an Armadillo Scute
-		if(str_contains(strtolower($item->getVanillaName()), "brush") || str_contains(strtolower($item->getName()), "brush")){
-			$scute = VanillaItems::SCUTE();
-			$this->getWorld()->dropItem($this->location, $scute);
-			$this->broadcastSound(new PopSound());
-			return true;
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		if($this->unrollAtTick !== null && $this->lastUpdate >= $this->unrollAtTick){
+			$this->setRolledUp(false);
 		}
 
-		return false;
+		return parent::entityBaseTick($tickDiff) || $this->unrollAtTick !== null;
+	}
+
+	public function interact(Player $player, Vector3 $clickPos) : bool{
+		$item = $player->getInventory()->getItemInHand();
+		$brush = StringToItemParser::getInstance()->parse("brush");
+		if(!$item instanceof Durable || $brush === null || $item->getTypeId() !== $brush->getTypeId() || $player->hasItemCooldown($item)){
+			return false;
+		}
+
+		$player->resetItemCooldown($item, self::BRUSH_COOLDOWN_TICKS);
+		if($player->hasFiniteResources() && $item->applyDamage(self::BRUSH_DURABILITY_COST)){
+			$player->getInventory()->setItemInHand($item);
+		}
+
+		$this->getWorld()->dropItem($this->location, VanillaItems::SCUTE());
+		$this->broadcastSound(new PopSound());
+		return true;
 	}
 
 	public function getDrops() : array{

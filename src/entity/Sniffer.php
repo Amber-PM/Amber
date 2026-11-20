@@ -24,8 +24,6 @@ declare(strict_types=1);
 namespace pocketmine\entity;
 
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
-use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
@@ -105,11 +103,8 @@ class Sniffer extends Living{
 	}
 
 	public function getDrops() : array{
-		$moss = StringToItemParser::getInstance()->parse("moss_block")
-			?? new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Moss Block");
-		return [
-			$moss->setCount(1)
-		];
+		$moss = StringToItemParser::getInstance()->parse("moss_block");
+		return $moss !== null ? [$moss->setCount(1)] : [];
 	}
 
 	public function getXpDropAmount() : int{

@@ -69,12 +69,12 @@ class WindCharge extends Throwable{
 
 			if($entity instanceof Living && $entity->isAlive()){
 				// Wind burst knockback upwards and away
-				$entity->knockBack(0.0, 0.0, 1.2, 0.8);
+				$motion = $this->getMotion();
+				$entity->knockBack($motion->x, $motion->z, 1.2, 0.8);
 			}
 		}
 
 		$explosion = new Explosion($this->location, 1.2, $this);
-		$explosion->explodeA();
 		$explosion->explodeB();
 
 		$this->flagForDespawn();
