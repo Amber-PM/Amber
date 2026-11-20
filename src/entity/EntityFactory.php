@@ -42,6 +42,7 @@ use pocketmine\entity\object\Painting;
 use pocketmine\entity\object\PaintingMotive;
 use pocketmine\entity\object\PrimedTNT;
 use pocketmine\entity\projectile\Arrow;
+use pocketmine\entity\projectile\DragonFireball;
 use pocketmine\entity\projectile\Egg;
 use pocketmine\entity\projectile\EnderPearl;
 use pocketmine\entity\projectile\ExperienceBottle;
@@ -49,6 +50,7 @@ use pocketmine\entity\projectile\IceBomb;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
+use pocketmine\entity\projectile\WitherSkull;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -232,6 +234,22 @@ final class EntityFactory{
 		$this->register(Zombie::class, function(World $world, CompoundTag $nbt) : Zombie{
 			return new Zombie(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Zombie', 'minecraft:zombie']);
+
+		$this->register(WitherSkull::class, function(World $world, CompoundTag $nbt) : WitherSkull{
+			return new WitherSkull(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['WitherSkull', 'minecraft:wither_skull']);
+
+		$this->register(DragonFireball::class, function(World $world, CompoundTag $nbt) : DragonFireball{
+			return new DragonFireball(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['DragonFireball', 'minecraft:dragon_fireball']);
+
+		$this->register(Wither::class, function(World $world, CompoundTag $nbt) : Wither{
+			return new Wither(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Wither', 'minecraft:wither', 'WitherBoss', 'minecraft:wither_boss']);
+
+		$this->register(EnderDragon::class, function(World $world, CompoundTag $nbt) : EnderDragon{
+			return new EnderDragon(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['EnderDragon', 'minecraft:ender_dragon']);
 
 		$this->register(Human::class, function(World $world, CompoundTag $nbt) : Human{
 			return new Human(Helper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
