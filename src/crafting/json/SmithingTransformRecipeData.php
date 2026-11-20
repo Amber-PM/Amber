@@ -32,11 +32,11 @@ final class SmithingTransformRecipeData{
 	/** @required */
 	public RecipeIngredientData $addition;
 	/** @required */
-	public ItemStackData $output;
+	public string $output;
 	/** @required */
 	public string $block;
 
-	public function __construct(RecipeIngredientData $template, RecipeIngredientData $input, RecipeIngredientData $addition, ItemStackData $output, string $block){
+	public function __construct(RecipeIngredientData $template, RecipeIngredientData $input, RecipeIngredientData $addition, string $output, string $block){
 		$this->template = $template;
 		$this->input = $input;
 		$this->addition = $addition;
