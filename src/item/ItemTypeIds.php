@@ -384,8 +384,14 @@ final class ItemTypeIds{
 	public const BAMBOO_CHEST_RAFT = 20345;
 	public const CHERRY_CHEST_BOAT = 20346;
 	public const PALE_OAK_CHEST_BOAT = 20347;
+	public const CREEPER_SPAWN_EGG = 20348;
+	public const ENDERMAN_SPAWN_EGG = 20349;
+	public const COW_SPAWN_EGG = 20350;
+	public const SHEEP_SPAWN_EGG = 20351;
+	public const PIG_SPAWN_EGG = 20352;
+	public const CHICKEN_SPAWN_EGG = 20353;
 
-	public const FIRST_UNUSED_ITEM_ID = 20348;
+	public const FIRST_UNUSED_ITEM_ID = 20354;
 
 	private static int $nextDynamicId = self::FIRST_UNUSED_ITEM_ID;
 
