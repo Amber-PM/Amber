@@ -95,6 +95,7 @@ use pocketmine\world\biome\Biome;
 use pocketmine\world\biome\BiomeRegistry;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\ChunkData;
+use pocketmine\world\format\io\data\BaseNbtWorldData;
 use pocketmine\world\format\io\exception\CorruptedChunkException;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use pocketmine\world\format\io\WritableWorldProvider;
@@ -299,6 +300,9 @@ class World implements ChunkManager{
 	 * @phpstan-var array<ChunkPosHash, float>
 	 */
 	private array $unloadQueue = [];
+
+	private const TAG_ENDER_DRAGON_KILLED = "AmberEnderDragonKilled";
+	private bool $enderDragonKilled = false;
 
 	private int $time;
 	public bool $stopTime = false;
@@ -517,7 +521,11 @@ class World implements ChunkManager{
 		$this->folderName = $name;
 		$this->worldId = self::$worldIdCounter++;
 
-		$this->displayName = $this->provider->getWorldData()->getName();
+		$worldData = $this->provider->getWorldData();
+		$this->displayName = $worldData->getName();
+		if($worldData instanceof BaseNbtWorldData){
+			$this->enderDragonKilled = $worldData->getCompoundTag()->getByte(self::TAG_ENDER_DRAGON_KILLED, 0) !== 0;
+		}
 		$this->logger = new \PrefixedLogger($server->getLogger(), "World: $this->displayName");
 
 		$this->blockStateRegistry = RuntimeBlockStateRegistry::getInstance();
@@ -632,6 +640,23 @@ class World implements ChunkManager{
 
 	public function getLogger() : \Logger{
 		return $this->logger;
+	}
+
+	public function hasKilledEnderDragon() : bool{
+		return $this->enderDragonKilled;
+	}
+
+	/** Records the kill before any death event can start another fight. Returns true for the first kill. */
+	public function claimEnderDragonFirstKill() : bool{
+		if($this->enderDragonKilled){
+			return false;
+		}
+		$this->enderDragonKilled = true;
+		$worldData = $this->provider->getWorldData();
+		if($worldData instanceof BaseNbtWorldData){
+			$worldData->getCompoundTag()->setByte(self::TAG_ENDER_DRAGON_KILLED, 1);
+		}
+		return true;
 	}
 
 	final public function getProvider() : WritableWorldProvider{

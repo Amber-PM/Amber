@@ -34,6 +34,8 @@ use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use pocketmine\player\Player;
+use pocketmine\world\Position;
 use function min;
 
 class EnderDragon extends Living{
@@ -47,6 +49,14 @@ class EnderDragon extends Living{
 	public const PHASE_PERCHING = 3;
 	public const PHASE_BREATH = 4;
 	public const PHASE_DYING = 5;
+
+	private const CRYSTAL_LINK_RANGE = 64.0;
+	private const CRYSTAL_SEARCH_INTERVAL = 20;
+	private const TARGET_RANGE = 64.0;
+	private const BREATH_RANGE = 16.0;
+
+	private int $phaseTicks = 0;
+	private int $crystalSearchTicks = 0;
 
 	protected int $phase = self::PHASE_CIRCLING;
 	protected bool $previouslyKilled = false;
@@ -76,8 +86,9 @@ class EnderDragon extends Living{
 		return 0.0;
 	}
 
-	public function knockBack(float $x, float $z, float $force = 0.4, ?float $verticalLimit = null) : void{
-		// 100% knockback resistance
+	protected function addAttributes() : void{
+		parent::addAttributes();
+		$this->knockbackResistanceAttr->setDefaultValue(1.0)->setValue(1.0);
 	}
 
 	protected function initEntity(CompoundTag $nbt) : void{
@@ -89,11 +100,7 @@ class EnderDragon extends Living{
 			$this->phase = $phaseTag->getValue();
 		}
 
-		$this->previouslyKilled = $nbt->getByte(self::TAG_PREVIOUSLY_KILLED, 0) !== 0;
-
-		if($nbt->getTag("Health") === null){
-			$this->setHealth(200.0);
-		}
+		$this->previouslyKilled = $this->getWorld()->hasKilledEnderDragon() || $nbt->getByte(self::TAG_PREVIOUSLY_KILLED, 0) !== 0;
 	}
 
 	public function saveNBT() : CompoundTag{
@@ -109,6 +116,7 @@ class EnderDragon extends Living{
 
 	public function setPhase(int $phase) : void{
 		$this->phase = $phase;
+		$this->phaseTicks = 0;
 		$this->networkPropertiesDirty = true;
 	}
 
@@ -125,14 +133,17 @@ class EnderDragon extends Living{
 	}
 
 	public function linkCrystal(EndCrystal $crystal) : void{
-		$this->linkedCrystalId = $crystal->getId();
+		if($this->linkedCrystalId !== $crystal->getId()){
+			$this->unlinkCrystal();
+			$this->linkedCrystalId = $crystal->getId();
+		}
 		$crystal->setBeamTarget($this->location);
 	}
 
 	public function unlinkCrystal() : void{
 		if($this->linkedCrystalId !== null){
 			$crystal = $this->getLinkedCrystal();
-			if($crystal !== null && $crystal->isAlive()){
+			if($crystal !== null && !$crystal->isClosed() && $crystal->isAlive()){
 				$crystal->setBeamTarget(null);
 			}
 			$this->linkedCrystalId = null;
@@ -166,7 +177,7 @@ class EnderDragon extends Living{
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
-		if(!$this->isAlive()){
+		if(!$this->isAlive() || $this->isClosed() || $this->isFlaggedForDespawn()){
 			return $hasUpdate;
 		}
 
@@ -178,7 +189,12 @@ class EnderDragon extends Living{
 				$this->linkedCrystalId = null;
 				$damageEv = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_ENTITY_EXPLOSION, 10.0);
 				$this->attack($damageEv);
+			}elseif($this->location->distanceSquared($crystal->getPosition()) > self::CRYSTAL_LINK_RANGE ** 2){
+				$this->unlinkCrystal();
 			}else{
+				if($crystal->getBeamTarget()?->distanceSquared($this->location) !== 0.0){
+					$crystal->setBeamTarget($this->location);
+				}
 				// Regenerate 1.0 HP per tick
 				if($this->getHealth() < $this->getMaxHealth()){
 					$this->setHealth(min((float) $this->getMaxHealth(), $this->getHealth() + (1.0 * $tickDiff)));
@@ -187,12 +203,116 @@ class EnderDragon extends Living{
 			}
 		}
 
-		return $hasUpdate;
+		if(!$this->isAlive() || $this->isClosed() || $this->isFlaggedForDespawn()){
+			return $hasUpdate;
+		}
+
+		$this->crystalSearchTicks -= $tickDiff;
+		if($this->linkedCrystalId === null && $this->crystalSearchTicks <= 0){
+			$this->crystalSearchTicks = self::CRYSTAL_SEARCH_INTERVAL;
+			$crystal = $this->getWorld()->getNearestEntity($this->location, self::CRYSTAL_LINK_RANGE, EndCrystal::class);
+			if($crystal !== null){
+				$this->linkCrystal($crystal);
+			}
+		}
+
+		$this->tickCombat($tickDiff);
+		return true; // Keep combat and crystal searches scheduled even when stationary.
+	}
+
+	private function tickCombat(int $tickDiff) : void{
+		if($this->phase === self::PHASE_DYING){
+			return;
+		}
+		$this->phaseTicks += $tickDiff;
+		$duration = match($this->phase){
+			self::PHASE_CIRCLING => 100,
+			self::PHASE_STRAFING, self::PHASE_BREATH => 60,
+			default => 40,
+		};
+		if($this->phaseTicks < $duration){
+			return;
+		}
+
+		$target = $this->findCombatTarget();
+		if($target === null){
+			if($this->phase !== self::PHASE_CIRCLING){
+				$this->setPhase(self::PHASE_CIRCLING);
+			}else{
+				$this->phaseTicks = 0;
+			}
+			return;
+		}
+
+		switch($this->phase){
+			case self::PHASE_CIRCLING:
+			case self::PHASE_CHARGING:
+				$this->setPhase(self::PHASE_STRAFING);
+				$this->shootFireball($target->getEyePos());
+				break;
+			case self::PHASE_STRAFING:
+				if($this->location->distanceSquared($target->getPosition()) <= self::BREATH_RANGE ** 2){
+					$this->setPhase(self::PHASE_PERCHING);
+				}else{
+					$this->setPhase(self::PHASE_CIRCLING);
+				}
+				break;
+			case self::PHASE_PERCHING:
+				if($this->location->distanceSquared($target->getPosition()) <= self::BREATH_RANGE ** 2){
+					$this->setPhase(self::PHASE_BREATH);
+					$this->sprayBreath($target->getPosition());
+				}else{
+					$this->setPhase(self::PHASE_CIRCLING);
+				}
+				break;
+			default:
+				$this->setPhase(self::PHASE_CIRCLING);
+				break;
+		}
+	}
+
+	private function findCombatTarget() : ?Player{
+		$target = null;
+		$bestDistance = self::TARGET_RANGE ** 2;
+		foreach($this->getWorld()->getPlayers() as $player){
+			if(!$player->isAlive() || $player->isCreative()){
+				continue;
+			}
+			$distance = $this->location->distanceSquared($player->getPosition());
+			if($distance < $bestDistance){
+				$target = $player;
+				$bestDistance = $distance;
+			}
+		}
+		return $target;
+	}
+
+	protected function onDeath() : void{
+		if(!$this->getWorld()->claimEnderDragonFirstKill()){
+			$this->setPreviouslyKilled();
+		}
+		$this->setPhase(self::PHASE_DYING);
+		$this->unlinkCrystal();
+		parent::onDeath();
+	}
+
+	protected function setPosition(Vector3 $pos) : bool{
+		if(!$this->isClosed() && $pos instanceof Position && $pos->getWorld() !== $this->getWorld()){
+			$this->unlinkCrystal();
+			$this->crystalSearchTicks = 0;
+		}
+		return parent::setPosition($pos);
+	}
+
+	protected function onDispose() : void{
+		if($this->location->isValid()){
+			$this->unlinkCrystal();
+		}
+		parent::onDispose();
 	}
 
 	public function sprayBreath(Vector3 $targetPos) : AreaEffectCloud{
-		$headPos = $this->location->add(0, 1.0, 0);
-		$cloud = new AreaEffectCloud(Location::fromObject($headPos, $this->getWorld()));
+		$cloud = new AreaEffectCloud(Location::fromObject($targetPos, $this->getWorld()));
 		$cloud->getEffects()->add(new EffectInstance(VanillaEffects::INSTANT_DAMAGE(), 1, 1));
 		$cloud->spawnToAll();
 		return $cloud;

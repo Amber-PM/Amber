@@ -54,6 +54,10 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
+use pocketmine\world\Explosion;
+use pocketmine\world\format\io\data\BaseNbtWorldData;
+use pocketmine\world\format\io\WritableWorldProvider;
+use pocketmine\world\Position;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use ReflectionClass;
@@ -124,6 +128,7 @@ class BossFightsTest extends TestCase{
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $location);
+		(new ReflectionProperty(Entity::class, "size"))->setValue($player, new EntitySizeInfo(1.8, 0.6, 1.62));
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(
 			$location->x - 0.3,
 			$location->y,
@@ -181,6 +186,58 @@ class BossFightsTest extends TestCase{
 		self::assertEquals(0.0, $dragon->getMotion()->x);
 		self::assertEquals(0.0, $dragon->getMotion()->y);
 		self::assertEquals(0.0, $dragon->getMotion()->z);
+	}
+
+	public function testExplosionKnockbackRespectsDragonResistance() : void{
+		$world = $this->getDefaultWorld();
+		$dragon = $this->createEnderDragon($world, new Vector3(2, 0, 0));
+		$wither = $this->createWither($world, new Vector3(-2, 0, 0));
+		$wither->setInvulnerableTicks(0);
+		$world->method("getNearbyEntities")->willReturn([$dragon, $wither]);
+		$world->method("getBlock")->willReturn(VanillaBlocks::AIR());
+
+		(new Explosion(new Position(0, 0, 0, $world), 2.0))->explodeB();
+
+		self::assertLessThan(200.0, $dragon->getHealth());
+		self::assertEquals(0.0, $dragon->getMotion()->x);
+		self::assertSame(-0.5, $wither->getMotion()->x);
+	}
+
+	public function testBossesRestoreLegacyHealth() : void{
+		$location = new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0);
+		$dragon = new EnderDragon($location, CompoundTag::create()->setFloat("HealF", 25.0));
+		$wither = new Wither($location, CompoundTag::create()->setFloat("HealF", 35.0));
+		$this->createdEntities[] = $dragon;
+		$this->createdEntities[] = $wither;
+
+		self::assertSame(25.0, $dragon->getHealth());
+		self::assertSame(35.0, $wither->getHealth());
+	}
+
+	public function testDragonTicksLaunchAttacks() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getDamageY")->willReturn(-64);
+		$dragon = $this->createEnderDragon($world);
+		$world->method("getPlayers")->willReturn([$this->createPlayer(world: $world, pos: new Vector3(10, 0, 0))]);
+		$spawned = [];
+		$world->method("addEntity")->willReturnCallback(function(Entity $entity) use (&$spawned) : void{
+			$spawned[] = $entity;
+			$this->createdEntities[] = $entity;
+		});
+
+		self::assertTrue($dragon->onUpdate(1));
+		self::assertSame([], $spawned);
+		$dragon->onUpdate(100);
+		self::assertSame(EnderDragon::PHASE_STRAFING, $dragon->getPhase());
+		self::assertInstanceOf(DragonFireball::class, $spawned[0]);
+
+		$dragon->onUpdate(160);
+		self::assertSame(EnderDragon::PHASE_PERCHING, $dragon->getPhase());
+		$dragon->onUpdate(200);
+		self::assertSame(EnderDragon::PHASE_BREATH, $dragon->getPhase());
+		self::assertInstanceOf(AreaEffectCloud::class, $spawned[1]);
+		self::assertEquals(10.0, $spawned[1]->getPosition()->x);
 	}
 
 	public function testEnderDragonImmunitiesAndCombat() : void{
@@ -245,18 +302,18 @@ class BossFightsTest extends TestCase{
 			return null;
 		});
 
-		// Link crystal
-		$dragon->linkCrystal($crystal);
+		$world->method("getNearestEntity")->willReturn($crystal);
+		self::assertTrue($dragon->onUpdate(1));
 		self::assertNotNull($crystal->getBeamTarget());
 		self::assertSame($crystal->getId(), $dragon->getLinkedCrystal()?->getId());
 
 		// Tick regenerates 1.0 HP
-		$dragon->onUpdate(1);
+		$dragon->onUpdate(2);
 		self::assertSame(151.0, $dragon->getHealth());
 
 		// Crystal destroyed -> Dragon takes 10 damage!
 		(new ReflectionProperty(Entity::class, "closed"))->setValue($crystal, true);
-		$dragon->onUpdate(2);
+		$dragon->onUpdate(3);
 		// 151.0 - 10.0 = 141.0 HP
 		self::assertSame(141.0, $dragon->getHealth());
 		self::assertNull($dragon->getLinkedCrystal());
@@ -274,6 +331,28 @@ class BossFightsTest extends TestCase{
 		// Subsequent kill gives 500 XP
 		$dragon->setPreviouslyKilled(true);
 		self::assertSame(500, $dragon->getXpDropAmount());
+	}
+
+	public function testFirstDragonKillIsRecordedForNextSpawn() : void{
+		$world = $this->getMockBuilder(World::class)
+			->disableOriginalConstructor()
+			->onlyMethods(["isLoaded", "getServer", "addEntity", "getBlockCollisionBoxes", "getDamageY", "dropItem", "dropExperience"])
+			->getMock();
+		$world->method("isLoaded")->willReturn(true);
+		$data = $this->createMock(BaseNbtWorldData::class);
+		$worldTag = CompoundTag::create();
+		$data->method("getCompoundTag")->willReturn($worldTag);
+		$provider = $this->createMock(WritableWorldProvider::class);
+		$provider->method("getWorldData")->willReturn($data);
+		(new ReflectionProperty(World::class, "provider"))->setValue($world, $provider);
+		$world->expects(self::once())->method("dropExperience")->with(self::anything(), 12000);
+
+		$dragon = $this->createEnderDragon($world);
+		$dragon->kill();
+
+		self::assertSame(1, $worldTag->getByte("AmberEnderDragonKilled"));
+		self::assertSame(500, $this->createEnderDragon($world)->getXpDropAmount());
+		self::assertSame(12000, $this->createEnderDragon()->getXpDropAmount());
 	}
 
 	public function testEnderDragonNbtSerialization() : void{
@@ -300,6 +379,9 @@ class BossFightsTest extends TestCase{
 		self::assertSame(600, $wither->getDefaultMaxHealth());
 		self::assertSame(600, $wither->getMaxHealth());
 		self::assertSame(220, $wither->getInvulnerableTicks());
+		self::assertSame(200.0, $wither->getHealth());
+
+		$wither->setInvulnerableTicks(0);
 
 		// Fire, lava, drowning, suffocation immunities
 		foreach([
@@ -348,8 +430,13 @@ class BossFightsTest extends TestCase{
 		self::assertSame(480.0, $wither->getHealth());
 
 		// At <= 300 HP (50% max HP), enters Wither Armor phase
+		$dirty = new ReflectionProperty(Entity::class, "networkPropertiesDirty");
+		$dirty->setValue($wither, false);
+		$wither->setHealth(450.0);
+		self::assertFalse($dirty->getValue($wither));
 		$wither->setHealth(300.0);
 		self::assertTrue($wither->hasWitherArmor());
+		self::assertTrue($dirty->getValue($wither));
 
 		// Projectiles are now completely negated
 		$projEv2 = new EntityDamageEvent($wither, EntityDamageEvent::CAUSE_PROJECTILE, 20.0);
@@ -383,6 +470,18 @@ class BossFightsTest extends TestCase{
 		$witherEffect = $victim->getEffects()->get(VanillaEffects::WITHER());
 		self::assertNotNull($witherEffect);
 		self::assertSame(1, $witherEffect->getAmplifier()); // Wither II
+	}
+
+	public function testWitherSkullDoesNotApplyEffectToInvulnerableTarget() : void{
+		$wither = $this->createWither();
+		$skull = $wither->shootSkull(new Vector3(5, 0, 0));
+		$this->createdEntities[] = $skull;
+		$victim = $this->createWither();
+		$hit = new \pocketmine\math\RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0));
+
+		(new \ReflectionMethod(WitherSkull::class, "onHit"))->invoke($skull, new ProjectileHitEntityEvent($skull, $hit, $victim));
+
+		self::assertFalse($victim->getEffects()->has(VanillaEffects::WITHER()));
 	}
 
 	public function testWitherDeathDrops() : void{

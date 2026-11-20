@@ -28,6 +28,7 @@ use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
@@ -80,9 +81,9 @@ class Wither extends Living implements Explosive{
 			$this->invulnerableTicks = $invulTag->getValue();
 		}
 
-		if($nbt->getTag("Health") === null){
+		if($this->invulnerableTicks > 0 && $nbt->getTag("Health") === null && !($nbt->getTag("HealF") instanceof FloatTag)){
 			// Start at 200 HP during spawn phase charging up to 600 HP
-			$this->setHealth($this->invulnerableTicks > 0 ? 200.0 : 600.0);
+			$this->setHealth(200.0);
 		}
 	}
 
@@ -116,6 +117,14 @@ class Wither extends Living implements Explosive{
 
 	public function hasWitherArmor() : bool{
 		return $this->invulnerableTicks <= 0 && $this->getHealth() <= ($this->getMaxHealth() / 2);
+	}
+
+	public function setHealth(float $amount) : void{
+		$wasArmored = $this->hasWitherArmor();
+		parent::setHealth($amount);
+		if($wasArmored !== $this->hasWitherArmor()){
+			$this->networkPropertiesDirty = true;
+		}
 	}
 
 	public function getHeadTarget(int $head) : int{

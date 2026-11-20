@@ -132,6 +132,7 @@ namespace pmmp\encoding {
 				return $value;
 			}
 			public static function writeUnsignedInt(ByteBufferWriter $writer, int $value) : void{
+				$value &= 0xffffffff;
 				while(($value & ~0x7f) !== 0){
 					$writer->writeByte(($value & 0x7f) | 0x80);
 					$value >>= 7;
@@ -177,7 +178,7 @@ namespace {
 				$x |= (($m >> (2 * $i)) & 1) << $i;
 				$y |= (($m >> (2 * $i + 1)) & 1) << $i;
 			}
-			return [$x, $y];
+			return [($x << 32) >> 32, ($y << 32) >> 32];
 		}
 	}
 
@@ -203,7 +204,7 @@ namespace {
 				$y |= (($m >> (3 * $i + 1)) & 1) << $i;
 				$z |= (($m >> (3 * $i + 2)) & 1) << $i;
 			}
-			return [$x, $y, $z];
+			return [($x << 43) >> 43, ($y << 43) >> 43, ($z << 43) >> 43];
 		}
 	}
 }

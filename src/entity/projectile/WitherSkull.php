@@ -92,7 +92,7 @@ class WitherSkull extends Throwable{
 			$ev = new EntityDamageByChildEntityEvent($owningEntity ?? $this, $this, $entity, EntityDamageEvent::CAUSE_PROJECTILE, $this->damage);
 			$entity->attack($ev);
 
-			if($entity instanceof Living && $entity->isAlive()){
+			if(!$ev->isCancelled() && $entity instanceof Living && $entity->isAlive()){
 				// Inflict Wither II for 10 seconds (200 ticks)
 				$entity->getEffects()->add(new EffectInstance(VanillaEffects::WITHER(), 200, 1));
 			}

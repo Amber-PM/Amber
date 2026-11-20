@@ -629,12 +629,18 @@ abstract class Living extends Entity{
 		$this->broadcastAnimation(new HurtAnimation($this));
 	}
 
+	/** Returns whether an incoming knockback impulse is blocked by this entity's resistance. */
+	public function resistsKnockback() : bool{
+		$resistance = $this->knockbackResistanceAttr->getValue();
+		return $resistance >= 1.0 || ($resistance > 0.0 && mt_rand() / mt_getrandmax() <= $resistance);
+	}
+
 	public function knockBack(float $x, float $z, float $force = self::DEFAULT_KNOCKBACK_FORCE, ?float $verticalLimit = self::DEFAULT_KNOCKBACK_VERTICAL_LIMIT) : void{
 		$f = sqrt($x * $x + $z * $z);
 		if($f <= 0){
 			return;
 		}
-		if(mt_rand() / mt_getrandmax() > $this->knockbackResistanceAttr->getValue()){
+		if(!$this->resistsKnockback()){
 			$f = 1 / $f;
 
 			$motionX = $this->motion->x / 2;
