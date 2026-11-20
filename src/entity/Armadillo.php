@@ -121,6 +121,10 @@ class Armadillo extends Living{
 		return parent::entityBaseTick($tickDiff) || $this->unrollAtTick !== null;
 	}
 
+	public function onInteract(Player $player, Vector3 $clickPos) : bool{
+		return $this->interact($player, $clickPos);
+	}
+
 	public function interact(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 		$brush = StringToItemParser::getInstance()->parse("brush");

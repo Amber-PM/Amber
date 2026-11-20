@@ -30,6 +30,7 @@ if(!class_exists(\pmmp\encoding\BE::class, false)){
 use Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use pocketmine\block\VanillaBlocks;
 use pocketmine\entity\AttributeMap;
 use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\effect\VanillaEffects;
@@ -37,21 +38,28 @@ use pocketmine\entity\HungerManager;
 use pocketmine\entity\projectile\WindCharge;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
-use pocketmine\event\entity\ProjectileHitEntityEvent;
+use pocketmine\event\EventPriority;
 use pocketmine\event\HandlerListManager;
+use pocketmine\event\RegisteredListener;
 use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
+use pocketmine\item\Brush;
 use pocketmine\item\Item;
+use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
-use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\player\Player;
+use pocketmine\plugin\Plugin;
 use pocketmine\Server;
+use pocketmine\timings\TimingsHandler;
+use pocketmine\world\sound\ExplodeSound;
+use pocketmine\world\sound\PopSound;
 use pocketmine\world\World;
 use pocketmine\world\WorldManager;
 use Ramsey\Uuid\Uuid;
@@ -280,25 +288,52 @@ class ModernMobsTest extends TestCase{
 		self::assertInstanceOf(WindCharge::class, $windCharge);
 	}
 
-	public function testWindChargeProjectileHit() : void{
-		$windCharge = new WindCharge(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
+	/** @return iterable<string, array{bool}> */
+	public static function windChargeDamageCases() : iterable{
+		yield "accepted" => [false];
+		yield "cancelled" => [true];
+	}
+
+	#[DataProvider("windChargeDamageCases")]
+	public function testWindChargeProjectileHit(bool $cancelDamage) : void{
+		$world = $this->getDefaultWorld();
+		$world->method("getBlockAt")->willReturnCallback(static fn() => VanillaBlocks::AIR());
+		$world->expects(self::once())->method("addSound")->with(self::anything(), self::isInstanceOf(ExplodeSound::class));
+		$windCharge = new WindCharge(new Location(0, 0, 0, $world, 0, 0));
 		$this->createdEntities[] = $windCharge;
-		$windCharge->setMotion(new Vector3(1, 0, 0));
+		$windCharge->setMotion(new Vector3(2, 0, 0));
 
-		$victim = $this->createPlayer("Victim");
+		$victim = $this->createPlayer("Victim", pos: new Vector3(2, 0, 0));
 		(new ReflectionProperty(Entity::class, "health"))->setValue($victim, 20.0);
+		$world->method("getCollidingEntities")->willReturn([$victim]);
 
-		$ev = new ProjectileHitEntityEvent($windCharge, new RayTraceResult(new AxisAlignedBB(0, 0, 0, 1, 1, 1), 0, new Vector3(0, 0, 0)), $victim);
+		$damageEvents = 0;
+		$listener = new RegisteredListener(static function(EntityDamageEvent $event) use ($victim, $cancelDamage, &$damageEvents) : void{
+			if($event->getEntity() === $victim && $event->getCause() === EntityDamageEvent::CAUSE_PROJECTILE){
+				++$damageEvents;
+				if($cancelDamage){
+					$event->cancel();
+				}
+			}
+		}, EventPriority::NORMAL, $this->createMock(Plugin::class), false, new TimingsHandler("wind charge test"));
+		HandlerListManager::global()->getListFor(EntityDamageEvent::class)->register($listener);
+
 		$largestKnockback = 0.0;
-		$victim->method("setMotion")->willReturnCallback(static function(Vector3 $motion) use (&$largestKnockback) : bool{
-			$largestKnockback = max($largestKnockback, $motion->x);
-			return true;
-		});
-		$method = new ReflectionMethod(WindCharge::class, "onHit");
-		$method->invoke($windCharge, $ev);
+		$victim->expects($cancelDamage ? self::never() : self::atLeastOnce())->method("setMotion")->willReturnCallback(
+			static function(Vector3 $motion) use (&$largestKnockback) : bool{
+				$largestKnockback = max($largestKnockback, $motion->x);
+				return true;
+			}
+		);
+		(new ReflectionMethod(WindCharge::class, "move"))->invoke($windCharge, 2.0, 0.0, 0.0);
 
-		self::assertSame(19.0, $victim->getHealth());
-		self::assertGreaterThan(1.0, $largestKnockback);
+		self::assertSame(1, $damageEvents);
+		self::assertSame($cancelDamage, $windCharge->isHitCancelled());
+		self::assertSame($cancelDamage ? 20.0 : 19.0, $victim->getHealth());
+		self::assertTrue($windCharge->isFlaggedForDespawn());
+		if(!$cancelDamage){
+			self::assertGreaterThan(1.0, $largestKnockback);
+		}
 	}
 
 	// ---------------- ALLAY TESTS ---------------- //
@@ -314,7 +349,7 @@ class ModernMobsTest extends TestCase{
 		// Give item to Allay
 		$diamond = VanillaItems::DIAMOND()->setCount(5);
 		$player = $this->createPlayer("Owner", heldItem: $diamond);
-		$interacted = $allay->interact($player, new Vector3(0, 0, 0));
+		$interacted = $allay->onInteract($player, Vector3::zero());
 
 		self::assertTrue($interacted);
 		self::assertNotNull($allay->getHeldItem());
@@ -354,7 +389,7 @@ class ModernMobsTest extends TestCase{
 
 		// Sitting toggle
 		$sneakingPlayer = $this->createPlayer(isSneaking: true);
-		$camel->interact($sneakingPlayer, new Vector3(0, 0, 0));
+		self::assertTrue($camel->onInteract($sneakingPlayer, Vector3::zero()));
 		self::assertTrue($camel->isSitting());
 	}
 
@@ -380,7 +415,7 @@ class ModernMobsTest extends TestCase{
 
 	// ---------------- ARMADILLO TESTS ---------------- //
 
-	public function testArmadilloDefenseAndBrushing() : void{
+	public function testArmadilloDefense() : void{
 		$armadillo = new Armadillo(new Location(0, 0, 0, $this->getDefaultWorld(), 0, 0));
 		$this->createdEntities[] = $armadillo;
 
@@ -410,9 +445,31 @@ class ModernMobsTest extends TestCase{
 		$armadillo->attack($fall);
 		self::assertFalse($fall->isCancelled());
 		self::assertFalse($armadillo->isRolledUp());
+	}
 
-		$player = $this->createPlayer(heldItem: VanillaItems::STICK()->setCustomName("Brush"));
-		self::assertFalse($armadillo->interact($player, Vector3::zero()));
+	public function testArmadilloBrushing() : void{
+		$world = $this->getDefaultWorld();
+		$world->expects(self::once())->method("dropItem")->with(self::anything(), self::equalTo(VanillaItems::SCUTE()));
+		$world->expects(self::once())->method("addSound")->with(self::anything(), self::isInstanceOf(PopSound::class));
+		$armadillo = new Armadillo(new Location(0, 0, 0, $world, 0, 0));
+		$this->createdEntities[] = $armadillo;
+
+		$player = $this->createPlayer(heldItem: VanillaItems::SHEARS()->setCustomName("Brush"));
+		(new ReflectionProperty(Entity::class, "server"))->setValue($player, $world->getServer());
+		$session = $this->createMock(NetworkSession::class);
+		$session->expects(self::once())->method("onItemCooldownChanged")->with(self::isInstanceOf(Brush::class), 10);
+		(new ReflectionProperty(Player::class, "networkSession"))->setValue($player, $session);
+		self::assertFalse($armadillo->onInteract($player, Vector3::zero()));
+
+		$brush = StringToItemParser::getInstance()->parse("brush");
+		self::assertInstanceOf(Brush::class, $brush);
+		$player->getInventory()->setItemInHand($brush);
+		self::assertTrue($armadillo->onInteract($player, Vector3::zero()));
+		$held = $player->getInventory()->getItemInHand();
+		self::assertInstanceOf(Brush::class, $held);
+		self::assertSame(16, $held->getDamage());
+		self::assertTrue($player->hasItemCooldown($held));
+		self::assertFalse($armadillo->onInteract($player, Vector3::zero()));
 	}
 
 	// ---------------- BOGGED TESTS ---------------- //
@@ -428,7 +485,7 @@ class ModernMobsTest extends TestCase{
 
 		// Shearing interaction
 		$player = $this->createPlayer(heldItem: VanillaItems::SHEARS());
-		$interacted = $bogged->interact($player, new Vector3(0, 0, 0));
+		$interacted = $bogged->onInteract($player, Vector3::zero());
 		self::assertTrue($interacted);
 		self::assertTrue($bogged->isSheared());
 

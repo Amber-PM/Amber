@@ -31,6 +31,7 @@ use pocketmine\event\entity\EntityDamageByChildEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\ProjectileHitEntityEvent;
 use pocketmine\event\entity\ProjectileHitEvent;
+use pocketmine\math\RayTraceResult;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\world\Explosion;
@@ -60,23 +61,28 @@ class WindCharge extends Throwable{
 	}
 
 	protected function onHit(ProjectileHitEvent $event) : void{
-		if($event instanceof ProjectileHitEntityEvent){
-			$entity = $event->getEntityHit();
-			$owningEntity = $this->getOwningEntity();
+		if(!$event instanceof ProjectileHitEntityEvent){
+			$this->burst();
+		}
+	}
 
-			$ev = new EntityDamageByChildEntityEvent($owningEntity ?? $this, $this, $entity, EntityDamageEvent::CAUSE_PROJECTILE, $this->damage);
-			$entity->attack($ev);
+	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
+		$owningEntity = $this->getOwningEntity();
+		$damageEvent = new EntityDamageByChildEntityEvent($owningEntity ?? $this, $this, $entityHit, EntityDamageEvent::CAUSE_PROJECTILE, $this->damage);
+		$entityHit->attack($damageEvent);
+		$this->lastDamageEvent = $damageEvent;
 
-			if($entity instanceof Living && $entity->isAlive()){
-				// Wind burst knockback upwards and away
-				$motion = $this->getMotion();
-				$entity->knockBack($motion->x, $motion->z, 1.2, 0.8);
-			}
+		if(!$damageEvent->isCancelled() && $entityHit instanceof Living && $entityHit->isAlive()){
+			$motion = $this->getMotion();
+			$entityHit->knockBack($motion->x, $motion->z, 1.2, 0.8);
 		}
 
+		$this->burst();
+		$this->flagForDespawn();
+	}
+
+	private function burst() : void{
 		$explosion = new Explosion($this->location, 1.2, $this);
 		$explosion->explodeB();
-
-		$this->flagForDespawn();
 	}
 }

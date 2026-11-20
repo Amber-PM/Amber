@@ -65,6 +65,7 @@ final class VanillaItems{
 	private static Bowl $_mBOWL;
 	private static Bread $_mBREAD;
 	private static Item $_mBRICK;
+	private static Brush $_mBRUSH;
 	private static Bucket $_mBUCKET;
 	private static Carrot $_mCARROT;
 	private static SpawnEgg $_mCAT_SPAWN_EGG;
@@ -425,6 +426,7 @@ final class VanillaItems{
 			"bowl" => fn(Bowl $v) => self::$_mBOWL = $v,
 			"bread" => fn(Bread $v) => self::$_mBREAD = $v,
 			"brick" => fn(Item $v) => self::$_mBRICK = $v,
+			"brush" => fn(Brush $v) => self::$_mBRUSH = $v,
 			"bucket" => fn(Bucket $v) => self::$_mBUCKET = $v,
 			"carrot" => fn(Carrot $v) => self::$_mCARROT = $v,
 			"cat_spawn_egg" => fn(SpawnEgg $v) => self::$_mCAT_SPAWN_EGG = $v,
@@ -895,6 +897,11 @@ final class VanillaItems{
 	public static function BRICK() : Item{
 		if(!isset(self::$_mBRICK)){ self::init(); }
 		return clone self::$_mBRICK;
+	}
+
+	public static function BRUSH() : Brush{
+		if(!isset(self::$_mBRUSH)){ self::init(); }
+		return clone self::$_mBRUSH;
 	}
 
 	public static function BUCKET() : Bucket{
