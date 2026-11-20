@@ -2,11 +2,11 @@
 
 /*
  *
- *     _             _               
- *    / \\   _ __ ___ | |__   ___ _ __ 
+ *     _             _
+ *    / \\   _ __ ___ | |__   ___ _ __
  *   / _ \\ | '_ ` _ \\| '_ \\ / _ \\ '__|
- *  / ___ \\| | | | | | |_) |  __/ |   
- * /_/   \\_\\_| |_| |_|_.__/ \\___|_|   
+ *  / ___ \\| | | | | | |_) |  __/ |
+ * /_/   \\_\\_| |_| |_|_.__/ \\___|_|
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -28,7 +28,7 @@ use pocketmine\math\Vector3;
 use pocketmine\utils\Random;
 use pocketmine\world\ChunkManager;
 use pocketmine\world\structure\StructureRotation;
-use function count;
+use function array_shift;
 
 final class JigsawAssembler{
 
@@ -60,6 +60,7 @@ final class JigsawAssembler{
 			return [];
 		}
 
+		$startPos = $startPos->floor();
 		$rootRotation = StructureRotation::NONE;
 		$rootBB = $rootPiece->getBoundingBox($startPos, $rootRotation);
 		$rootPlaced = new PlacedStructurePiece($rootPiece, $startPos, $rootRotation, $rootBB, 0);
@@ -82,7 +83,7 @@ final class JigsawAssembler{
 			foreach($parent->piece->getConnections() as $conn){
 				// 1. Calculate parent joint's world position & facing
 				[$prx, $prz] = $parent->rotation->rotateCoordinate((int) $conn->position->x, (int) $conn->position->z, $parentSx, $parentSz);
-				$parentJointWorld = $parent->worldPos->add($prx, $conn->position->y, $prz);
+				$parentJointWorld = $parent->worldPos->add($prx, $conn->position->getFloorY(), $prz);
 				$parentFacing = $parent->rotation->rotateFacing($conn->facing);
 				$requiredChildFacing = Facing::opposite($parentFacing);
 
@@ -95,44 +96,12 @@ final class JigsawAssembler{
 					continue;
 				}
 
-				$childPiece = $targetPool->selectPiece($random);
-				if($childPiece === null){
-					continue;
-				}
-
-				$childSize = $childPiece->getTemplate()->getSize();
-				$childSx = (int) $childSize->x;
-				$childSz = (int) $childSize->z;
-
-				// 3. Find matching joint in child piece
-				$placedChild = null;
-				foreach($childPiece->getConnections() as $childConn){
-					// Try rotations to align child joint opposing parent joint
-					foreach([StructureRotation::NONE, StructureRotation::CLOCKWISE_90, StructureRotation::CLOCKWISE_180, StructureRotation::COUNTERCLOCKWISE_90] as $rot){
-						if($rot->rotateFacing($childConn->facing) !== $requiredChildFacing){
-							continue;
-						}
-
-						[$crx, $crz] = $rot->rotateCoordinate((int) $childConn->position->x, (int) $childConn->position->z, $childSx, $childSz);
-						
-						// Target world pos of child joint must touch parent joint in the direction of parent facing
-						$matingWorldPos = $parentJointWorld->getSide($parentFacing);
-						$childWorldOrigin = $matingWorldPos->subtract($crx, $childConn->position->y, $crz);
-						$childBB = $childPiece->getBoundingBox($childWorldOrigin, $rot);
-
-						// Collision check against all existing placed pieces
-						$intersects = false;
-						foreach($placedPieces as $existing){
-							if($existing->boundingBox->intersectsWith($childBB)){
-								$intersects = true;
-								break;
-							}
-						}
-
-						if(!$intersects){
-							$placedChild = new PlacedStructurePiece($childPiece, $childWorldOrigin, $rot, $childBB, $parent->depth + 1);
-							break 2;
-						}
+				$matingWorldPos = $parentJointWorld->getSide($parentFacing);
+				$placedChild = self::tryPlacePiece($targetPool, $random, $matingWorldPos, $requiredChildFacing, $parent->depth + 1, $placedPieces);
+				if($placedChild === null && $targetPool->getId() === $conn->targetPool && $targetPool->getFallbackPool() !== $targetPool->getId()){
+					$fallbackPool = $registry->getPool($targetPool->getFallbackPool());
+					if($fallbackPool !== null){
+						$placedChild = self::tryPlacePiece($fallbackPool, $random, $matingWorldPos, $requiredChildFacing, $parent->depth + 1, $placedPieces);
 					}
 				}
 
@@ -144,6 +113,48 @@ final class JigsawAssembler{
 		}
 
 		return $placedPieces;
+	}
+
+	/** @param PlacedStructurePiece[] $placedPieces */
+	private static function tryPlacePiece(JigsawPool $pool, Random $random, Vector3 $matingWorldPos, int $requiredFacing, int $depth, array $placedPieces) : ?PlacedStructurePiece{
+		$childPiece = $pool->selectPiece($random);
+		if($childPiece === null){
+			return null;
+		}
+
+		$childSize = $childPiece->getTemplate()->getSize();
+		$childSx = (int) $childSize->x;
+		$childSz = (int) $childSize->z;
+
+		// Find a matching joint in the child piece.
+		foreach($childPiece->getConnections() as $childConn){
+			// Try rotations to align child joint opposing parent joint
+			foreach([StructureRotation::NONE, StructureRotation::CLOCKWISE_90, StructureRotation::CLOCKWISE_180, StructureRotation::COUNTERCLOCKWISE_90] as $rot){
+				if($rot->rotateFacing($childConn->facing) !== $requiredFacing){
+					continue;
+				}
+
+				[$crx, $crz] = $rot->rotateCoordinate((int) $childConn->position->x, (int) $childConn->position->z, $childSx, $childSz);
+
+				$childWorldOrigin = $matingWorldPos->subtract($crx, $childConn->position->getFloorY(), $crz);
+				$childBB = $childPiece->getBoundingBox($childWorldOrigin, $rot);
+
+				// Collision check against all existing placed pieces
+				$intersects = false;
+				foreach($placedPieces as $existing){
+					if($existing->boundingBox->intersectsWith($childBB)){
+						$intersects = true;
+						break;
+					}
+				}
+
+				if(!$intersects){
+					return new PlacedStructurePiece($childPiece, $childWorldOrigin, $rot, $childBB, $depth);
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**

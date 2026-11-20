@@ -25,7 +25,14 @@ namespace pocketmine\world\structure;
 
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
+use pocketmine\block\Rail;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\block\StraightOnlyRail;
+use pocketmine\block\utils\AnyFacing;
+use pocketmine\block\utils\HorizontalFacing;
+use pocketmine\block\utils\PillarRotation;
+use pocketmine\block\utils\RailConnectionInfo;
+use pocketmine\math\Axis;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\LittleEndianNbtSerializer;
 use pocketmine\nbt\tag\CompoundTag;
@@ -37,15 +44,22 @@ use pocketmine\world\ChunkManager;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use pocketmine\world\format\SubChunk;
+use pocketmine\world\World;
+use function count;
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
-use function is_array;
-use function max;
-use function min;
+use function strlen;
 use function zlib_decode;
 
 class StructureTemplate{
+
+	private const MIN_Y = Chunk::MIN_SUBCHUNK_INDEX * SubChunk::EDGE_LENGTH;
+	private const MAX_Y = (Chunk::MAX_SUBCHUNK_INDEX + 1) * SubChunk::EDGE_LENGTH - 1;
+	private const SKIP_STATE = -2;
+
+	/** @var array<int, CompoundTag> Block entity NBT indexed by local flat block index */
+	private array $blockEntityData = [];
 
 	/**
 	 * @param int[] $palette Array of block state IDs
@@ -93,7 +107,7 @@ class StructureTemplate{
 		return $this->palette[$paletteIdx];
 	}
 
-	public function setBlockStateId(int $x, int $y, int $z, int $stateId) : void{
+	public function setBlockStateId(int $x, int $y, int $z, int $stateId, ?CompoundTag $nbt = null) : void{
 		$sx = (int) $this->size->x;
 		$sy = (int) $this->size->y;
 		$sz = (int) $this->size->z;
@@ -117,6 +131,11 @@ class StructureTemplate{
 
 		$flatIdx = ($x * $sy + $y) * $sz + $z;
 		$this->layer0[$flatIdx] = $paletteIdx;
+		if($nbt !== null){
+			$this->blockEntityData[$flatIdx] = clone $nbt;
+		}else{
+			unset($this->blockEntityData[$flatIdx]);
+		}
 	}
 
 	/**
@@ -126,7 +145,7 @@ class StructureTemplate{
 		$template = new self($size, new Vector3(0, 0, 0));
 		foreach($blocks as $b){
 			if($b instanceof StructureBlock){
-				$template->setBlockStateId($b->x, $b->y, $b->z, $b->stateId);
+				$template->setBlockStateId($b->x, $b->y, $b->z, $b->stateId, $b->nbt);
 			}
 		}
 		return $template;
@@ -150,7 +169,9 @@ class StructureTemplate{
 	public function saveToFile(string $path) : void{
 		$nbt = $this->toNbt();
 		$raw = (new LittleEndianNbtSerializer())->write(new TreeRoot($nbt));
-		file_put_contents($path, $raw);
+		if(@file_put_contents($path, $raw) !== strlen($raw)){
+			throw new \RuntimeException("Failed to write structure file: $path");
+		}
 	}
 
 	public static function fromNbt(CompoundTag $root) : self{
@@ -229,7 +250,19 @@ class StructureTemplate{
 			}
 		}
 
-		return new self($size, $origin, $palette, $layer0, $layer1);
+		$template = new self($size, $origin, $palette, $layer0, $layer1);
+		$positionData = $defaultTag?->getCompoundTag("block_position_data");
+		$totalBlocks = (int) $size->x * (int) $size->y * (int) $size->z;
+		if($positionData !== null){
+			foreach($positionData->getValue() as $index => $entry){
+				$flatIdx = (int) $index;
+				if((string) $flatIdx === (string) $index && $flatIdx >= 0 && $flatIdx < $totalBlocks &&
+					$entry instanceof CompoundTag && ($nbt = $entry->getCompoundTag("block_entity_data")) !== null){
+					$template->blockEntityData[$flatIdx] = clone $nbt;
+				}
+			}
+		}
+		return $template;
 	}
 
 	public function toNbt() : CompoundTag{
@@ -273,7 +306,11 @@ class StructureTemplate{
 
 		$defaultCompound = CompoundTag::create();
 		$defaultCompound->setTag("block_palette", $blockPaletteList);
-		$defaultCompound->setTag("block_position_data", CompoundTag::create());
+		$positionData = CompoundTag::create();
+		foreach($this->blockEntityData as $index => $nbt){
+			$positionData->setTag((string) $index, CompoundTag::create()->setTag("block_entity_data", clone $nbt));
+		}
+		$defaultCompound->setTag("block_position_data", $positionData);
 
 		$paletteCompound = CompoundTag::create();
 		$paletteCompound->setTag("default", $defaultCompound);
@@ -285,7 +322,7 @@ class StructureTemplate{
 	}
 
 	/**
-	 * Pre-computes rotated and filtered state IDs per palette index for O(1) inner-loop throughput.
+	 * Pre-computes transformed and filtered state IDs per palette index for O(1) inner-loop throughput.
 	 *
 	 * @return array<int, int> paletteIndex => stateId (-2 represents skip/void)
 	 */
@@ -293,10 +330,12 @@ class StructureTemplate{
 		$transformed = [];
 		$registry = RuntimeBlockStateRegistry::getInstance();
 		$rotation = $settings->rotation;
+		$mirror = $settings->mirror;
+		$quarterTurn = $rotation === StructureRotation::CLOCKWISE_90 || $rotation === StructureRotation::COUNTERCLOCKWISE_90;
 
 		foreach($this->palette as $idx => $stateId){
 			if($stateId === Block::EMPTY_STATE_ID){
-				$transformed[$idx] = $settings->ignoreAir ? -2 : Block::EMPTY_STATE_ID;
+				$transformed[$idx] = $settings->ignoreAir ? self::SKIP_STATE : Block::EMPTY_STATE_ID;
 				continue;
 			}
 
@@ -308,14 +347,35 @@ class StructureTemplate{
 			}
 
 			if($block->getTypeId() === BlockTypeIds::STRUCTURE_VOID){
-				$transformed[$idx] = -2;
+				$transformed[$idx] = self::SKIP_STATE;
 				continue;
 			}
 
-			if($rotation !== StructureRotation::NONE){
-				if($block instanceof \pocketmine\block\utils\HorizontalFacing || $block instanceof \pocketmine\block\utils\AnyFacing){
-					$newFacing = $rotation->rotateFacing($block->getFacing());
-					$block = (clone $block)->setFacing($newFacing);
+			if($mirror === StructureMirror::NONE && $rotation === StructureRotation::NONE){
+				$transformed[$idx] = $stateId;
+				continue;
+			}
+
+			if($block instanceof HorizontalFacing || $block instanceof AnyFacing){
+				$block->setFacing($rotation->rotateFacing($mirror->mirrorFacing($block->getFacing())));
+			}
+			if($quarterTurn && $block instanceof PillarRotation){
+				$block->setAxis(match($block->getAxis()){
+					Axis::X => Axis::Z,
+					Axis::Z => Axis::X,
+					default => $block->getAxis(),
+				});
+			}
+			if($block instanceof Rail || $block instanceof StraightOnlyRail){
+				$shapes = RailConnectionInfo::CONNECTIONS + ($block instanceof Rail ? RailConnectionInfo::CURVE_CONNECTIONS : []);
+				[$a, $b] = $shapes[$block->getShape()];
+				$a = $rotation->rotateFacing($mirror->mirrorFacing($a & ~RailConnectionInfo::FLAG_ASCEND)) | ($a & RailConnectionInfo::FLAG_ASCEND);
+				$b = $rotation->rotateFacing($mirror->mirrorFacing($b & ~RailConnectionInfo::FLAG_ASCEND)) | ($b & RailConnectionInfo::FLAG_ASCEND);
+				foreach($shapes as $shape => [$first, $second]){
+					if(($a === $first && $b === $second) || ($a === $second && $b === $first)){
+						$block->setShape($shape);
+						break;
+					}
 				}
 			}
 
@@ -336,8 +396,6 @@ class StructureTemplate{
 		}
 
 		$paletteMap = $this->computeTransformedPalette($settings);
-		$minY = Chunk::MIN_SUBCHUNK_INDEX << SubChunk::COORD_BIT_SIZE;
-		$maxY = ((Chunk::MAX_SUBCHUNK_INDEX + 1) << SubChunk::COORD_BIT_SIZE) - 1;
 
 		for($x = 0; $x < $sx; ++$x){
 			for($z = 0; $z < $sz; ++$z){
@@ -353,7 +411,7 @@ class StructureTemplate{
 
 				for($y = 0; $y < $sy; ++$y){
 					$targetY = $chunkBlockY + $y;
-					if($targetY < $minY || $targetY > $maxY){
+					if($targetY < self::MIN_Y || $targetY > self::MAX_Y){
 						continue;
 					}
 
@@ -362,17 +420,14 @@ class StructureTemplate{
 					}
 
 					$flatIdx = ($x * $sy + $y) * $sz + $z;
-					$pIdx = $this->layer0[$flatIdx] ?? -1;
-					if($pIdx < 0 || !isset($paletteMap[$pIdx])){
-						continue;
+					$primaryIndex = $this->layer0[$flatIdx] ?? -1;
+					$secondaryIndex = $this->layer1[$flatIdx] ?? -1;
+					$stateId = $primaryIndex < 0 ? self::SKIP_STATE : ($paletteMap[$primaryIndex] ?? self::SKIP_STATE);
+					$secondaryId = $secondaryIndex < 0 ? self::SKIP_STATE : ($paletteMap[$secondaryIndex] ?? self::SKIP_STATE);
+					$this->writeChunkLayers($chunk, $targetX, $targetY, $targetZ, $stateId, $secondaryId);
+					if($stateId !== self::SKIP_STATE && isset($this->blockEntityData[$flatIdx])){
+						$chunk->queueBlockEntityData($targetX, $targetY, $targetZ, $this->blockEntityData[$flatIdx]);
 					}
-
-					$stateId = $paletteMap[$pIdx];
-					if($stateId === -2){
-						continue;
-					}
-
-					$chunk->setBlockStateId($targetX, $targetY, $targetZ, $stateId);
 				}
 			}
 		}
@@ -400,31 +455,58 @@ class StructureTemplate{
 
 				for($y = 0; $y < $sy; ++$y){
 					$targetY = $worldY + $y;
+					if($targetY < self::MIN_Y || $targetY > self::MAX_Y){
+						continue;
+					}
 
 					if($settings->integrity < 1.0 && $rand->nextFloat() >= $settings->integrity){
 						continue;
 					}
 
 					$flatIdx = ($x * $sy + $y) * $sz + $z;
-					$pIdx = $this->layer0[$flatIdx] ?? -1;
-					if($pIdx < 0 || !isset($paletteMap[$pIdx])){
+					$primaryIndex = $this->layer0[$flatIdx] ?? -1;
+					$secondaryIndex = $this->layer1[$flatIdx] ?? -1;
+					$stateId = $primaryIndex < 0 ? self::SKIP_STATE : ($paletteMap[$primaryIndex] ?? self::SKIP_STATE);
+					$secondaryId = $secondaryIndex < 0 ? self::SKIP_STATE : ($paletteMap[$secondaryIndex] ?? self::SKIP_STATE);
+					if($stateId === self::SKIP_STATE && $secondaryId === self::SKIP_STATE){
 						continue;
 					}
 
-					$stateId = $paletteMap[$pIdx];
-					if($stateId === -2){
-						continue;
-					}
-
-					$chunk = $world->getChunk($targetX >> 4, $targetZ >> 4);
+					$chunk = $world->getChunk($targetX >> Chunk::COORD_BIT_SIZE, $targetZ >> Chunk::COORD_BIT_SIZE);
+					$localX = $targetX & Chunk::COORD_MASK;
+					$localZ = $targetZ & Chunk::COORD_MASK;
 					if($chunk !== null){
-						$chunk->setBlockStateId($targetX & 0xf, $targetY, $targetZ & 0xf, $stateId);
-					}else{
+						$this->writeChunkLayers($chunk, $localX, $targetY, $localZ, $stateId, $secondaryId);
+					}elseif($stateId !== self::SKIP_STATE){
 						$block = RuntimeBlockStateRegistry::getInstance()->fromStateId($stateId);
 						$world->setBlockAt($targetX, $targetY, $targetZ, $block);
+						if($secondaryId !== self::SKIP_STATE || isset($this->blockEntityData[$flatIdx])){
+							$chunk = $world->getChunk($targetX >> Chunk::COORD_BIT_SIZE, $targetZ >> Chunk::COORD_BIT_SIZE);
+							if($chunk !== null && $secondaryId !== self::SKIP_STATE){
+								$chunk->setBlockStateId($localX, $targetY, $localZ, $secondaryId, 1);
+							}
+						}
+					}
+
+					if($stateId !== self::SKIP_STATE && isset($this->blockEntityData[$flatIdx])){
+						$nbt = $this->blockEntityData[$flatIdx];
+						if($world instanceof World){
+							$world->applyStructureBlockEntityData($targetX, $targetY, $targetZ, $nbt);
+						}else{
+							$chunk?->queueBlockEntityData($localX, $targetY, $localZ, $nbt);
+						}
 					}
 				}
 			}
+		}
+	}
+
+	private function writeChunkLayers(Chunk $chunk, int $x, int $y, int $z, int $stateId, int $secondaryId) : void{
+		if($stateId !== self::SKIP_STATE){
+			$chunk->setBlockStateId($x, $y, $z, $stateId);
+		}
+		if($secondaryId !== self::SKIP_STATE){
+			$chunk->setBlockStateId($x, $y, $z, $secondaryId, 1);
 		}
 	}
 }

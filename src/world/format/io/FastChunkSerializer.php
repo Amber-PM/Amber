@@ -27,6 +27,11 @@ use pmmp\encoding\BE;
 use pmmp\encoding\Byte;
 use pmmp\encoding\ByteBufferReader;
 use pmmp\encoding\ByteBufferWriter;
+use pocketmine\block\tile\Tile;
+use pocketmine\nbt\LittleEndianNbtSerializer;
+use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\nbt\tag\ListTag;
+use pocketmine\nbt\TreeRoot;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\PalettedBlockArray;
 use pocketmine\world\format\SubChunk;
@@ -42,6 +47,7 @@ use function unpack;
  */
 final class FastChunkSerializer{
 	private const FLAG_POPULATED = 1 << 1;
+	private const FLAG_PENDING_BLOCK_ENTITIES = 1 << 2;
 
 	private function __construct(){
 		//NOOP
@@ -60,11 +66,15 @@ final class FastChunkSerializer{
 
 	/**
 	 * Fast-serializes the chunk for passing between threads
-	 * TODO: tiles and entities
+	 * Includes deferred block entity data. Live tiles and entities are kept on the main thread.
 	 */
 	public static function serializeTerrain(Chunk $chunk) : string{
 		$stream = new ByteBufferWriter();
-		Byte::writeUnsigned($stream, ($chunk->isPopulated() ? self::FLAG_POPULATED : 0));
+		$pending = $chunk->getPendingBlockEntityData();
+		Byte::writeUnsigned($stream,
+			($chunk->isPopulated() ? self::FLAG_POPULATED : 0) |
+			($pending !== [] ? self::FLAG_PENDING_BLOCK_ENTITIES : 0)
+		);
 
 		//subchunks
 		$subChunks = $chunk->getSubChunks();
@@ -82,6 +92,13 @@ final class FastChunkSerializer{
 			}
 			self::serializePalettedArray($stream, $subChunk->getBiomeArray());
 
+		}
+
+		if($pending !== []){
+			$root = CompoundTag::create()->setTag("block_entities", new ListTag(array_values($pending)));
+			$nbt = (new LittleEndianNbtSerializer())->write(new TreeRoot($root));
+			BE::writeUnsignedInt($stream, strlen($nbt));
+			$stream->writeByteArray($nbt);
 		}
 
 		return $stream->getData();
@@ -123,6 +140,17 @@ final class FastChunkSerializer{
 			$subChunks[$y] = new SubChunk($airBlockId, $layers, $biomeArray);
 		}
 
-		return new Chunk($subChunks, $terrainPopulated);
+		$chunk = new Chunk($subChunks, $terrainPopulated);
+		if(($flags & self::FLAG_PENDING_BLOCK_ENTITIES) !== 0){
+			$nbt = $stream->readByteArray(BE::readUnsignedInt($stream));
+			$root = (new LittleEndianNbtSerializer())->read($nbt)->mustGetCompoundTag();
+			$entries = $root->getListTag("block_entities", CompoundTag::class);
+			if($entries !== null){
+				foreach($entries as $entry){
+					$chunk->queueBlockEntityData($entry->getInt(Tile::TAG_X), $entry->getInt(Tile::TAG_Y), $entry->getInt(Tile::TAG_Z), $entry);
+				}
+			}
+		}
+		return $chunk;
 	}
 }

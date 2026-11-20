@@ -29,6 +29,7 @@ namespace pocketmine\world\format;
 use pocketmine\block\Block;
 use pocketmine\block\tile\Tile;
 use pocketmine\data\bedrock\BiomeIds;
+use pocketmine\nbt\tag\CompoundTag;
 use function array_map;
 
 class Chunk{
@@ -62,6 +63,9 @@ class Chunk{
 	 * @phpstan-var array<int, Tile>
 	 */
 	protected array $tiles = [];
+
+	/** @var array<int, CompoundTag> Block entity data awaiting placement into a live world */
+	private array $pendingBlockEntityData = [];
 
 	protected HeightArray $heightMap;
 
@@ -105,9 +109,38 @@ class Chunk{
 	/**
 	 * Sets the blockstate at the given coordinate by internal ID.
 	 */
-	public function setBlockStateId(int $x, int $y, int $z, int $block) : void{
-		$this->getSubChunk($y >> SubChunk::COORD_BIT_SIZE)->setBlockStateId($x, $y & SubChunk::COORD_MASK, $z, $block);
+	public function setBlockStateId(int $x, int $y, int $z, int $block, int $layer = 0) : void{
+		$this->getSubChunk($y >> SubChunk::COORD_BIT_SIZE)->setBlockStateId($x, $y & SubChunk::COORD_MASK, $z, $block, $layer);
+		if($layer === 0 && $this->pendingBlockEntityData !== []){
+			unset($this->pendingBlockEntityData[self::blockHash($x, $y, $z)]);
+		}
 		$this->terrainDirtyFlags |= self::DIRTY_FLAG_BLOCKS;
+	}
+
+	/** @internal */
+	public function queueBlockEntityData(int $x, int $y, int $z, CompoundTag $nbt) : void{
+		$this->pendingBlockEntityData[self::blockHash($x, $y, $z)] = (clone $nbt)
+			->setInt(Tile::TAG_X, $x)
+			->setInt(Tile::TAG_Y, $y)
+			->setInt(Tile::TAG_Z, $z);
+	}
+
+	/**
+	 * @internal
+	 * @return array<int, CompoundTag>
+	 */
+	public function getPendingBlockEntityData() : array{
+		return $this->pendingBlockEntityData;
+	}
+
+	/**
+	 * @internal
+	 * @return array<int, CompoundTag>
+	 */
+	public function drainPendingBlockEntityData() : array{
+		$data = $this->pendingBlockEntityData;
+		$this->pendingBlockEntityData = [];
+		return $data;
 	}
 
 	/**

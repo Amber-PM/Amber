@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world\format;
 
 use function array_map;
+use function array_slice;
 use function count;
 
 class SubChunk{
@@ -76,11 +77,14 @@ class SubChunk{
 		return $this->blockLayers[0]->get($x, $y, $z);
 	}
 
-	public function setBlockStateId(int $x, int $y, int $z, int $block) : void{
-		if(count($this->blockLayers) === 0){
+	public function setBlockStateId(int $x, int $y, int $z, int $block, int $layer = 0) : void{
+		if($layer < 0){
+			throw new \InvalidArgumentException("Block layer must be non-negative");
+		}
+		while(count($this->blockLayers) <= $layer){
 			$this->blockLayers[] = new PalettedBlockArray($this->emptyBlockId);
 		}
-		$this->blockLayers[0]->set($x, $y, $z, $block);
+		$this->blockLayers[$layer]->set($x, $y, $z, $block);
 	}
 
 	/**
@@ -130,15 +134,16 @@ class SubChunk{
 	}
 
 	public function collectGarbage() : void{
-		$cleanedLayers = [];
-		foreach($this->blockLayers as $layer){
+		$layerCount = 0;
+		foreach($this->blockLayers as $index => $layer){
 			$layer->collectGarbage();
 
 			if($layer->getBitsPerBlock() !== 0 || $layer->get(0, 0, 0) !== $this->emptyBlockId){
-				$cleanedLayers[] = $layer;
+				$layerCount = $index + 1;
 			}
 		}
-		$this->blockLayers = $cleanedLayers;
+		// Keep empty layers below a non-empty layer so its index does not change.
+		$this->blockLayers = array_slice($this->blockLayers, 0, $layerCount);
 		$this->biomes->collectGarbage();
 
 		if($this->skyLight !== null && $this->skyLight->isUniform(0)){

@@ -28,6 +28,9 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\utils\Random;
+use pocketmine\world\ChunkManager;
+use pocketmine\world\format\Chunk;
+use pocketmine\world\SimpleChunkManager;
 use pocketmine\world\structure\jigsaw\JigsawAssembler;
 use pocketmine\world\structure\jigsaw\JigsawConnection;
 use pocketmine\world\structure\jigsaw\JigsawJointType;
@@ -84,17 +87,49 @@ final class JigsawAssemblyTest extends TestCase{
 		$connB = new JigsawConnection(new Vector3(2, 0, 3), Facing::SOUTH, "minecraft:empty");
 		$pieceB = new JigsawPiece($templateB, weight: 1, connections: [$connB]);
 
-		$poolB = new JigsawPool("pool_b", pieces: [$pieceB]);
+		$fallback = new JigsawPiece($templateA, connections: [$connB]);
+		$registry->registerPool(new JigsawPool("backup_b", pieces: [$fallback]));
+		$poolB = new JigsawPool("pool_b", "backup_b", [$pieceB]);
 		$registry->registerPool($poolB);
 
-		$placed = JigsawAssembler::assemble("pool_a", new Vector3(0, 64, 0), maxDepth: 2, seed: 100);
+		$templateB->setBlockStateId(0, 0, 0, VanillaBlocks::STONE()->getStateId());
+		$placed = JigsawAssembler::assemble("pool_a", new Vector3(-0.25, 64.75, -0.5), maxDepth: 2, seed: 100);
 
 		self::assertCount(2, $placed);
 		self::assertSame($pieceA, $placed[0]->piece);
 		self::assertSame($pieceB, $placed[1]->piece);
+		self::assertTrue($placed[0]->worldPos->equals(new Vector3(-1, 64, -1)));
+		self::assertTrue($placed[1]->worldPos->equals(new Vector3(-1, 64, -5)));
+
+		$world = new SimpleChunkManager(-64, 320);
+		$world->setChunk(-1, -1, new Chunk([], false));
+		JigsawAssembler::placeAll($world, $placed);
+		self::assertSame(VanillaBlocks::STONE()->getStateId(), $world->getBlockAt(-1, 64, -5)->getStateId());
 
 		// Check bounding boxes do not intersect
 		self::assertFalse($placed[0]->boundingBox->intersectsWith($placed[1]->boundingBox));
+	}
+
+	public function testFailedPlacementUsesTargetPoolFallback() : void{
+		$registry = JigsawPoolRegistry::getInstance();
+		$template = new StructureTemplate(new Vector3(3, 1, 3), new Vector3(0, 0, 0));
+		$root = new JigsawPiece($template, connections: [
+			new JigsawConnection(new Vector3(1, 0, 0), Facing::NORTH, "target"),
+		]);
+		$colliding = new JigsawPiece($template, connections: [
+			new JigsawConnection(new Vector3(1, 0, 0), Facing::SOUTH, "minecraft:empty"),
+		]);
+		$fallback = new JigsawPiece($template, connections: [
+			new JigsawConnection(new Vector3(1, 0, 2), Facing::SOUTH, "minecraft:empty"),
+		]);
+		$registry->registerPool(new JigsawPool("root", "root_backup", [$root]));
+		$registry->registerPool(new JigsawPool("root_backup", pieces: [clone $fallback]));
+		$registry->registerPool(new JigsawPool("target", "target_backup", [$colliding]));
+		$registry->registerPool(new JigsawPool("target_backup", pieces: [$fallback]));
+
+		$pieces = JigsawAssembler::assemble("root", new Vector3(0, 64, 0), maxDepth: 1, seed: 100);
+		self::assertCount(2, $pieces);
+		self::assertSame($fallback, $pieces[1]->piece);
 	}
 
 	public function testJigsawAssemblyAvoidsCollidingPieces() : void{
@@ -151,4 +186,19 @@ final class JigsawAssemblyTest extends TestCase{
 		}
 		self::assertSame($candidateChunks, $reCandidateChunks);
 	}
+	public function testPopulationOnlyRetrievesSelectedChunks() : void{
+		// Separation leaves exactly one possible offset in every grid region.
+		$populator = new StructurePopulator("missing", spacing: 4, separation: 3, worldSeed: 0);
+		$world = $this->createMock(ChunkManager::class);
+		$world->expects(self::once())->method("getChunk")->with(-4, 0)->willReturn(null);
+
+		$populator->populate($world, -3, 1, new Random(0));
+		$populator->populate($world, -4, 0, new Random(0));
+	}
+
+	public function testInvalidSeparationIsRejected() : void{
+		$this->expectException(\InvalidArgumentException::class);
+		new StructurePopulator("missing", spacing: 4, separation: 4);
+	}
+
 }

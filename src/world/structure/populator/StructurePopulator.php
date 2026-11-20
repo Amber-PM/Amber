@@ -28,8 +28,7 @@ use pocketmine\utils\Random;
 use pocketmine\world\ChunkManager;
 use pocketmine\world\generator\populator\Populator;
 use pocketmine\world\structure\jigsaw\JigsawAssembler;
-use pocketmine\world\structure\jigsaw\JigsawPoolRegistry;
-use function abs;
+use pocketmine\world\World;
 use function floor;
 
 class StructurePopulator implements Populator{
@@ -39,8 +38,13 @@ class StructurePopulator implements Populator{
 		private int $spacing = 32,
 		private int $separation = 8,
 		private int $salt = 10387312,
-		private int $baseElevation = 64
-	){}
+		private int $baseElevation = 64,
+		private ?int $worldSeed = null
+	){
+		if($separation < 0 || $separation >= $spacing){
+			throw new \InvalidArgumentException("Separation must be at least zero and less than spacing");
+		}
+	}
 
 	public function shouldGenerateInChunk(int $chunkX, int $chunkZ, int $worldSeed) : bool{
 		// Grid-based feature placement matching Bedrock chunk grid spacing
@@ -51,13 +55,22 @@ class StructurePopulator implements Populator{
 		$rand = new Random(0);
 		$rand->setSeed($gridSeed);
 
-		$candidateChunkX = $gridX * $this->spacing + $rand->nextRange(0, $this->spacing - $this->separation);
-		$candidateChunkZ = $gridZ * $this->spacing + $rand->nextRange(0, $this->spacing - $this->separation);
+		$candidateChunkX = $gridX * $this->spacing + $rand->nextRange(0, $this->spacing - $this->separation - 1);
+		$candidateChunkZ = $gridZ * $this->spacing + $rand->nextRange(0, $this->spacing - $this->separation - 1);
 
 		return $chunkX === $candidateChunkX && $chunkZ === $candidateChunkZ;
 	}
 
 	public function populate(ChunkManager $world, int $chunkX, int $chunkZ, Random $random) : void{
+		// Generators using a terrain-only manager must pass their seed at construction.
+		$worldSeed = $this->worldSeed ?? ($world instanceof World ? $world->getSeed() : null);
+		if($worldSeed === null){
+			throw new \LogicException("A world seed is required for structure population");
+		}
+		if(!$this->shouldGenerateInChunk($chunkX, $chunkZ, $worldSeed)){
+			return;
+		}
+
 		$chunk = $world->getChunk($chunkX, $chunkZ);
 		if($chunk === null){
 			return;

@@ -35,13 +35,12 @@ use pocketmine\block\VanillaBlocks;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\world\format\Chunk;
+use pocketmine\world\SimpleChunkManager;
 use pocketmine\world\structure\jigsaw\JigsawAssembler;
 use pocketmine\world\structure\jigsaw\JigsawConnection;
 use pocketmine\world\structure\jigsaw\JigsawPiece;
 use pocketmine\world\structure\jigsaw\JigsawPool;
 use pocketmine\world\structure\jigsaw\JigsawPoolRegistry;
-use pocketmine\world\structure\StructurePlacementSettings;
-use pocketmine\world\structure\StructureRotation;
 use pocketmine\world\structure\StructureTemplate;
 use function getopt;
 use function hrtime;
@@ -100,11 +99,20 @@ for($i = 0; $i < $count; ++$i){
 	$pieces = JigsawAssembler::assemble("village/town_centers", new Vector3(0, 64, 0), maxDepth: 4, seed: $seed);
 	$totalPlacedPieces += count($pieces);
 
-	$chunk = new Chunk([], false);
-	$settings = new StructurePlacementSettings(rotation: StructureRotation::NONE);
+	$world = new SimpleChunkManager(-64, 320);
 	foreach($pieces as $p){
-		$p->piece->getTemplate()->placeIntoChunk($chunk, 0, 64, 0, $settings);
+		$bounds = $p->boundingBox;
+		$maxChunkX = ((int) $bounds->maxX - 1) >> Chunk::COORD_BIT_SIZE;
+		$maxChunkZ = ((int) $bounds->maxZ - 1) >> Chunk::COORD_BIT_SIZE;
+		for($x = (int) $bounds->minX >> Chunk::COORD_BIT_SIZE; $x <= $maxChunkX; ++$x){
+			for($z = (int) $bounds->minZ >> Chunk::COORD_BIT_SIZE; $z <= $maxChunkZ; ++$z){
+				if($world->getChunk($x, $z) === null){
+					$world->setChunk($x, $z, new Chunk([], false));
+				}
+			}
+		}
 	}
+	JigsawAssembler::placeAll($world, $pieces);
 }
 
 $elapsedSec = (hrtime(true) - $startTime) / 1e9;
