@@ -34,6 +34,7 @@ use pocketmine\block\Air;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\RuntimeBlockStateRegistry;
+use pocketmine\block\tile\Chest;
 use pocketmine\block\tile\Spawnable;
 use pocketmine\block\tile\Tile;
 use pocketmine\block\tile\TileFactory;
@@ -2987,11 +2988,18 @@ class World implements ChunkManager{
 		unset($this->changedBlocks[$chunkHash]);
 		$chunk->setTerrainDirty();
 		$this->markTickingChunkForRecheck($chunkX, $chunkZ); //this replacement chunk may not meet the conditions for ticking
+		$chunkBlockX = $chunkX << Chunk::COORD_BIT_SIZE;
+		$chunkBlockZ = $chunkZ << Chunk::COORD_BIT_SIZE;
 		foreach($chunk->drainPendingBlockEntityData() as $nbt){
+			// Deferred payloads store both the tile and its partner relative to this chunk.
+			if(($pairX = $nbt->getTag(Chest::TAG_PAIRX)) instanceof IntTag && ($pairZ = $nbt->getTag(Chest::TAG_PAIRZ)) instanceof IntTag){
+				$nbt->setInt(Chest::TAG_PAIRX, $chunkBlockX + $pairX->getValue())
+					->setInt(Chest::TAG_PAIRZ, $chunkBlockZ + $pairZ->getValue());
+			}
 			$this->applyStructureBlockEntityData(
-				($chunkX << Chunk::COORD_BIT_SIZE) + $nbt->getInt(Tile::TAG_X),
+				$chunkBlockX + $nbt->getInt(Tile::TAG_X),
 				$nbt->getInt(Tile::TAG_Y),
-				($chunkZ << Chunk::COORD_BIT_SIZE) + $nbt->getInt(Tile::TAG_Z),
+				$chunkBlockZ + $nbt->getInt(Tile::TAG_Z),
 				$nbt
 			);
 		}

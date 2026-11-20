@@ -117,7 +117,10 @@ class Chunk{
 		$this->terrainDirtyFlags |= self::DIRTY_FLAG_BLOCKS;
 	}
 
-	/** @internal */
+	/**
+	 * Horizontal positions in the payload, including a chest partner, are relative to this chunk.
+	 * @internal
+	 */
 	public function queueBlockEntityData(int $x, int $y, int $z, CompoundTag $nbt) : void{
 		$this->pendingBlockEntityData[self::blockHash($x, $y, $z)] = (clone $nbt)
 			->setInt(Tile::TAG_X, $x)

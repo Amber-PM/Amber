@@ -28,6 +28,7 @@ use pocketmine\block\BlockTypeIds;
 use pocketmine\block\Rail;
 use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\block\StraightOnlyRail;
+use pocketmine\block\tile\Chest;
 use pocketmine\block\utils\AnyFacing;
 use pocketmine\block\utils\HorizontalFacing;
 use pocketmine\block\utils\PillarRotation;
@@ -45,6 +46,7 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use pocketmine\world\format\SubChunk;
 use pocketmine\world\World;
+use pocketmine\world\WorldException;
 use function count;
 use function file_exists;
 use function file_get_contents;
@@ -426,7 +428,8 @@ class StructureTemplate{
 					$secondaryId = $secondaryIndex < 0 ? self::SKIP_STATE : ($paletteMap[$secondaryIndex] ?? self::SKIP_STATE);
 					$this->writeChunkLayers($chunk, $targetX, $targetY, $targetZ, $stateId, $secondaryId);
 					if($stateId !== self::SKIP_STATE && isset($this->blockEntityData[$flatIdx])){
-						$chunk->queueBlockEntityData($targetX, $targetY, $targetZ, $this->blockEntityData[$flatIdx]);
+						$chunk->queueBlockEntityData($targetX, $targetY, $targetZ,
+							$this->transformBlockEntityData($this->blockEntityData[$flatIdx], $chunkBlockX, $chunkBlockZ, $settings));
 					}
 				}
 			}
@@ -472,33 +475,67 @@ class StructureTemplate{
 						continue;
 					}
 
-					$chunk = $world->getChunk($targetX >> Chunk::COORD_BIT_SIZE, $targetZ >> Chunk::COORD_BIT_SIZE);
+					$chunkX = $targetX >> Chunk::COORD_BIT_SIZE;
+					$chunkZ = $targetZ >> Chunk::COORD_BIT_SIZE;
+					$chunk = $world->getChunk($chunkX, $chunkZ);
 					$localX = $targetX & Chunk::COORD_MASK;
 					$localZ = $targetZ & Chunk::COORD_MASK;
 					if($chunk !== null){
 						$this->writeChunkLayers($chunk, $localX, $targetY, $localZ, $stateId, $secondaryId);
-					}elseif($stateId !== self::SKIP_STATE){
-						$block = RuntimeBlockStateRegistry::getInstance()->fromStateId($stateId);
-						$world->setBlockAt($targetX, $targetY, $targetZ, $block);
-						if($secondaryId !== self::SKIP_STATE || isset($this->blockEntityData[$flatIdx])){
-							$chunk = $world->getChunk($targetX >> Chunk::COORD_BIT_SIZE, $targetZ >> Chunk::COORD_BIT_SIZE);
-							if($chunk !== null && $secondaryId !== self::SKIP_STATE){
-								$chunk->setBlockStateId($localX, $targetY, $localZ, $secondaryId, 1);
+					}else{
+						if($secondaryId !== self::SKIP_STATE){
+							// The secondary layer requires direct access to the destination chunk.
+							$chunk = $world instanceof World ? $world->loadChunk($chunkX, $chunkZ) : null;
+							if($chunk === null){
+								throw new WorldException("Cannot set a block in un-generated terrain");
 							}
+						}
+						if($stateId !== self::SKIP_STATE){
+							$block = RuntimeBlockStateRegistry::getInstance()->fromStateId($stateId);
+							$world->setBlockAt($targetX, $targetY, $targetZ, $block);
+							if($secondaryId !== self::SKIP_STATE || isset($this->blockEntityData[$flatIdx])){
+								$chunk = $world->getChunk($chunkX, $chunkZ);
+							}
+						}
+						if($secondaryId !== self::SKIP_STATE){
+							if($chunk === null){
+								throw new WorldException("Cannot set a block in un-generated terrain");
+							}
+							$chunk->setBlockStateId($localX, $targetY, $localZ, $secondaryId, 1);
 						}
 					}
 
 					if($stateId !== self::SKIP_STATE && isset($this->blockEntityData[$flatIdx])){
 						$nbt = $this->blockEntityData[$flatIdx];
 						if($world instanceof World){
-							$world->applyStructureBlockEntityData($targetX, $targetY, $targetZ, $nbt);
-						}else{
-							$chunk?->queueBlockEntityData($localX, $targetY, $localZ, $nbt);
+							$world->applyStructureBlockEntityData($targetX, $targetY, $targetZ,
+								$this->transformBlockEntityData($nbt, $worldX, $worldZ, $settings));
+						}elseif($chunk !== null){
+							$chunk->queueBlockEntityData($localX, $targetY, $localZ,
+								$this->transformBlockEntityData($nbt, $worldX - ($chunkX << Chunk::COORD_BIT_SIZE), $worldZ - ($chunkZ << Chunk::COORD_BIT_SIZE), $settings));
 						}
 					}
 				}
 			}
 		}
+	}
+
+	private function transformBlockEntityData(CompoundTag $nbt, int $destOriginX, int $destOriginZ, StructurePlacementSettings $settings) : CompoundTag{
+		if(!($pairX = $nbt->getTag(Chest::TAG_PAIRX)) instanceof IntTag || !($pairZ = $nbt->getTag(Chest::TAG_PAIRZ)) instanceof IntTag){
+			return $nbt;
+		}
+
+		$sx = $this->size->getFloorX();
+		$sz = $this->size->getFloorZ();
+		[$mx, $mz] = $settings->mirror->mirrorCoordinate(
+			$pairX->getValue() - $this->origin->getFloorX(),
+			$pairZ->getValue() - $this->origin->getFloorZ(),
+			$sx,
+			$sz
+		);
+		[$rx, $rz] = $settings->rotation->rotateCoordinate($mx, $mz, $sx, $sz);
+
+		return (clone $nbt)->setInt(Chest::TAG_PAIRX, $destOriginX + $rx)->setInt(Chest::TAG_PAIRZ, $destOriginZ + $rz);
 	}
 
 	private function writeChunkLayers(Chunk $chunk, int $x, int $y, int $z, int $stateId, int $secondaryId) : void{

@@ -117,11 +117,18 @@ final class JigsawAssembler{
 
 	/** @param PlacedStructurePiece[] $placedPieces */
 	private static function tryPlacePiece(JigsawPool $pool, Random $random, Vector3 $matingWorldPos, int $requiredFacing, int $depth, array $placedPieces) : ?PlacedStructurePiece{
-		$childPiece = $pool->selectPiece($random);
-		if($childPiece === null){
-			return null;
+		foreach($pool->shuffledPieces($random) as $childPiece){
+			$placed = self::tryPlaceCandidate($childPiece, $matingWorldPos, $requiredFacing, $depth, $placedPieces);
+			if($placed !== null){
+				return $placed;
+			}
 		}
 
+		return null;
+	}
+
+	/** @param PlacedStructurePiece[] $placedPieces */
+	private static function tryPlaceCandidate(JigsawPiece $childPiece, Vector3 $matingWorldPos, int $requiredFacing, int $depth, array $placedPieces) : ?PlacedStructurePiece{
 		$childSize = $childPiece->getTemplate()->getSize();
 		$childSx = (int) $childSize->x;
 		$childSz = (int) $childSize->z;

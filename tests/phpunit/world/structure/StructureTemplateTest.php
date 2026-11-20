@@ -39,6 +39,7 @@ use pocketmine\world\format\PalettedBlockArray;
 use pocketmine\world\format\SubChunk;
 use pocketmine\world\SimpleChunkManager;
 use pocketmine\world\World;
+use pocketmine\world\WorldException;
 use function sys_get_temp_dir;
 use function tempnam;
 use function unlink;
@@ -92,6 +93,12 @@ final class StructureTemplateTest extends TestCase{
 		}finally{
 			@unlink($tempFile);
 		}
+	}
+
+	public function testStructureSaveFailureThrows() : void{
+		$template = new StructureTemplate(new Vector3(1, 1, 1), new Vector3(0, 0, 0));
+		$this->expectException(\RuntimeException::class);
+		$template->saveToFile(sys_get_temp_dir());
 	}
 
 	public function testStructurePlacementIntoChunkWithRotation() : void{
@@ -214,6 +221,53 @@ final class StructureTemplateTest extends TestCase{
 
 		$template->placeIntoWorld($world, -2, 65, 35, new StructurePlacementSettings());
 		self::assertInstanceOf(Chest::class, $chunk->getTile(14, 65, 3));
+	}
+
+	public function testChestPairCoordinatesMoveInDirectAndDeferredPlacement() : void{
+		$template = new StructureTemplate(new Vector3(2, 1, 2), new Vector3(120, 64, -90));
+		$chest = VanillaBlocks::CHEST()->getStateId();
+		$template->setBlockStateId(0, 0, 0, $chest, CompoundTag::create()->setInt("pairx", 121)->setInt("pairz", -90));
+		$template->setBlockStateId(1, 0, 0, $chest, CompoundTag::create()->setInt("pairx", 120)->setInt("pairz", -90));
+		$settings = new StructurePlacementSettings(rotation: StructureRotation::CLOCKWISE_90, mirror: StructureMirror::LEFT_RIGHT);
+
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
+			->onlyMethods(["loadChunk", "isChunkInUse", "applyStructureBlockEntityData"])->getMock();
+		(new \ReflectionProperty(World::class, "blockStateRegistry"))->setValue($world, RuntimeBlockStateRegistry::getInstance());
+		$world->method("loadChunk")->willReturn(null);
+		$world->method("isChunkInUse")->willReturn(true);
+		$applied = [];
+		$world->method("applyStructureBlockEntityData")->willReturnCallback(static function(int $x, int $y, int $z, CompoundTag $nbt) use (&$applied) : void{
+			$applied[] = [$x, $y, $z, $nbt->getInt("pairx"), $nbt->getInt("pairz")];
+		});
+
+		$chunk = new Chunk([], false);
+		$template->placeIntoChunk($chunk, 14, 64, 3, $settings);
+		$world->setChunk(-1, 2, FastChunkSerializer::deserializeTerrain(FastChunkSerializer::serializeTerrain($chunk)));
+		$template->placeIntoWorld($world, -2, 64, 35, $settings);
+
+		$expected = [[-2, 64, 35, -2, 36], [-2, 64, 36, -2, 35]];
+		self::assertSame([...$expected, ...$expected], $applied);
+	}
+
+	public function testSecondaryOnlyPlacementLoadsExistingWorldChunk() : void{
+		$water = VanillaBlocks::WATER()->getStateId();
+		$template = new StructureTemplate(new Vector3(1, 1, 1), new Vector3(0, 0, 0), [$water], [-1], [0]);
+		$chunk = new Chunk([], false);
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
+			->onlyMethods(["getChunk", "loadChunk", "setBlockAt"])->getMock();
+		$world->expects(self::once())->method("getChunk")->with(-1, 1)->willReturn(null);
+		$world->expects(self::once())->method("loadChunk")->with(-1, 1)->willReturn($chunk);
+		$world->expects(self::never())->method("setBlockAt");
+
+		$template->placeIntoWorld($world, -1, 64, 17, new StructurePlacementSettings());
+		self::assertSame(VanillaBlocks::AIR()->getStateId(), $chunk->getBlockStateId(15, 64, 1));
+		self::assertSame($water, $chunk->getSubChunk(4)->getBlockLayers()[1]->get(15, 0, 1));
+	}
+
+	public function testSecondaryOnlyPlacementFailsWithoutDestinationChunk() : void{
+		$template = new StructureTemplate(new Vector3(1, 1, 1), new Vector3(0, 0, 0), [VanillaBlocks::WATER()->getStateId()], [-1], [0]);
+		$this->expectException(WorldException::class);
+		$template->placeIntoWorld(new SimpleChunkManager(-64, 320), 0, 64, 0, new StructurePlacementSettings());
 	}
 
 	public function testDirectionalStateTransformsAndSecondaryLayerPlacement() : void{

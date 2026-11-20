@@ -132,6 +132,33 @@ final class JigsawAssemblyTest extends TestCase{
 		self::assertSame($fallback, $pieces[1]->piece);
 	}
 
+	public function testCollidingPrimaryCandidateDoesNotSkipOtherPrimaryCandidates() : void{
+		$registry = JigsawPoolRegistry::getInstance();
+		$template = new StructureTemplate(new Vector3(3, 1, 3), new Vector3(0, 0, 0));
+		$root = new JigsawPiece($template, connections: [
+			new JigsawConnection(new Vector3(1, 0, 0), Facing::NORTH, "target"),
+		]);
+		$colliding = new JigsawPiece($template, weight: 1000, connections: [
+			new JigsawConnection(new Vector3(1, 0, 0), Facing::SOUTH, "minecraft:empty"),
+		]);
+		$compatible = new JigsawPiece($template, connections: [
+			new JigsawConnection(new Vector3(1, 0, 2), Facing::SOUTH, "minecraft:empty"),
+		]);
+		$start = new JigsawPool("root", pieces: [$root]);
+		$primary = new JigsawPool("target", "backup", [$colliding, $compatible]);
+		$registry->registerPool($start);
+		$registry->registerPool($primary);
+		$registry->registerPool(new JigsawPool("backup", pieces: [clone $compatible]));
+
+		$random = new Random(100);
+		$start->selectPiece($random);
+		self::assertSame($colliding, $primary->selectPiece($random));
+
+		$pieces = JigsawAssembler::assemble("root", new Vector3(0, 64, 0), maxDepth: 1, seed: 100);
+		self::assertCount(2, $pieces);
+		self::assertSame($compatible, $pieces[1]->piece);
+	}
+
 	public function testJigsawAssemblyAvoidsCollidingPieces() : void{
 		$registry = JigsawPoolRegistry::getInstance();
 

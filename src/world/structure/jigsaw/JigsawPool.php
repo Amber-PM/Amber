@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world\structure\jigsaw;
 
 use pocketmine\utils\Random;
+use function array_key_first;
 
 class JigsawPool{
 
@@ -56,28 +57,39 @@ class JigsawPool{
 	}
 
 	public function selectPiece(Random $random) : ?JigsawPiece{
-		if(empty($this->pieces)){
-			return null;
-		}
+		$index = self::selectIndex($this->pieces, $random);
+		return $index !== null ? $this->pieces[$index] : null;
+	}
 
+	/** @return \Generator<int, JigsawPiece, void, void> */
+	public function shuffledPieces(Random $random) : \Generator{
+		$remaining = $this->pieces;
+		while(($index = self::selectIndex($remaining, $random)) !== null){
+			yield $remaining[$index];
+			unset($remaining[$index]);
+		}
+	}
+
+	/** @param array<int, JigsawPiece> $pieces */
+	private static function selectIndex(array $pieces, Random $random) : ?int{
 		$totalWeight = 0;
-		foreach($this->pieces as $p){
-			$totalWeight += $p->getWeight();
+		foreach($pieces as $piece){
+			$totalWeight += $piece->getWeight();
 		}
 
 		if($totalWeight <= 0){
-			return $this->pieces[0];
+			return array_key_first($pieces);
 		}
 
 		$roll = $random->nextRange(0, $totalWeight - 1);
 		$accum = 0;
-		foreach($this->pieces as $p){
-			$accum += $p->getWeight();
+		foreach($pieces as $index => $piece){
+			$accum += $piece->getWeight();
 			if($roll < $accum){
-				return $p;
+				return $index;
 			}
 		}
 
-		return $this->pieces[0];
+		return array_key_first($pieces);
 	}
 }
