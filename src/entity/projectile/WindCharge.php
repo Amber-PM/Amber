@@ -77,12 +77,13 @@ class WindCharge extends Throwable{
 			$entityHit->knockBack($motion->x, $motion->z, 1.2, 0.8);
 		}
 
-		$this->burst();
+		// The direct hit already handled this target, including cancellation.
+		$this->burst($entityHit);
 		$this->flagForDespawn();
 	}
 
-	private function burst() : void{
-		$explosion = new Explosion($this->location, 1.2, $this);
+	private function burst(?Entity $excludedEntity = null) : void{
+		$explosion = new Explosion($this->location, 1.2, $this, excludedEntity: $excludedEntity);
 		$explosion->explodeB();
 	}
 }

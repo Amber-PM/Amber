@@ -74,7 +74,8 @@ class Explosion{
 		public Position $source,
 		public float $radius,
 		private Entity|Block|null $what = null,
-		private float $fireChance = 0.0
+		private float $fireChance = 0.0,
+		private ?Entity $excludedEntity = null
 	){
 		if(!$this->source->isValid()){
 			throw new \InvalidArgumentException("Position does not have a valid world");
@@ -215,6 +216,9 @@ class Explosion{
 		/** @var Entity[] $list */
 		$list = $this->world->getNearbyEntities($explosionBB, $this->what instanceof Entity ? $this->what : null);
 		foreach($list as $entity){
+			if($entity === $this->excludedEntity){
+				continue;
+			}
 			$entityPos = $entity->getPosition();
 			$distance = $entityPos->distance($this->source) / $explosionSize;
 

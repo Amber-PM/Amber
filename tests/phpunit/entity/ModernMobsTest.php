@@ -298,6 +298,7 @@ class ModernMobsTest extends TestCase{
 	public function testWindChargeProjectileHit(bool $cancelDamage) : void{
 		$world = $this->getDefaultWorld();
 		$world->method("getBlockAt")->willReturnCallback(static fn() => VanillaBlocks::AIR());
+		$world->expects(self::atLeastOnce())->method("getBlock")->willReturnCallback(static fn() => VanillaBlocks::AIR());
 		$world->expects(self::once())->method("addSound")->with(self::anything(), self::isInstanceOf(ExplodeSound::class));
 		$windCharge = new WindCharge(new Location(0, 0, 0, $world, 0, 0));
 		$this->createdEntities[] = $windCharge;
@@ -305,7 +306,13 @@ class ModernMobsTest extends TestCase{
 
 		$victim = $this->createPlayer("Victim", pos: new Vector3(2, 0, 0));
 		(new ReflectionProperty(Entity::class, "health"))->setValue($victim, 20.0);
+		$bystander = $this->createPlayer("Bystander", pos: new Vector3(3, 0, 0));
+		(new ReflectionProperty(Entity::class, "health"))->setValue($bystander, 20.0);
+		$bystander->expects(self::atLeastOnce())->method("setMotion");
 		$world->method("getCollidingEntities")->willReturn([$victim]);
+		$world->method("getNearbyEntities")->willReturnCallback(
+			static fn(AxisAlignedBB $bb, ?Entity $source) => $source === $windCharge ? [$victim, $bystander] : []
+		);
 
 		$damageEvents = 0;
 		$listener = new RegisteredListener(static function(EntityDamageEvent $event) use ($victim, $cancelDamage, &$damageEvents) : void{
@@ -330,6 +337,7 @@ class ModernMobsTest extends TestCase{
 		self::assertSame(1, $damageEvents);
 		self::assertSame($cancelDamage, $windCharge->isHitCancelled());
 		self::assertSame($cancelDamage ? 20.0 : 19.0, $victim->getHealth());
+		self::assertLessThan(20.0, $bystander->getHealth());
 		self::assertTrue($windCharge->isFlaggedForDespawn());
 		if(!$cancelDamage){
 			self::assertGreaterThan(1.0, $largestKnockback);
