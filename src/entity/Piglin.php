@@ -54,10 +54,16 @@ class Piglin extends Living{
 	public const TAG_ADMIRING_TICKS = "AdmiringTicks";
 	public const BARTER_DURATION_TICKS = 120; // 6 seconds in BDS
 
+	// Bedrock piglin.json: angry.duration (30 seconds) and follow_range (64 blocks).
+	private const RETALIATION_TICKS = 600;
+	private const RETALIATION_RANGE = 64;
+
 	protected bool $admiring = false;
 	protected int $admiringTicks = 0;
 	private ?int $barterStartedAt = null;
 	private int $meleeCooldown = 0;
+	private ?int $retaliationTargetId = null;
+	private int $retaliationUntilTick = 0;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::PIGLIN;
@@ -141,6 +147,46 @@ class Piglin extends Living{
 		return $this->canTargetOrdinaryPlayer($player) && !$this->isPacifiedBy($player);
 	}
 
+	public function attack(EntityDamageEvent $source) : void{
+		parent::attack($source);
+		if(!$this->isAlive() || $this->isClosed() || $source->isCancelled() || !$source instanceof EntityDamageByEntityEvent){
+			return;
+		}
+
+		$attacker = $source->getDamager();
+		if($attacker instanceof Player && $this->canRetaliateAgainst($attacker)){
+			$this->retaliationTargetId = $attacker->getId();
+			$this->retaliationUntilTick = $this->server->getTick() + self::RETALIATION_TICKS;
+			$this->setTargetEntity($attacker);
+			$this->scheduleUpdate();
+		}
+	}
+
+	private function canRetaliateAgainst(Player $player) : bool{
+		return $this->canTargetOrdinaryPlayer($player) &&
+			$this->location->distanceSquared($player->getLocation()) <= self::RETALIATION_RANGE ** 2;
+	}
+
+	private function getRetaliationTarget() : ?Player{
+		if($this->retaliationTargetId === null){
+			return null;
+		}
+		if($this->lastUpdate < $this->retaliationUntilTick){
+			$target = $this->getWorld()->getEntity($this->retaliationTargetId);
+			if($target instanceof Player && $this->canRetaliateAgainst($target)){
+				if($this->getTargetEntityId() !== $this->retaliationTargetId){
+					$this->setTargetEntity($target);
+				}
+				return $target;
+			}
+		}
+		if($this->getTargetEntityId() === $this->retaliationTargetId){
+			$this->setTargetEntity(null);
+		}
+		$this->retaliationTargetId = null;
+		return null;
+	}
+
 	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 
@@ -172,8 +218,9 @@ class Piglin extends Living{
 		}
 
 		$this->meleeCooldown = max(0, $this->meleeCooldown - $tickDiff);
-		$target = $this->findHostilePlayer(16);
-		if(!$this->admiring && $target !== null && $this->meleeCooldown === 0 && $this->canReachPlayerForMelee($target)){
+		$retaliationTarget = $this->getRetaliationTarget();
+		$target = $retaliationTarget ?? $this->findHostilePlayer(16);
+		if(($retaliationTarget !== null || !$this->admiring) && $target !== null && $this->meleeCooldown === 0 && $this->canReachPlayerForMelee($target)){
 			$this->meleeCooldown = 20;
 			$target->attack(new EntityDamageByEntityEvent($this, $target, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 5.0));
 		}

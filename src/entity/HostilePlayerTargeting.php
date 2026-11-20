@@ -42,6 +42,10 @@ trait HostilePlayerTargeting{
 
 		$start = $this->getEyePos();
 		$end = $target->getEyePos();
+		if($start->equals($end)){
+			return true;
+		}
+
 		$world = $this->getWorld();
 		foreach(VoxelRayTrace::betweenPoints($start, $end) as $pos){
 			if($world->getBlockAt($pos->getFloorX(), $pos->getFloorY(), $pos->getFloorZ())->calculateIntercept($start, $end) !== null){

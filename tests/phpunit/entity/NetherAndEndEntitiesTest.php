@@ -526,6 +526,64 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertNull($piglin->getTargetEntityId());
 	}
 
+	public function testPiglinCanAttackWhenEyesCoincide() : void{
+		$world = $this->getDefaultWorld();
+		$piglin = $this->createPiglin();
+		$player = $this->createPlayer();
+		(new ReflectionProperty(Entity::class, "size"))->setValue($player, new EntitySizeInfo(1.8, 0.6, $piglin->getEyeHeight()));
+		self::assertTrue($piglin->getEyePos()->equals($player->getEyePos()));
+		$world->method("getNearbyEntities")->willReturn([$player]);
+
+		$health = $player->getHealth();
+		$this->tickEntity($piglin, 1);
+		self::assertLessThan($health, $player->getHealth());
+	}
+
+	public function testPiglinRetaliatesAgainstGoldArmoredAttackerUntilAngerExpires() : void{
+		$world = $this->getDefaultWorld();
+		$piglin = $this->createPiglin();
+		$attacker = $this->createPlayer(pos: new Vector3(64, 0, 0));
+		$attacker->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
+		$bystander = $this->createPlayer(pos: new Vector3(2, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$attacker, $bystander]);
+		$world->method("getEntity")->willReturnMap([[$attacker->getId(), $attacker], [$bystander->getId(), $bystander]]);
+
+		$this->currentTick = 1000;
+		$cancelled = $this->createDamageByEntityEvent($attacker, $piglin);
+		$cancelled->cancel();
+		$piglin->attack($cancelled);
+		self::assertNull($piglin->getTargetEntityId());
+
+		unset($world->updateEntities[$piglin->getId()]);
+		$piglin->attack($this->createDamageByEntityEvent($attacker, $piglin));
+		self::assertSame($piglin, $world->updateEntities[$piglin->getId()]);
+		$this->tickEntity($piglin, 1001, 1001);
+		self::assertSame($attacker->getId(), $piglin->getTargetEntityId());
+
+		(new ReflectionProperty(Entity::class, "location"))->setValue($attacker, new Location(1, 0, 0, $world, 0, 0));
+		$health = $attacker->getHealth();
+		$this->tickEntity($piglin, 1599, 598);
+		self::assertSame($attacker->getId(), $piglin->getTargetEntityId());
+		self::assertLessThan($health, $attacker->getHealth());
+
+		$this->tickEntity($piglin, 1600);
+		self::assertSame($bystander->getId(), $piglin->getTargetEntityId());
+	}
+
+	public function testPiglinStopsRetaliatingBeyondFollowRange() : void{
+		$world = $this->getDefaultWorld();
+		$piglin = $this->createPiglin();
+		$attacker = $this->createPlayer(pos: new Vector3(64, 0, 0));
+		$attacker->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
+		$world->method("getEntity")->with($attacker->getId())->willReturn($attacker);
+		$piglin->attack($this->createDamageByEntityEvent($attacker, $piglin));
+		self::assertSame($attacker->getId(), $piglin->getTargetEntityId());
+
+		(new ReflectionProperty(Entity::class, "location"))->setValue($attacker, new Location(64.1, 0, 0, $world, 0, 0));
+		$this->tickEntity($piglin, 1);
+		self::assertNull($piglin->getTargetEntityId());
+	}
+
 	public function testZombifiedPiglinGroupAnger() : void{
 		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
 			->onlyMethods(["getServer", "isLoaded", "getPlayers", "addEntity", "getBlockAt", "getDamageY", "getEntity"])
