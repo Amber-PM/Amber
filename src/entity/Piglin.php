@@ -24,9 +24,11 @@ declare(strict_types=1);
 namespace pocketmine\entity;
 
 use pocketmine\block\VanillaBlocks;
-use pocketmine\item\Armor;
+use pocketmine\item\enchantment\EnchantmentInstance;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
 use pocketmine\item\ItemTypeIds;
+use pocketmine\item\PotionType;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
@@ -37,10 +39,14 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\particle\HappyVillagerParticle;
-use function count;
+use function array_column;
+use function array_sum;
+use function max;
+use function min;
 use function mt_rand;
 
 class Piglin extends Living{
+	use HostilePlayerTargeting { canTargetPlayer as private canTargetOrdinaryPlayer; }
 
 	public const TAG_ADMIRING = "Admiring";
 	public const TAG_ADMIRING_TICKS = "AdmiringTicks";
@@ -48,6 +54,7 @@ class Piglin extends Living{
 
 	protected bool $admiring = false;
 	protected int $admiringTicks = 0;
+	private ?int $barterStartedAt = null;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::PIGLIN;
@@ -68,9 +75,6 @@ class Piglin extends Living{
 	protected function initEntity(CompoundTag $nbt) : void{
 		$this->setMaxHealth(16);
 		parent::initEntity($nbt);
-		if($nbt->getTag("Health") === null){
-			$this->setHealth(16.0);
-		}
 
 		$this->admiring = $nbt->getByte(self::TAG_ADMIRING, 0) !== 0;
 		$this->admiringTicks = $nbt->getInt(self::TAG_ADMIRING_TICKS, 0);
@@ -95,18 +99,23 @@ class Piglin extends Living{
 	public function startBartering() : void{
 		$this->admiring = true;
 		$this->admiringTicks = self::BARTER_DURATION_TICKS;
+		$this->barterStartedAt = $this->server->getTick();
+		$this->scheduleUpdate();
 		$this->networkPropertiesDirty = true;
 	}
 
 	public function finishBartering() : void{
 		$this->admiring = false;
 		$this->admiringTicks = 0;
+		$this->barterStartedAt = null;
 		$this->networkPropertiesDirty = true;
 
 		// Drop barter loot
 		$loot = $this->getRandomBarterLoot();
-		$this->getWorld()->dropItem($this->location, $loot);
-		$this->getWorld()->addParticle($this->location->add(0, 1.5, 0), new HappyVillagerParticle());
+		// The ingot is spent on acceptance, even if a plugin cancels the payout.
+		if($this->getWorld()->dropItem($this->location, $loot) !== null){
+			$this->getWorld()->addParticle($this->location->add(0, 1.5, 0), new HappyVillagerParticle());
+		}
 	}
 
 	public function isPacifiedBy(Player $player) : bool{
@@ -125,14 +134,18 @@ class Piglin extends Living{
 		return false;
 	}
 
-	public function interact(Player $player, Vector3 $clickPos) : bool{
+	protected function canTargetPlayer(Player $player) : bool{
+		return $this->canTargetOrdinaryPlayer($player) && !$this->isPacifiedBy($player);
+	}
+
+	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 
 		// Barter with Gold Ingot
-		if($item->getTypeId() === ItemTypeIds::GOLD_INGOT && !$this->admiring){
+		if($item->getTypeId() === ItemTypeIds::GOLD_INGOT && !$this->admiring && $this->isAlive()){
+			$this->startBartering();
 			$item->pop();
 			$player->getInventory()->setItemInHand($item);
-			$this->startBartering();
 			return true;
 		}
 
@@ -147,30 +160,51 @@ class Piglin extends Living{
 		}
 
 		if($this->admiring){
-			$this->admiringTicks -= $tickDiff;
-			$hasUpdate = true;
+			$elapsed = $this->barterStartedAt !== null ? min($tickDiff, max(0, $this->lastUpdate - $this->barterStartedAt)) : $tickDiff;
+			$this->barterStartedAt = null;
+			$this->admiringTicks -= $elapsed;
 			if($this->admiringTicks <= 0){
 				$this->finishBartering();
 			}
 		}
 
-		return $hasUpdate;
+		$this->findHostilePlayer(16);
+		return true;
 	}
 
 	public function getRandomBarterLoot() : Item{
+		// Bedrock behavior pack: loot_tables/entities/piglin_barter.json.
 		$pool = [
-			VanillaItems::ENDER_PEARL()->setCount(mt_rand(2, 4)),
-			VanillaItems::FIRE_CHARGE()->setCount(mt_rand(1, 3)),
-			VanillaBlocks::GRAVEL()->asItem()->setCount(mt_rand(8, 16)),
-			VanillaItems::LEATHER()->setCount(mt_rand(2, 4)),
-			VanillaItems::NETHER_BRICK()->setCount(mt_rand(4, 12)),
-			VanillaBlocks::OBSIDIAN()->asItem()->setCount(1),
-			VanillaBlocks::CRYING_OBSIDIAN()->asItem()->setCount(mt_rand(1, 3)),
-			VanillaItems::NETHER_QUARTZ()->setCount(mt_rand(5, 12)),
-			VanillaItems::IRON_NUGGET()->setCount(mt_rand(10, 36))
+			[5, static fn() => VanillaItems::ENCHANTED_BOOK()->addEnchantment(new EnchantmentInstance(VanillaEnchantments::SOUL_SPEED(), mt_rand(1, 3)))],
+			[8, static fn() => VanillaItems::IRON_BOOTS()->addEnchantment(new EnchantmentInstance(VanillaEnchantments::SOUL_SPEED(), mt_rand(1, 3)))],
+			[8, static fn() => VanillaItems::POTION()->setType(PotionType::FIRE_RESISTANCE)],
+			[8, static fn() => VanillaItems::SPLASH_POTION()->setType(PotionType::FIRE_RESISTANCE)],
+			[10, static fn() => VanillaItems::POTION()->setType(PotionType::WATER)],
+			[10, static fn() => VanillaItems::IRON_NUGGET()->setCount(mt_rand(10, 36))],
+			[10, static fn() => VanillaItems::ENDER_PEARL()->setCount(mt_rand(2, 4))],
+			[20, static fn() => VanillaItems::STRING()->setCount(mt_rand(3, 9))],
+			[20, static fn() => VanillaItems::NETHER_QUARTZ()->setCount(mt_rand(5, 12))],
+			[40, static fn() => VanillaBlocks::OBSIDIAN()->asItem()],
+			[40, static fn() => VanillaBlocks::CRYING_OBSIDIAN()->asItem()->setCount(mt_rand(1, 3))],
+			[40, static fn() => VanillaItems::FIRE_CHARGE()],
+			[40, static fn() => VanillaItems::LEATHER()->setCount(mt_rand(2, 4))],
+			[40, static fn() => VanillaBlocks::SOUL_SAND()->asItem()->setCount(mt_rand(2, 8))],
+			[40, static fn() => VanillaItems::NETHER_BRICK()->setCount(mt_rand(2, 8))],
+			[40, static fn() => VanillaItems::ARROW()->setCount(mt_rand(6, 12))],
+			[40, static fn() => VanillaBlocks::GRAVEL()->asItem()->setCount(mt_rand(8, 16))],
+			[40, static fn() => VanillaBlocks::BLACKSTONE()->asItem()->setCount(mt_rand(8, 16))],
+			[10, static fn() => VanillaBlocks::DRIED_GHAST()->asItem()],
 		];
 
-		return clone $pool[mt_rand(0, count($pool) - 1)];
+		$roll = mt_rand(1, array_sum(array_column($pool, 0)));
+		foreach($pool as [$weight, $reward]){
+			$roll -= $weight;
+			if($roll <= 0){
+				return $reward();
+			}
+		}
+
+		throw new \LogicException("Piglin barter roll outside the loot table");
 	}
 
 	public function getDrops() : array{

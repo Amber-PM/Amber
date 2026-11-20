@@ -33,9 +33,13 @@ use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
+use function max;
 use function mt_rand;
 
 class WitherSkeleton extends Living{
+	use HostilePlayerTargeting;
+
+	private int $meleeCooldown = 0;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::WITHER_SKELETON;
@@ -73,6 +77,21 @@ class WitherSkeleton extends Living{
 		}
 
 		parent::attack($source);
+	}
+
+	protected function entityBaseTick(int $tickDiff = 1) : bool{
+		$hasUpdate = parent::entityBaseTick($tickDiff);
+		if(!$this->isAlive()){
+			return $hasUpdate;
+		}
+
+		$this->meleeCooldown = max(0, $this->meleeCooldown - $tickDiff);
+		$target = $this->findHostilePlayer(16);
+		if($target !== null && $this->meleeCooldown === 0 && $this->location->distanceSquared($target->getLocation()) <= 2.25){
+			$this->meleeCooldown = 20;
+			$this->attackTarget($target);
+		}
+		return true;
 	}
 
 	public function attackTarget(Living $target) : void{

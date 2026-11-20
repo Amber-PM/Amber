@@ -36,12 +36,15 @@ use pocketmine\entity\effect\EffectManager;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\event\entity\EntityTeleportEvent;
+use pocketmine\event\EventPriority;
 use pocketmine\event\HandlerListManager;
+use pocketmine\event\RegisteredListener;
 use pocketmine\inventory\ArmorInventory;
+use pocketmine\inventory\CallbackInventoryListener;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\inventory\PlayerOffHandInventory;
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\AxisAlignedBB;
@@ -54,7 +57,12 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\entity\HungerManager;
+use pocketmine\entity\projectile\Fireball;
+use pocketmine\entity\projectile\SmallFireball;
+use pocketmine\Server;
 use pocketmine\player\Player;
+use pocketmine\plugin\Plugin;
+use pocketmine\timings\TimingsHandler;
 use pocketmine\world\World;
 use Ramsey\Uuid\Uuid;
 use ReflectionClass;
@@ -66,6 +74,12 @@ class NetherAndEndEntitiesTest extends TestCase{
 	/** @var Entity[] */
 	private array $createdEntities = [];
 	private ?World $defaultWorld = null;
+	private int $currentTick = 0;
+
+	private function tickEntity(Entity $entity, int $tick, int $diff = 1) : void{
+		$entity->lastUpdate = $tick;
+		(new ReflectionMethod($entity, "entityBaseTick"))->invoke($entity, $diff);
+	}
 
 	protected function setUp() : void{
 		parent::setUp();
@@ -78,15 +92,20 @@ class NetherAndEndEntitiesTest extends TestCase{
 		}
 		$this->createdEntities = [];
 		$this->defaultWorld = null;
+		$this->currentTick = 0;
 		parent::tearDown();
 	}
 
 	private function getDefaultWorld() : World{
 		if($this->defaultWorld === null){
 			$this->defaultWorld = $this->createMock(World::class);
+			$server = $this->createMock(Server::class);
+			$server->method("getTick")->willReturnCallback(fn() => $this->currentTick);
+			$this->defaultWorld->method("getServer")->willReturn($server);
 			$this->defaultWorld->method("isLoaded")->willReturn(true);
 			$this->defaultWorld->method("getPlayers")->willReturn([]);
 			$this->defaultWorld->method("getDamageY")->willReturn(-64);
+			$this->defaultWorld->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
 		}
 		return $this->defaultWorld;
 	}
@@ -126,6 +145,7 @@ class NetherAndEndEntitiesTest extends TestCase{
 		}
 		$location = new Location($pos?->x ?? 0.0, $pos?->y ?? 0.0, $pos?->z ?? 0.0, $world, 0.0, 0.0);
 		(new ReflectionProperty(Entity::class, "location"))->setValue($player, $location);
+		(new ReflectionProperty(Entity::class, "size"))->setValue($player, new EntitySizeInfo(1.8, 0.6, 1.62));
 		(new ReflectionProperty(Entity::class, "boundingBox"))->setValue($player, new AxisAlignedBB(
 			$location->x - 0.3,
 			$location->y,
@@ -274,6 +294,41 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertTrue($loaded->isChargingFireball());
 	}
 
+	public function testRangedMobsLaunchFireballsAtTheirTarget() : void{
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
+			->onlyMethods(["getServer", "getBlockAt", "getViewersForPosition", "getDamageY", "getNearbyEntities", "isLoaded", "addSound"])
+			->getMock();
+		$world->method("getServer")->willReturn($this->createMock(Server::class));
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getDamageY")->willReturn(-64);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
+		$player = $this->createPlayer(world: $world, pos: new Vector3(10, 0, 0));
+		$world->addEntity($player);
+		$world->method("getNearbyEntities")->willReturn([$player]);
+		$ghast = $this->createGhast($world);
+		$blaze = $this->createBlaze($world);
+		$getShots = static fn() => array_values(array_filter($world->getEntities(), static fn(Entity $entity) => $entity instanceof SmallFireball));
+		$this->tickEntity($ghast, 1);
+		$this->tickEntity($blaze, 1);
+		self::assertTrue($ghast->isChargingFireball());
+		$shots = $getShots();
+		self::assertCount(1, $shots);
+		$this->createdEntities[] = $shots[0];
+		self::assertSame(SmallFireball::class, $shots[0]::class);
+		self::assertFalse($shots[0]->canSaveWithChunk());
+		self::assertSame($blaze->getId(), $shots[0]->getOwningEntityId());
+		self::assertGreaterThan(0, $shots[0]->getMotion()->x);
+		$this->tickEntity($blaze, 2);
+		$this->tickEntity($ghast, 21, 20);
+		$shots = $getShots();
+		self::assertCount(2, $shots);
+		$this->createdEntities[] = $shots[1];
+		self::assertInstanceOf(Fireball::class, $shots[1]);
+		self::assertSame($ghast->getId(), $shots[1]->getOwningEntityId());
+		self::assertGreaterThan(0, $shots[1]->getMotion()->x);
+		self::assertFalse($ghast->isChargingFireball());
+	}
+
 	// ---------------- BLAZE TESTS ---------------- //
 
 	public function testBlazeInitializationAndWaterDamage() : void{
@@ -307,6 +362,9 @@ class NetherAndEndEntitiesTest extends TestCase{
 	// ---------------- WITHER SKELETON TESTS ---------------- //
 
 	public function testWitherSkeletonInitializationAndWitherAttack() : void{
+		$world = $this->getDefaultWorld();
+		$target = $this->createPlayer(pos: new Vector3(1, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$target]);
 		$skel = $this->createWitherSkeleton();
 		self::assertSame(EntityIds::WITHER_SKELETON, WitherSkeleton::getNetworkTypeId());
 		self::assertSame("Wither Skeleton", $skel->getName());
@@ -315,10 +373,9 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertSame(20.0, $skel->getHealth());
 
 		// Attack target inflicts Wither
-		$target = $this->createPlayer();
 		self::assertFalse($target->getEffects()->has(VanillaEffects::WITHER()));
 
-		$skel->attackTarget($target);
+		$this->tickEntity($skel, 1);
 		self::assertTrue($target->getEffects()->has(VanillaEffects::WITHER()));
 		$wither = $target->getEffects()->get(VanillaEffects::WITHER());
 		self::assertNotNull($wither);
@@ -339,44 +396,91 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$playerPlain = $this->createPlayer();
 		self::assertFalse($piglin->isPacifiedBy($playerPlain));
 
-		// Player wearing gold helmet -> pacified!
+		// Golden boots also pacify the Piglin.
 		$playerGold = $this->createPlayer();
-		$playerGold->getArmorInventory()->setHelmet(VanillaItems::GOLDEN_HELMET());
+		$playerGold->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
 		self::assertTrue($piglin->isPacifiedBy($playerGold));
 
 		// Bartering with Gold Ingot
-		$playerBarter = $this->createPlayer(heldItem: VanillaItems::GOLD_INGOT());
+		$playerBarter = $this->createPlayer(heldItem: VanillaItems::GOLD_INGOT()->setCount(2));
 		self::assertFalse($piglin->isAdmiring());
 
-		$interacted = $piglin->interact($playerBarter, new Vector3(0, 0, 0));
-		self::assertTrue($interacted);
-		self::assertTrue($piglin->isAdmiring());
+		$world = $this->getDefaultWorld();
+		$inventory = $playerBarter->getInventory();
+		$inventory->getListeners()->add(CallbackInventoryListener::onAnyChange(
+			static function() use ($playerBarter, $piglin) : void{
+				self::assertFalse($playerBarter->interactEntity($piglin, Vector3::zero()));
+			}
+		));
+		unset($world->updateEntities[$piglin->getId()]);
+		$this->currentTick = 1000;
+		$world->expects(self::once())->method("dropItem")->willReturn(null);
+		$world->expects(self::never())->method("addParticle");
 
-		// Bartering finished
-		$piglin->finishBartering();
+		self::assertTrue($playerBarter->interactEntity($piglin, Vector3::zero()));
+		self::assertSame(1, $inventory->getItemInHand()->getCount());
+		self::assertSame($piglin, $world->updateEntities[$piglin->getId()]);
+
+		$this->tickEntity($piglin, 1001, 1001);
+		self::assertSame(119, $piglin->saveNBT()->getInt(Piglin::TAG_ADMIRING_TICKS));
+		$this->tickEntity($piglin, 1119, 118);
+		self::assertTrue($piglin->isAdmiring());
+		$this->tickEntity($piglin, 1120);
 		self::assertFalse($piglin->isAdmiring());
 	}
 
+	public function testPiglinReevaluatesTargetWhenItPutsOnGoldBoots() : void{
+		$world = $this->getDefaultWorld();
+		$nearest = $this->createPlayer(pos: new Vector3(1, 0, 0));
+		$further = $this->createPlayer(pos: new Vector3(2, 0, 0));
+		$world->method("getNearbyEntities")->willReturn([$nearest, $further]);
+		$world->method("getEntity")->willReturnMap([[$nearest->getId(), $nearest], [$further->getId(), $further]]);
+		$piglin = $this->createPiglin();
+
+		$this->tickEntity($piglin, 1);
+		self::assertSame($nearest->getId(), $piglin->getTargetEntityId());
+		$nearest->getArmorInventory()->setBoots(VanillaItems::GOLDEN_BOOTS());
+		$this->tickEntity($piglin, 2);
+		self::assertSame($further->getId(), $piglin->getTargetEntityId());
+	}
+
 	public function testZombifiedPiglinGroupAnger() : void{
-		$world = $this->createMock(World::class);
+		$world = $this->getMockBuilder(World::class)->disableOriginalConstructor()
+			->onlyMethods(["getServer", "isLoaded", "getPlayers", "addEntity", "getBlockAt", "getDamageY", "getEntity"])
+			->getMock();
+		$server = $this->createMock(Server::class);
+		$world->method("getServer")->willReturn($server);
+		$server->method("getTick")->willReturn(1000);
 		$world->method("isLoaded")->willReturn(true);
 		$world->method("getPlayers")->willReturn([]);
+		$world->method("getBlockAt")->willReturn(VanillaBlocks::AIR());
 
 		$z1 = $this->createZombifiedPiglin(world: $world, pos: new Vector3(0, 60, 0));
-		$z2 = $this->createZombifiedPiglin(world: $world, pos: new Vector3(5, 60, 0));
+		$z2 = $this->createZombifiedPiglin(world: $world, pos: new Vector3(19.9, 60, 0));
+		$outside = $this->createZombifiedPiglin(world: $world, pos: new Vector3(20.1, 60, 0));
+		(new ReflectionProperty(World::class, "entitiesByChunk"))->setValue($world, [
+			World::chunkHash(0, 0) => [$z1->getId() => $z1],
+			World::chunkHash(1, 0) => [$z2->getId() => $z2, $outside->getId() => $outside],
+		]);
+		unset($world->updateEntities[$z2->getId()]);
 
-		$world->method("getNearbyEntities")->willReturn([$z2]);
+		$player = $this->createPlayer(world: $world, pos: new Vector3(0, 60, 0));
+		$world->method("getEntity")->with($player->getId())->willReturn($player);
+		$z1->attack($this->createDamageByEntityEvent($player, $z1, 5.0));
 
-		self::assertFalse($z1->isAngry());
-		self::assertFalse($z2->isAngry());
-
-		$player = $this->createPlayer(world: $world);
-		$damageEv = $this->createDamageByEntityEvent($player, $z1, 5.0);
-		$z1->attack($damageEv);
-
-		// Both z1 and z2 become angry via group anger broadcast!
 		self::assertTrue($z1->isAngry());
 		self::assertTrue($z2->isAngry());
+		self::assertFalse($outside->isAngry());
+		self::assertSame($z2, $world->updateEntities[$z2->getId()]);
+		self::assertSame($player->getId(), $z1->getTargetEntityId());
+		self::assertSame($player->getId(), $z2->getTargetEntityId());
+		$this->tickEntity($z2, 1001, 1001);
+		self::assertSame(499, $z2->getAngerTicks());
+		$this->tickEntity($z2, 1499, 498);
+		self::assertTrue($z2->isAngry());
+		$this->tickEntity($z2, 1500);
+		self::assertFalse($z2->isAngry());
+		self::assertNull($z2->getTargetEntityId());
 	}
 
 	// ---------------- STRIDER TESTS ---------------- //
@@ -397,9 +501,10 @@ class NetherAndEndEntitiesTest extends TestCase{
 		self::assertFalse($strider->isSaddled());
 
 		// Saddle interaction
-		$saddle = new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Saddle");
-		$player = $this->createPlayer(heldItem: $saddle);
-		$interacted = $strider->interact($player, new Vector3(0, 0, 0));
+		$player = $this->createPlayer(heldItem: VanillaItems::STICK()->setCustomName("saddle"), world: $world);
+		self::assertFalse($player->interactEntity($strider, Vector3::zero()));
+		$player->getInventory()->setItemInHand(VanillaItems::SADDLE());
+		$interacted = $player->interactEntity($strider, Vector3::zero());
 
 		self::assertTrue($interacted);
 		self::assertTrue($strider->isSaddled());
@@ -412,7 +517,7 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$drops = $strider->getDrops();
 		$hasSaddle = false;
 		foreach($drops as $drop){
-			if(str_contains(strtolower($drop->getName()), "saddle")){
+			if($drop->getTypeId() === ItemTypeIds::SADDLE){
 				$hasSaddle = true;
 				break;
 			}
@@ -444,6 +549,70 @@ class NetherAndEndEntitiesTest extends TestCase{
 		$ev2 = new EntityDamageEvent($shulker, EntityDamageEvent::CAUSE_ENTITY_ATTACK, 10.0);
 		$shulker->attack($ev2);
 		self::assertSame(18.0, $shulker->getHealth());
+	}
+
+	public function testShulkerWallAttachmentSurvivesGravityUntilSupportIsRemoved() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("getDamageY")->willReturn(-64);
+		$supported = true;
+		$world->method("getBlockAt")->willReturnCallback(static function(int $x, int $y, int $z) use (&$supported) : Block{
+			return $supported && $x === 1 && $y === 10 && $z === 0 ? VanillaBlocks::STONE() : VanillaBlocks::AIR();
+		});
+		$location = new Location(0.5, 10, 0.5, $world, 0, 0);
+		$nbt = CompoundTag::create()->setFloat("HealF", 12.0)->setByte(Shulker::TAG_ATTACH_FACE, Facing::EAST);
+		$shulker = new Shulker($location, $nbt);
+		$this->createdEntities[] = $shulker;
+		self::assertSame(12.0, $shulker->getHealth());
+		$piglin = new Piglin($location, $nbt);
+		$this->createdEntities[] = $piglin;
+		self::assertSame(12.0, $piglin->getHealth());
+
+		$shulker->onUpdate(1);
+		self::assertFalse($shulker->hasGravity());
+		self::assertSame(10.0, $shulker->getLocation()->y);
+		$supported = false;
+		$shulker->onNearbyBlockChange();
+		$shulker->onUpdate(2);
+		self::assertTrue($shulker->hasGravity());
+		self::assertLessThan(10.0, $shulker->getLocation()->y);
+	}
+
+	public function testShulkerDestinationChecksCollisionAndSupportBeforeChangingFace() : void{
+		$world = $this->createMock(World::class);
+		$world->method("isLoaded")->willReturn(true);
+		$world->method("isInWorld")->willReturn(true);
+		$world->method("getBlockAt")->willReturnCallback(static fn(int $x, int $y, int $z) : Block =>
+			$x === 6 && $y === 10 && $z === 0 ? VanillaBlocks::STONE() : VanillaBlocks::AIR()
+		);
+		$colliding = true;
+		$world->method("getBlockCollisionBoxes")->willReturnCallback(static function(AxisAlignedBB $bb) use (&$colliding) : array{
+			return $colliding && $bb->minX === 5.0 ? [new AxisAlignedBB(5, 10, 0, 5.2, 11, 1)] : [];
+		});
+		$shulker = $this->createShulker($world, new Vector3(0.5, 10, 0.5));
+		$tryAttachAt = new ReflectionMethod(Shulker::class, "tryAttachAt");
+		$destination = new Vector3(5.5, 10, 0.5);
+		self::assertFalse($tryAttachAt->invoke($shulker, $destination));
+		$colliding = false;
+		self::assertFalse($tryAttachAt->invoke($shulker, new Vector3(4.5, 10, 0.5)));
+
+		$cancel = true;
+		HandlerListManager::global()->getListFor(EntityTeleportEvent::class)->register(new RegisteredListener(
+			static function(EntityTeleportEvent $event) use (&$cancel) : void{
+				if($cancel){
+					$event->cancel();
+				}
+			},
+			EventPriority::NORMAL,
+			$this->createMock(Plugin::class),
+			false,
+			new TimingsHandler("Shulker teleport cancellation")
+		));
+		self::assertFalse($tryAttachAt->invoke($shulker, $destination));
+		self::assertSame(Facing::DOWN, $shulker->getAttachFace());
+		$cancel = false;
+		self::assertTrue($tryAttachAt->invoke($shulker, $destination));
+		self::assertSame(Facing::EAST, $shulker->getAttachFace());
 	}
 
 	public function testShulkerNbtSerialization() : void{

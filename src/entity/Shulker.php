@@ -23,6 +23,8 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\block\BlockTypeIds;
+use pocketmine\block\utils\SupportType;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
@@ -34,6 +36,7 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\world\sound\PopSound;
+use function in_array;
 use function max;
 use function min;
 use function mt_rand;
@@ -65,12 +68,10 @@ class Shulker extends Living{
 	protected function initEntity(CompoundTag $nbt) : void{
 		$this->setMaxHealth(30);
 		parent::initEntity($nbt);
-		if($nbt->getTag("Health") === null){
-			$this->setHealth(30.0);
-		}
 
 		$this->peek = $nbt->getByte(self::TAG_PEEK, 0);
 		$this->attachFace = $nbt->getByte(self::TAG_ATTACH_FACE, Facing::DOWN);
+		$this->refreshAttachmentGravity();
 	}
 
 	public function saveNBT() : CompoundTag{
@@ -105,7 +106,31 @@ class Shulker extends Living{
 
 	public function setAttachFace(int $face) : void{
 		$this->attachFace = $face;
+		$this->refreshAttachmentGravity();
 		$this->networkPropertiesDirty = true;
+	}
+
+	private function hasSupport(Vector3 $position, int $face) : bool{
+		if(!in_array($face, Facing::ALL, true)){
+			return false;
+		}
+		$support = $position->getSide($face);
+		$block = $this->getWorld()->getBlockAt($support->getFloorX(), $support->getFloorY(), $support->getFloorZ());
+		return $block->getSupportType(Facing::opposite($face)) === SupportType::FULL;
+	}
+
+	private function refreshAttachmentGravity() : void{
+		$this->setHasGravity(!$this->hasSupport($this->location, $this->attachFace));
+	}
+
+	protected function tryChangeMovement() : void{
+		$this->refreshAttachmentGravity();
+		if(!$this->hasGravity()){
+			$this->motion = Vector3::zero();
+			$this->resetFallDistance();
+			return;
+		}
+		parent::tryChangeMovement();
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
@@ -134,18 +159,45 @@ class Shulker extends Living{
 	public function teleportRandomly() : bool{
 		$world = $this->getWorld();
 		for($attempt = 0; $attempt < 16; ++$attempt){
-			$x = (int) ($this->location->x + mt_rand(-16, 16));
-			$y = (int) max(1, min($world->getMaxY() - 2, $this->location->y + mt_rand(-8, 8)));
-			$z = (int) ($this->location->z + mt_rand(-16, 16));
-
-			$block = $world->getBlockAt($x, $y, $z);
-			if(!$block->isSolid()){
-				$this->teleport(new Vector3($x + 0.5, $y, $z + 0.5));
-				$this->broadcastSound(new PopSound());
+			$x = $this->location->getFloorX() + mt_rand(-16, 16);
+			$y = max($world->getMinY() + 1, min($world->getMaxY() - 2, $this->location->getFloorY() + mt_rand(-8, 8)));
+			$z = $this->location->getFloorZ() + mt_rand(-16, 16);
+			if($this->tryAttachAt(new Vector3($x + 0.5, $y, $z + 0.5))){
 				return true;
 			}
 		}
 
+		return false;
+	}
+
+	private function tryAttachAt(Vector3 $destination) : bool{
+		$world = $this->getWorld();
+		$x = $destination->getFloorX();
+		$y = $destination->getFloorY();
+		$z = $destination->getFloorZ();
+		if(!$world->isInWorld($x, $y, $z) || $world->getBlockAt($x, $y, $z)->getTypeId() !== BlockTypeIds::AIR){
+			return false;
+		}
+
+		$offset = $destination->subtractVector($this->location);
+		if($world->getBlockCollisionBoxes($this->boundingBox->offsetCopy($offset->x, $offset->y, $offset->z)) !== []){
+			return false;
+		}
+
+		foreach(Facing::ALL as $face){
+			if($this->hasSupport($destination, $face)){
+				if(!$this->teleport($destination)){
+					return false;
+				}
+				if($this->hasSupport($this->location, $face)){
+					$this->setAttachFace($face);
+				}else{
+					$this->refreshAttachmentGravity();
+				}
+				$this->broadcastSound(new PopSound());
+				return true;
+			}
+		}
 		return false;
 	}
 

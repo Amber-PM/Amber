@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\entity\projectile\Fireball;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
@@ -31,12 +32,12 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
-use pocketmine\player\Player;
 use pocketmine\world\sound\GhastShootSound;
 use pocketmine\world\sound\GhastSound;
 use function mt_rand;
 
 class Ghast extends Living{
+	use HostilePlayerTargeting;
 
 	public const TAG_CHARGING = "Charging";
 
@@ -122,27 +123,26 @@ class Ghast extends Living{
 
 		if($this->charging){
 			$this->chargeTicks -= $tickDiff;
-			$hasUpdate = true;
 			if($this->chargeTicks <= 0){
 				$this->shootFireball();
 			}
 		}elseif($this->shootCooldown > 0){
 			$this->shootCooldown -= $tickDiff;
-		}else{
-			// Search for target player within 64 blocks
-			foreach($this->getWorld()->getNearbyEntities($this->boundingBox->expandedCopy(64, 64, 64), $this) as $nearby){
-				if($nearby instanceof Player && $nearby->isAlive() && !$nearby->isCreative() && !$nearby->isSpectator()){
-					$this->setChargingFireball(true);
-					break;
-				}
-			}
+		}elseif($this->findHostilePlayer(64) !== null){
+			$this->setChargingFireball(true);
 		}
 
-		return $hasUpdate;
+		return true;
 	}
 
 	public function shootFireball() : void{
+		if(($target = $this->findHostilePlayer(64)) !== null){
+			$fireball = new Fireball(Location::fromObject($this->getEyePos(), $this->getWorld()), $this);
+			$fireball->setBaseDamage(6);
+			$fireball->launchTowards($target);
+		}
 		$this->charging = false;
+		$this->chargeTicks = 0;
 		$this->shootCooldown = 60; // 3 seconds between shots
 		$this->networkPropertiesDirty = true;
 		$this->broadcastSound(new GhastSound());

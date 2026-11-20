@@ -202,6 +202,14 @@ final class VanillaEnchantmentsInputs extends RegistrySource{
 			fn(int $level) : int => 15,
 			50
 		));
+		self::register("LOOTING", new Enchantment(
+			KnownTranslationFactory::enchantment_lootBonus(), Rarity::RARE, 0, 0, 3,
+			fn(int $level) : int => 9 * ($level - 1) + 15, 50
+		));
+		self::register("SOUL_SPEED", new Enchantment(
+			KnownTranslationFactory::enchantment_soul_speed(), Rarity::MYTHIC, 0, 0, 3,
+			fn(int $level) : int => 10 * $level, 15
+		));
 		self::register("UNBREAKING", new Enchantment(
 			KnownTranslationFactory::enchantment_durability(),
 			Rarity::UNCOMMON,

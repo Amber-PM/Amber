@@ -26,9 +26,7 @@ namespace pocketmine\entity;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
-use pocketmine\item\StringToItemParser;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
@@ -39,8 +37,6 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\sound\PopSound;
 use function mt_rand;
-use function str_contains;
-use function strtolower;
 
 class Strider extends Living{
 
@@ -87,6 +83,7 @@ class Strider extends Living{
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
 		$properties->setGenericFlag(EntityMetadataFlags::SADDLED, $this->saddled);
+		$properties->setGenericFlag(EntityMetadataFlags::VIBRATING, $this->shivering);
 	}
 
 	public function isSaddled() : bool{
@@ -103,7 +100,10 @@ class Strider extends Living{
 	}
 
 	public function setShivering(bool $shivering = true) : void{
-		$this->shivering = $shivering;
+		if($this->shivering !== $shivering){
+			$this->shivering = $shivering;
+			$this->networkPropertiesDirty = true;
+		}
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
@@ -120,18 +120,13 @@ class Strider extends Living{
 		parent::attack($source);
 	}
 
-	public function interact(Player $player, Vector3 $clickPos) : bool{
+	public function onInteract(Player $player, Vector3 $clickPos) : bool{
 		$item = $player->getInventory()->getItemInHand();
 
-		if(
-			(
-				$item->getVanillaName() === "Saddle" ||
-				str_contains(strtolower($item->getName()), "saddle")
-			) && !$this->saddled
-		){
+		if($item->getTypeId() === ItemTypeIds::SADDLE && !$this->saddled){
+			$this->setSaddled(true);
 			$item->pop();
 			$player->getInventory()->setItemInHand($item);
-			$this->setSaddled(true);
 			$this->broadcastSound(new PopSound());
 			return true;
 		}
@@ -147,7 +142,7 @@ class Strider extends Living{
 		}
 
 		// Shivering when out of lava
-		$block = $this->getWorld()->getBlockAt((int) $this->location->x, (int) $this->location->y, (int) $this->location->z);
+		$block = $this->getWorld()->getBlockAt($this->location->getFloorX(), $this->location->getFloorY(), $this->location->getFloorZ());
 		$inLava = $block->getTypeId() === BlockTypeIds::LAVA;
 
 		if(!$inLava && !$this->shivering){
@@ -167,8 +162,7 @@ class Strider extends Living{
 		];
 
 		if($this->saddled){
-			$saddle = StringToItemParser::getInstance()->parse("saddle");
-			$drops[] = $saddle ?? new Item(new ItemIdentifier(ItemTypeIds::FIRST_UNUSED_ITEM_ID), "Saddle");
+			$drops[] = VanillaItems::SADDLE();
 		}
 
 		return $drops;

@@ -369,6 +369,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->registerBlock("daylight_sensor_inverted", fn() => Blocks::DAYLIGHT_SENSOR()->setInverted(true));
 		$result->registerBlock("dead_bush", fn() => Blocks::DEAD_BUSH());
 		$result->registerBlock("deadbush", fn() => Blocks::DEAD_BUSH());
+		$result->registerBlock("dried_ghast", fn() => Blocks::DRIED_GHAST());
 		$result->registerBlock("deepslate", fn() => Blocks::DEEPSLATE());
 		$result->registerBlock("deepslate_bricks", fn() => Blocks::DEEPSLATE_BRICKS());
 		$result->registerBlock("deepslate_brick_slab", fn() => Blocks::DEEPSLATE_BRICK_SLAB());
@@ -1587,6 +1588,7 @@ final class StringToItemParser extends StringToTParser{
 		$result->register("seeds", fn() => Items::WHEAT_SEEDS());
 		$result->register("shears", fn() => Items::SHEARS());
 		$result->register("shield", fn() => Items::SHIELD());
+		$result->register("saddle", fn() => Items::SADDLE());
 		$result->register("shulker_shell", fn() => Items::SHULKER_SHELL());
 		$result->register("silence_armor_trim_smithing_template", fn() => Items::SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE());
 		$result->register("skeleton_spawn_egg", fn() => Items::SKELETON_SPAWN_EGG());

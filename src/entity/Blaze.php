@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\entity\projectile\SmallFireball;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
@@ -31,9 +32,13 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\world\sound\BlazeShootSound;
+use function max;
 use function mt_rand;
 
 class Blaze extends Living{
+	use HostilePlayerTargeting;
+
+	private int $shootCooldown = 0;
 
 	public static function getNetworkTypeId() : string{
 		return EntityIds::BLAZE;
@@ -93,10 +98,24 @@ class Blaze extends Living{
 			$hasUpdate = true;
 		}
 
-		return $hasUpdate;
+		if($this->isAlive()){
+			$this->shootCooldown = max(0, $this->shootCooldown - $tickDiff);
+			if($this->findHostilePlayer(16) !== null && $this->shootCooldown === 0){
+				$this->shootFireball();
+				$this->shootCooldown = 60;
+			}
+		}
+
+		return $hasUpdate || $this->isAlive();
 	}
 
 	public function shootFireball() : void{
+		if(($target = $this->findHostilePlayer(16)) !== null){
+			$fireball = new SmallFireball(Location::fromObject($this->getEyePos(), $this->getWorld()), $this);
+			$fireball->setBaseDamage(5);
+			$fireball->setOnFire(10);
+			$fireball->launchTowards($target);
+		}
 		$this->broadcastSound(new BlazeShootSound());
 	}
 
