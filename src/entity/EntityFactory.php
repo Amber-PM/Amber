@@ -46,6 +46,8 @@ use pocketmine\entity\projectile\Egg;
 use pocketmine\entity\projectile\EnderPearl;
 use pocketmine\entity\projectile\ExperienceBottle;
 use pocketmine\entity\projectile\IceBomb;
+use pocketmine\entity\projectile\LargeFireball;
+use pocketmine\entity\projectile\SmallFireball;
 use pocketmine\entity\projectile\Snowball;
 use pocketmine\entity\projectile\SplashPotion;
 use pocketmine\entity\projectile\Trident;
@@ -175,6 +177,14 @@ final class EntityFactory{
 			return new PrimedTNT(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['PrimedTnt', 'PrimedTNT', 'minecraft:tnt']);
 
+		$this->register(SmallFireball::class, function(World $world, CompoundTag $nbt) : SmallFireball{
+			return new SmallFireball(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['SmallFireball', 'minecraft:small_fireball']);
+
+		$this->register(LargeFireball::class, function(World $world, CompoundTag $nbt) : LargeFireball{
+			return new LargeFireball(Helper::parseLocation($nbt, $world), null, $nbt);
+		}, ['Fireball', 'LargeFireball', 'minecraft:fireball']);
+
 		$this->register(Snowball::class, function(World $world, CompoundTag $nbt) : Snowball{
 			return new Snowball(Helper::parseLocation($nbt, $world), null, $nbt);
 		}, ['Snowball', 'minecraft:snowball']);
@@ -208,6 +218,30 @@ final class EntityFactory{
 		$this->register(Cat::class, function(World $world, CompoundTag $nbt) : Cat{
 			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Cat', 'minecraft:cat']);
+
+		$this->register(Blaze::class, function(World $world, CompoundTag $nbt) : Blaze{
+			return new Blaze(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Blaze', 'minecraft:blaze']);
+
+		$this->register(Ghast::class, function(World $world, CompoundTag $nbt) : Ghast{
+			return new Ghast(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Ghast', 'minecraft:ghast']);
+
+		$this->register(IronGolem::class, function(World $world, CompoundTag $nbt) : IronGolem{
+			return new IronGolem(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['IronGolem', 'minecraft:iron_golem', 'VillagerGolem']);
+
+		$this->register(MagmaCube::class, function(World $world, CompoundTag $nbt) : MagmaCube{
+			return new MagmaCube(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['MagmaCube', 'minecraft:magma_cube']);
+
+		$this->register(Slime::class, function(World $world, CompoundTag $nbt) : Slime{
+			return new Slime(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Slime', 'minecraft:slime']);
+
+		$this->register(Witch::class, function(World $world, CompoundTag $nbt) : Witch{
+			return new Witch(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Witch', 'minecraft:witch']);
 
 		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
 			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
