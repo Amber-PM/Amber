@@ -333,7 +333,7 @@ class BossFightsTest extends TestCase{
 		self::assertSame(500, $dragon->getXpDropAmount());
 	}
 
-	public function testFirstDragonKillIsRecordedForNextSpawn() : void{
+	public function testDragonKillUsesDestinationWorldReward() : void{
 		$world = $this->getMockBuilder(World::class)
 			->disableOriginalConstructor()
 			->onlyMethods(["isLoaded", "getServer", "addEntity", "getBlockCollisionBoxes", "getDamageY", "dropItem", "dropExperience"])
@@ -345,13 +345,28 @@ class BossFightsTest extends TestCase{
 		$provider = $this->createMock(WritableWorldProvider::class);
 		$provider->method("getWorldData")->willReturn($data);
 		(new ReflectionProperty(World::class, "provider"))->setValue($world, $provider);
-		$world->expects(self::once())->method("dropExperience")->with(self::anything(), 12000);
+		$rewards = [];
+		$world->expects(self::exactly(2))->method("dropExperience")->willReturnCallback(
+			static function(Vector3 $position, int $amount) use (&$rewards) : array{
+				$rewards[] = $amount;
+				return [];
+			}
+		);
 
-		$dragon = $this->createEnderDragon($world);
+		$origin = $this->createMock(World::class);
+		$origin->method("isLoaded")->willReturn(true);
+		$origin->method("hasKilledEnderDragon")->willReturn(true);
+		$dragon = $this->createEnderDragon($origin);
+		self::assertTrue($dragon->isPreviouslyKilled());
+		self::assertTrue($dragon->teleport(new Position(0, 0, 0, $world)));
 		$dragon->kill();
 
 		self::assertSame(1, $worldTag->getByte("AmberEnderDragonKilled"));
-		self::assertSame(500, $this->createEnderDragon($world)->getXpDropAmount());
+		$nextDragon = $this->createEnderDragon($world);
+		self::assertSame(500, $nextDragon->getXpDropAmount());
+		$nextDragon->kill();
+
+		self::assertSame([12000, 500], $rewards);
 		self::assertSame(12000, $this->createEnderDragon()->getXpDropAmount());
 	}
 

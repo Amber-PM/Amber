@@ -288,9 +288,7 @@ class EnderDragon extends Living{
 	}
 
 	protected function onDeath() : void{
-		if(!$this->getWorld()->claimEnderDragonFirstKill()){
-			$this->setPreviouslyKilled();
-		}
+		$this->setPreviouslyKilled(!$this->getWorld()->claimEnderDragonFirstKill());
 		$this->setPhase(self::PHASE_DYING);
 		$this->unlinkCrystal();
 		parent::onDeath();
