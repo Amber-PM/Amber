@@ -223,7 +223,11 @@ final class EntityFactory{
 
 		$this->register(Villager::class, function(World $world, CompoundTag $nbt) : Villager{
 			return new Villager(Helper::parseLocation($nbt, $world), $nbt);
-		}, ['Villager', 'minecraft:villager']);
+		}, ['Villager', 'minecraft:villager', 'minecraft:villager_v2']);
+
+		$this->register(WanderingTrader::class, function(World $world, CompoundTag $nbt) : WanderingTrader{
+			return new WanderingTrader(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['WanderingTrader', 'minecraft:wandering_trader']);
 
 		$this->register(Wolf::class, function(World $world, CompoundTag $nbt) : Wolf{
 			return new Wolf(Helper::parseLocation($nbt, $world), $nbt);
