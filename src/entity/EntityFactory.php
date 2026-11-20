@@ -209,6 +209,26 @@ final class EntityFactory{
 			return new Cat(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Cat', 'minecraft:cat']);
 
+		$this->register(Ocelot::class, function(World $world, CompoundTag $nbt) : Ocelot{
+			return new Ocelot(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Ocelot', 'minecraft:ocelot']);
+
+		$this->register(Parrot::class, function(World $world, CompoundTag $nbt) : Parrot{
+			return new Parrot(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Parrot', 'minecraft:parrot']);
+
+		$this->register(Horse::class, function(World $world, CompoundTag $nbt) : Horse{
+			return new Horse(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Horse', 'minecraft:horse']);
+
+		$this->register(Donkey::class, function(World $world, CompoundTag $nbt) : Donkey{
+			return new Donkey(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Donkey', 'minecraft:donkey']);
+
+		$this->register(Mule::class, function(World $world, CompoundTag $nbt) : Mule{
+			return new Mule(Helper::parseLocation($nbt, $world), $nbt);
+		}, ['Mule', 'minecraft:mule']);
+
 		$this->register(Skeleton::class, function(World $world, CompoundTag $nbt) : Skeleton{
 			return new Skeleton(Helper::parseLocation($nbt, $world), $nbt);
 		}, ['Skeleton', 'minecraft:skeleton']);
