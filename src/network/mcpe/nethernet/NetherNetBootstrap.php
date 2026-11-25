@@ -49,6 +49,7 @@ final class NetherNetBootstrap{
 				$interface->shutdown();
 				throw new NetworkInterfaceStartException('Required NetherNet interface registration was cancelled by a plugin');
 			}
+			$server->getCommandMap()->register('amber', new NetherNetCommand($interface));
 			$server->getLogger()->info('NetherNet signaling listening on ' . $interface->getAddress() . ' (TCP signaling address policy)');
 			return true;
 		}catch(NetworkInterfaceStartException $e){ throw $e; }

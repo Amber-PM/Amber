@@ -31,6 +31,7 @@ use amber\nethernet\internal\TransportCleanupException;
 use amber\nethernet\signaling\HttpServer;
 use amber\nethernet\signaling\HttpSignaling;
 use amber\nethernet\signaling\ServerMetadata;
+use amber\nethernet\signaling\TlsConfig;
 use amber\nethernet\SignalingPeerAddress;
 use amber\nethernet\SignalingPeerConnection;
 use amber\nethernet\Transport;
@@ -68,6 +69,9 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 	/** @var array<int, array{int, int}> */
 	private array $lastBytes = [];
 	private float $nextStatsAt = 0.0;
+	private ?TlsConfig $tls = null;
+	/** @var array<string, int> */
+	private array $closeCodes = [];
 
 	/**
 	 * @param \Closure(Connection, NetherNetPacketSender, SignalingPeerAddress): NetworkSession|null $sessionFactory
@@ -115,7 +119,7 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			try{
 				$this->http = new HttpServer($limits, $signaling, $this->config->getBind(), ioBytes: 8192, admit: static function(string $ip) use ($reference) : bool{
 					return $reference->get()?->admits($ip) ?? false;
-				});
+				}, trustedProxies: $this->config->getTrustedProxies(), tls: $this->tls = $this->config->createTlsConfig());
 			}catch(\RuntimeException $e){
 				// rcon plugins default to server-port so the tcp side is often taken
 				throw new \RuntimeException('cannot listen on ' . $this->config->getBind() . ', another process or plugin (often RCON) already uses this TCP port, move it to another port (' . $e->getMessage() . ')', 0, $e);
@@ -123,8 +127,15 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 			// most join failures are closed ports so say which ones up front
 			$address = $this->http->getAddress();
 			$tcp = substr($address, (int) strrpos($address, ':') + 1);
-			$advertised = $this->config->getAdvertisedAddress();
-			$this->logger->info('NetherNet (26.60+) needs TCP ' . $tcp . ' and UDP ' . $this->config->describeUdp() . ' open' . ($advertised !== null ? ', public address ' . $advertised : ', set advertised-address when behind NAT or in a container'));
+			$advertised = $this->config->getAdvertisedAddresses();
+			$stun = $this->config->getStunServer();
+			$this->logger->info('NetherNet (26.60+) needs TCP ' . $tcp . ' and UDP ' . $this->config->describeUdp() . ' open' . ($advertised !== [] ? ', public address ' . implode(', ', $advertised) : ($stun !== null ? ', public address from STUN ' . $stun : ', set advertised-address when behind NAT or in a container')));
+			if($this->tls !== null){
+				$days = intdiv($this->tls->expiresAt - time(), 86400);
+				$this->logger->info('NetherNet signaling also accepts HTTPS for ' . (implode(', ', $this->tls->names) ?: 'the certificate names') . ', certificate expires in ' . $days . ' days' . ($this->tls->required ? ', plain HTTP is refused' : ''));
+				if($days < 14){ $this->logger->warning('NetherNet TLS certificate expires in ' . $days . ' days, renew it; the new files are picked up without a restart'); }
+			}
+			if($this->config->getTrustedProxies() !== []){ $this->logger->info('NetherNet reads the player address from PROXY protocol sent by ' . implode(', ', $this->config->getTrustedProxies())); }
 		}catch(\Throwable $e){
 			$this->shutdown();
 			throw new NetworkInterfaceStartException('NetherNet initialization failed: ' . $e->getMessage(), 0, $e);
@@ -264,13 +275,41 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 		$joined = isset($this->clients[$id]);
 		$this->release($id, 'NetherNet transport closed'); // do not log arbitrary peer/native reason text
 		// codes come from the library so they are safe to log
-		if(!$joined && $code === 'connect_timeout'){
+		$this->closeCodes[$code] = ($this->closeCodes[$code] ?? 0) + 1;
+		if(!$joined && $code === 'signaling_timeout' && $this->config->getStunServer() !== null){
+			$this->warnLimited('stun', 'NetherNet could not finish gathering addresses in time (signaling_timeout), the STUN server ' . $this->config->getStunServer() . ' may be unreachable');
+		}elseif(!$joined && $code === 'connect_timeout'){
 			$this->warnLimited('connect', 'NetherNet player could not reach the ICE UDP port (connect_timeout), check that it is open and set advertised-address when the server is behind NAT');
 		}elseif(!$joined && str_starts_with($code, 'identity_')){
 			$this->warnLimited('identity', 'NetherNet player failed authentication (' . $code . ')');
+		}elseif($joined && $code !== 'local_close'){
+			// says why a player dropped, the session line only says closed
+			// only the fixed native state names are logged, never free peer text
+			$state = $code === 'backend_failed' && preg_match('/^Native peer state ([A-Z]+)$/D', $reason, $match) === 1 ? ', native state ' . $match[1] : '';
+			$this->logger->info('NetherNet connection ' . $id . ' closed by the transport (' . $code . $state . ')');
 		}else{
 			$this->logger->debug('NetherNet connection ' . $id . ' closed (' . $code . ')');
 		}
+	}
+
+	/** @return array{signaling: ?string, tls: ?string, schemes: array{https: int, http: int, tlsRefused: int, tlsFailed: int}|null, udp: string, advertised: list<string>, stun: ?string, trustedProxies: list<string>, players: int, negotiating: int, closeCodes: array<string, int>, native: array<string, int>|null, connections: list<array{id: int, ip: string, rttMs: ?int, bytesSent: int, bytesReceived: int, sendQueueBytes: int, receiveQueueBytes: int}>} */
+	public function getStatus() : array{
+		$connections = [];
+		foreach($this->clients as $id => $entry){
+			if($entry['session'] === null){ continue; }
+			$stats = null;
+			try{ $stats = $entry['connection']->getStats(); }catch(TransportCleanupException){ /* already detached */ }
+			$connections[] = ['id' => $id, 'ip' => $entry['address']->ip, 'rttMs' => $stats?->rttMs, 'bytesSent' => $stats->bytesSent ?? 0, 'bytesReceived' => $stats->bytesReceived ?? 0, 'sendQueueBytes' => $stats->sendQueueBytes ?? 0, 'receiveQueueBytes' => $stats->receiveQueueBytes ?? 0];
+		}
+		$native = null;
+		if(class_exists(\amber\rtc\RtcRuntime::class, false)){
+			$native = array_filter(\amber\rtc\RtcRuntime::getStats(), is_int(...));
+		}
+		return [
+			'signaling' => $this->http?->getAddress(), 'tls' => $this->tls === null ? null : ($this->tls->required ? 'required' : 'optional'), 'schemes' => $this->http?->getSchemeCounts(), 'udp' => $this->config->describeUdp(), 'advertised' => $this->config->getAdvertisedAddresses(),
+			'stun' => $this->config->getStunServer(), 'trustedProxies' => $this->config->getTrustedProxies(), 'players' => count($connections),
+			'negotiating' => $this->http?->getConnectionCount() ?? 0, 'closeCodes' => $this->closeCodes, 'native' => $native, 'connections' => $connections
+		];
 	}
 
 	private function warnLimited(string $kind, string $message) : void{

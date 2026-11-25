@@ -29,6 +29,8 @@ use amber\nethernet\identity\ServerIdentity;
 use amber\nethernet\backend\ExtRtcPeer;
 use amber\nethernet\backend\ExtWebRtcPeer;
 use amber\nethernet\backend\WebRtcPeer;
+use amber\nethernet\signaling\ProxyProtocol;
+use amber\nethernet\signaling\TlsConfig;
 use amber\nethernet\TransportConfig;
 use pocketmine\network\mcpe\auth\AuthKeyProvider;
 use pocketmine\utils\TextFormat;
@@ -93,13 +95,44 @@ final class NetherNetConfig{
 		// fail at startup, not on the first player
 		if($mux){ ExtRtcPeer::assertMuxOptions($range[0], $range[1], $iceBind, PHP_OS_FAMILY === 'Windows'); }
 		$settings['ice-udp-mux'] = $mux;
-		$advertised = $settings['advertised-address'] ?? null;
-		if($advertised !== null){
-			if(!is_string($advertised)){ throw new \InvalidArgumentException('NetherNet advertised-address must be a numeric IPv4 or IPv6 address'); }
-			ExtRtcPeer::assertAdvertisedAddress($advertised);
+		// one address, or a list where an entry may map ports as ip:public:local
+		$advertised = $settings['advertised-address'] ?? [];
+		$advertised = is_string($advertised) ? [$advertised] : $advertised;
+		if(!is_array($advertised) || !array_is_list($advertised) || count($advertised) > 8){ throw new \InvalidArgumentException('NetherNet advertised-address must be an address or a list of at most 8 addresses'); }
+		foreach($advertised as $entry){
+			if(!is_string($entry)){ throw new \InvalidArgumentException('NetherNet advertised-address must be a numeric IPv4 or IPv6 address, optionally as ip:public-port:local-port'); }
+			$mapped = ExtRtcPeer::parseAdvertisedAddress($entry)['localPort'];
+			// a local port outside the ice range would advertise nothing
+			if($mapped !== null && ($mapped < $range[0] || $mapped > $range[1])){ throw new \InvalidArgumentException('NetherNet advertised-address local port ' . $mapped . ' is outside ice-port-range'); }
 		}
 		$settings['advertised-address'] = $advertised;
-		foreach(['max-connections' => [128, 1024], 'max-per-ip' => [4, 1024], 'max-http-connections' => [64, 1024], 'max-pending-negotiations' => [32, 1024], 'max-receive-queue-messages' => [4096, 65536]] as $name => [$default, $maximum]){
+		$stun = $settings['stun-server'] ?? null;
+		if($stun === ''){ $stun = null; }
+		if($stun !== null){
+			if(!is_string($stun)){ throw new \InvalidArgumentException('NetherNet stun-server must be host or host:port'); }
+			ExtRtcPeer::parseStunServer($stun);
+		}
+		$settings['stun-server'] = $stun;
+		$proxy = $settings['proxy-protocol'] ?? false;
+		if(!is_bool($proxy)){ throw new \InvalidArgumentException('NetherNet proxy-protocol must be a boolean'); }
+		$proxies = $settings['trusted-proxies'] ?? [];
+		if(!is_array($proxies) || !array_is_list($proxies) || count($proxies) > 64 || array_filter($proxies, is_string(...)) !== $proxies){
+			throw new \InvalidArgumentException('NetherNet trusted-proxies must be a list of at most 64 addresses or CIDR networks');
+		}
+		ProxyProtocol::assertNetworks($proxies);
+		// a header from anyone would let players pick their own address
+		if($proxy && $proxies === []){ throw new \InvalidArgumentException('NetherNet proxy-protocol needs trusted-proxies'); }
+		$settings['trusted-proxies'] = $proxy ? $proxies : [];
+		foreach(['tls-cert-file', 'tls-key-file'] as $name){
+			if(($settings[$name] ?? '') === ''){ unset($settings[$name]); }
+			elseif(!is_string($settings[$name]) || strlen($settings[$name]) > 1024){ throw new \InvalidArgumentException('NetherNet ' . $name . ' must be a local path'); }
+		}
+		if(isset($settings['tls-cert-file']) !== isset($settings['tls-key-file'])){ throw new \InvalidArgumentException('NetherNet tls-cert-file and tls-key-file must be set together'); }
+		$tlsRequired = $settings['tls-required'] ?? false;
+		if(!is_bool($tlsRequired)){ throw new \InvalidArgumentException('NetherNet tls-required must be a boolean'); }
+		if($tlsRequired && !isset($settings['tls-cert-file'])){ throw new \InvalidArgumentException('NetherNet tls-required needs tls-cert-file and tls-key-file'); }
+		$settings['tls-required'] = $tlsRequired;
+		foreach(['max-connections' => [128, 1024], 'max-per-ip' => [4, 1024], 'max-http-connections' => [64, 1024], 'max-http-connections-per-ip' => [4, 1024], 'max-pending-negotiations' => [32, 1024], 'http-header-timeout' => [5, 60], 'signaling-timeout' => [15, 120], 'connect-timeout' => [15, 120], 'max-receive-queue-messages' => [4096, 65536]] as $name => [$default, $maximum]){
 			$value = $settings[$name] ?? $default;
 			if(!is_int($value) || $value < 1 || $value > $maximum){ throw new \InvalidArgumentException('NetherNet ' . $name . ' is outside its bounded integer range'); }
 			$settings[$name] = $value;
@@ -112,7 +145,7 @@ final class NetherNetConfig{
 		$backend = getenv('AMBER_NETHERNET_BACKEND');
 		$settings['backend'] = $backend === false || $backend === '' ? 'ext-rtc' : $backend;
 		if(!in_array($settings['backend'], ['ext-webrtc', 'ext-rtc'], true)){ throw new \InvalidArgumentException('AMBER_NETHERNET_BACKEND must be ext-webrtc or ext-rtc'); }
-		if($settings['advertised-address'] !== null && $settings['backend'] !== 'ext-rtc'){ throw new \InvalidArgumentException('NetherNet advertised-address needs the ext-rtc backend'); }
+		if(($settings['advertised-address'] !== [] || $settings['stun-server'] !== null) && $settings['backend'] !== 'ext-rtc'){ throw new \InvalidArgumentException('NetherNet advertised-address and stun-server need the ext-rtc backend'); }
 		return new self($settings, $dataPath);
 	}
 
@@ -129,17 +162,29 @@ final class NetherNetConfig{
 		[$begin, $end] = $this->settings['ice-port-range'];
 		return $begin === $end ? (string) $begin : $begin . '-' . $end;
 	}
-	public function getAdvertisedAddress() : ?string{ return $this->settings['advertised-address']; }
+	public function getAdvertisedAddress() : ?string{ return $this->settings['advertised-address'][0] ?? null; }
+	/** @return list<string> */
+	public function getAdvertisedAddresses() : array{ return $this->settings['advertised-address']; }
+	public function getStunServer() : ?string{ return $this->settings['stun-server']; }
+	/** @return list<string> */
+	public function getTrustedProxies() : array{ return $this->settings['trusted-proxies']; }
+	/** @throws \InvalidArgumentException */
+	public function createTlsConfig() : ?TlsConfig{
+		if(!isset($this->settings['tls-cert-file'])){ return null; }
+		return new TlsConfig(Path::makeAbsolute($this->settings['tls-cert-file'], $this->dataPath), Path::makeAbsolute($this->settings['tls-key-file'], $this->dataPath), $this->settings['tls-required']);
+	}
 	public function createPeer() : WebRtcPeer{
 		[$begin, $end] = $this->settings['ice-port-range'];
 		if($this->settings['backend'] === 'ext-rtc'){
-			return new ExtRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux'], $this->settings['advertised-address']);
+			return new ExtRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux'], $this->settings['advertised-address'], $this->settings['stun-server']);
 		}
 		return new ExtWebRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux']);
 	}
 	public function createTransportConfig() : TransportConfig{
 		return new TransportConfig(
-			maxConnections: $this->settings['max-connections'], maxPendingNegotiations: $this->settings['max-pending-negotiations'], maxHttpConnections: $this->settings['max-http-connections'],
+			maxConnections: $this->settings['max-connections'], maxPendingNegotiations: $this->settings['max-pending-negotiations'],
+			maxHttpConnections: $this->settings['max-http-connections'], maxHttpConnectionsPerIp: $this->settings['max-http-connections-per-ip'],
+			httpHeaderTimeoutSeconds: $this->settings['http-header-timeout'], signalingTimeoutSeconds: $this->settings['signaling-timeout'], connectTimeoutSeconds: $this->settings['connect-timeout'],
 			// clients send about 20 messages a second so 256 lasted under 13 seconds of a stalled main thread
 			maxReceiveQueueMessages: $this->settings['max-receive-queue-messages']
 		);

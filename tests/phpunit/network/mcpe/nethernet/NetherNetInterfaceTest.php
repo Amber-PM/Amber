@@ -24,6 +24,7 @@ use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\Network;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\Server;
+use pocketmine\utils\TextFormat;
 use pocketmine\timings\Timings;
 
 if(interface_exists(SignalingPeerConnection::class)){
@@ -485,6 +486,131 @@ final class NetherNetInterfaceTest extends TestCase{
 		}finally{ fclose($socket); }
 	}
 
+	/** @return iterable<string, array{bool}> */
+	public static function cleanupPaths() : iterable{ yield 'poll' => [false]; yield 'stats' => [true]; }
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('cleanupPaths')]
+	public function testNativeCleanupFailureOfOnePeerKeepsTheInterfaceRunning(bool $statsPath) : void{
+		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/identity/IdentityFixture.php';
+		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/transport/FakePeer.php';
+		$fixture = new \amber\nethernet\tests\identity\IdentityFixture();
+		file_put_contents($this->directory . '/issuer.pem', openssl_pkey_get_details($fixture->issuer)['key']);
+		$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => 'tcp://127.0.0.1:0', 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'game'], $this->directory);
+		$backend = new \amber\nethernet\tests\transport\FakePeer();
+		$this->logger->expects(self::atLeastOnce())->method('error')->with(self::stringContains('native cleanup failed'));
+		$interface = $this->make(peerFactory: static fn() => $backend);
+		$offer = $fixture->offer($backend::SDP, time());
+		$socket = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
+		self::assertNotFalse($socket);
+		try{
+			stream_set_blocking($socket, false);
+			fwrite($socket, "POST /v1/join/1 HTTP/1.1\r\nHost: test\r\nContent-Type: application/sdp\r\nContent-Length: " . strlen($offer) . "\r\n\r\n" . $offer);
+			for($ticks = 0; $ticks < 100 && count($this->created) === 0; ++$ticks){
+				$interface->tick();
+				usleep(1000);
+			}
+			self::assertCount(1, $this->created);
+		}finally{ fclose($socket); }
+		// stats run once a second and close the peer through another path
+		$backend->{$statsPath ? 'statsFailure' : 'failure'} = new \amber\nethernet\TransportException('backend_failed', 'native fault');
+		if(!$statsPath){ $backend->state = 'FAILED'; }
+		$backend->closeFailure = new \amber\nethernet\TransportException('native_close_failed', 'native fault');
+		if($statsPath){ (new \ReflectionProperty(NetherNetInterface::class, 'nextStatsAt'))->setValue($interface, 0.0); }
+		$interface->tick();
+		self::assertSame(0, $this->network->getConnectionCount());
+		self::assertFalse($this->created[0]->isConnected());
+		// the interface still serves new players
+		$probe = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
+		self::assertNotFalse($probe);
+		try{
+			stream_set_blocking($probe, false);
+			fwrite($probe, "GET /v1/join HTTP/1.1\r\nHost: test\r\n\r\n");
+			$response = '';
+			for($ticks = 0; $ticks < 100 && !str_contains($response, "\r\n\r\n"); ++$ticks){
+				$interface->tick();
+				$response .= fread($probe, 65536);
+				usleep(1000);
+			}
+			self::assertStringStartsWith('HTTP/1.1 200', $response);
+		}finally{ fclose($probe); }
+	}
+
+	public function testProxyProtocolGivesEachPlayerTheirOwnAddressAndStatusReportsThem() : void{
+		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/identity/IdentityFixture.php';
+		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/transport/FakePeer.php';
+		$fixture = new \amber\nethernet\tests\identity\IdentityFixture();
+		file_put_contents($this->directory . '/issuer.pem', openssl_pkey_get_details($fixture->issuer)['key']);
+		// max-per-ip 1 would stop the second player if both were seen as the proxy
+		$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => 'tcp://127.0.0.1:0', 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'game', 'max-per-ip' => 1, 'proxy-protocol' => true, 'trusted-proxies' => ['127.0.0.1']], $this->directory);
+		$interface = $this->make(peerFactory: static fn() => new \amber\nethernet\tests\transport\FakePeer());
+		$offer = $fixture->offer(\amber\nethernet\tests\transport\FakePeer::SDP, time());
+		$sockets = [];
+		try{
+			foreach(['203.0.113.9', '203.0.113.10'] as $index => $player){
+				$socket = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
+				self::assertNotFalse($socket);
+				$sockets[] = $socket;
+				stream_set_blocking($socket, false);
+				fwrite($socket, 'PROXY TCP4 ' . $player . " 10.0.0.1 5100$index 19132\r\nPOST /v1/join/$index HTTP/1.1\r\nHost: test\r\nContent-Type: application/sdp\r\nContent-Length: " . strlen($offer) . "\r\n\r\n" . $offer);
+			}
+			for($ticks = 0; $ticks < 200 && count($this->created) < 2; ++$ticks){
+				$interface->tick();
+				usleep(1000);
+			}
+		}finally{ foreach($sockets as $socket){ fclose($socket); } }
+		self::assertCount(2, $this->created);
+		self::assertSame(['203.0.113.9', '203.0.113.10'], [$this->created[0]->getIp(), $this->created[1]->getIp()]);
+		$status = $interface->getStatus();
+		self::assertSame(2, $status['players']);
+		self::assertSame(['203.0.113.9', '203.0.113.10'], array_column($status['connections'], 'ip'));
+		self::assertSame(['127.0.0.1'], $status['trustedProxies']);
+		$text = TextFormat::clean(implode("\n", NetherNetCommand::format($status)));
+		self::assertStringContainsString('Players: 2', $text);
+		self::assertStringContainsString('203.0.113.10', $text);
+		self::assertStringContainsString('PROXY protocol: 127.0.0.1', $text);
+		$interface->blockAddress('203.0.113.9');
+		self::assertSame(1, $interface->getStatus()['players']);
+		self::assertSame(['local_close' => 1], $interface->getStatus()['closeCodes']);
+	}
+
+	public function testHttpsSignalingServesTheSamePortAndIsReported() : void{
+		$options = ['config' => __DIR__ . '/openssl.cnf'];
+		$key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1'] + $options);
+		$certificate = openssl_csr_sign(openssl_csr_new(['commonName' => 'play.example.test'], $key, $options), null, $key, 30, $options);
+		openssl_x509_export_to_file($certificate, $this->directory . '/tls-cert.pem');
+		openssl_pkey_export_to_file($key, $this->directory . '/tls-key.pem', null, $options);
+		try{
+			$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => 'tcp://127.0.0.1:0', 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'audience', 'tls-cert-file' => 'tls-cert.pem', 'tls-key-file' => 'tls-key.pem'], $this->directory);
+			$interface = $this->make();
+			self::assertSame('optional', $interface->getStatus()['tls']);
+			self::assertStringContainsString('HTTPS: optional', TextFormat::clean(implode("\n", NetherNetCommand::format($interface->getStatus()))));
+			foreach([true, false] as $secure){
+				$socket = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1, STREAM_CLIENT_CONNECT, stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]));
+				self::assertNotFalse($socket);
+				try{
+					stream_set_blocking($socket, false);
+					for($ticks = 0, $ready = !$secure; $ticks < 500 && !$ready; ++$ticks){
+						$ready = @stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT) === true;
+						$interface->tick();
+						usleep(1000);
+					}
+					self::assertTrue($ready);
+					fwrite($socket, "GET /v1/join HTTP/1.1\r\nHost: test\r\n\r\n");
+					$response = '';
+					for($ticks = 0; $ticks < 500 && !str_contains($response, "\r\n\r\n"); ++$ticks){
+						$interface->tick();
+						$response .= (string) fread($socket, 65536);
+						usleep(1000);
+					}
+					self::assertStringStartsWith('HTTP/1.1 200', $response);
+				}finally{ fclose($socket); }
+			}
+		}finally{
+			$this->interface?->shutdown();
+			foreach(['tls-cert.pem', 'tls-key.pem'] as $file){ @unlink($this->directory . '/' . $file); }
+		}
+	}
+
 	public function testShutdownDuringPartialSignalingClosesSocketWithoutCreatingSession() : void{
 		$interface = $this->make();
 		$socket = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
@@ -589,54 +715,5 @@ final class NetherNetInterfaceTest extends TestCase{
 			$client->close();
 			if(is_resource($socket)){ fclose($socket); }
 		}
-	}
-
-	/** @return iterable<string, array{bool}> */
-	public static function cleanupPaths() : iterable{ yield 'poll' => [false]; yield 'stats' => [true]; }
-
-	#[\PHPUnit\Framework\Attributes\DataProvider('cleanupPaths')]
-	public function testNativeCleanupFailureOfOnePeerKeepsTheInterfaceRunning(bool $statsPath) : void{
-		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/identity/IdentityFixture.php';
-		require_once dirname(__DIR__, 5) . '/vendor/amber-pm/nethernet/tests/phpunit/transport/FakePeer.php';
-		$fixture = new \amber\nethernet\tests\identity\IdentityFixture();
-		file_put_contents($this->directory . '/issuer.pem', openssl_pkey_get_details($fixture->issuer)['key']);
-		$this->config = NetherNetConfig::fromArray(['enabled' => true, 'bind' => 'tcp://127.0.0.1:0', 'operator-domain' => 'test.invalid', 'private-key-file' => 'operator.pem', 'trusted-key-files' => ['issuer' => 'issuer.pem'], 'issuer' => 'issuer', 'audience' => 'game'], $this->directory);
-		$backend = new \amber\nethernet\tests\transport\FakePeer();
-		$this->logger->expects(self::atLeastOnce())->method('error')->with(self::stringContains('native cleanup failed'));
-		$interface = $this->make(peerFactory: static fn() => $backend);
-		$offer = $fixture->offer($backend::SDP, time());
-		$socket = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
-		self::assertNotFalse($socket);
-		try{
-			stream_set_blocking($socket, false);
-			fwrite($socket, "POST /v1/join/1 HTTP/1.1\r\nHost: test\r\nContent-Type: application/sdp\r\nContent-Length: " . strlen($offer) . "\r\n\r\n" . $offer);
-			for($ticks = 0; $ticks < 100 && count($this->created) === 0; ++$ticks){
-				$interface->tick();
-				usleep(1000);
-			}
-			self::assertCount(1, $this->created);
-		}finally{ fclose($socket); }
-		// stats run once a second and close the peer through another path
-		$backend->{$statsPath ? 'statsFailure' : 'failure'} = new \amber\nethernet\TransportException('backend_failed', 'native fault');
-		if(!$statsPath){ $backend->state = 'FAILED'; }
-		$backend->closeFailure = new \amber\nethernet\TransportException('native_close_failed', 'native fault');
-		if($statsPath){ (new \ReflectionProperty(NetherNetInterface::class, 'nextStatsAt'))->setValue($interface, 0.0); }
-		$interface->tick();
-		self::assertSame(0, $this->network->getConnectionCount());
-		self::assertFalse($this->created[0]->isConnected());
-		// the interface still serves new players
-		$probe = stream_socket_client('tcp://' . $interface->getAddress(), $code, $error, 1);
-		self::assertNotFalse($probe);
-		try{
-			stream_set_blocking($probe, false);
-			fwrite($probe, "GET /v1/join HTTP/1.1\r\nHost: test\r\n\r\n");
-			$response = '';
-			for($ticks = 0; $ticks < 100 && !str_contains($response, "\r\n\r\n"); ++$ticks){
-				$interface->tick();
-				$response .= fread($probe, 65536);
-				usleep(1000);
-			}
-			self::assertStringStartsWith('HTTP/1.1 200', $response);
-		}finally{ fclose($probe); }
 	}
 }

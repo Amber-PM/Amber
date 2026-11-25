@@ -144,4 +144,71 @@ final class NetherNetConfigTest extends TestCase{
 			rmdir($directory);
 		}
 	}
+
+	public function testNewKeysDefaultToThePreviousBehaviour() : void{
+		$config = NetherNetConfig::fromArray([], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+		self::assertSame([], $config->getAdvertisedAddresses());
+		self::assertNull($config->getStunServer());
+		self::assertSame([], $config->getTrustedProxies());
+		self::assertNull($config->createTlsConfig());
+		$limits = $config->createTransportConfig();
+		$defaults = new \amber\nethernet\TransportConfig();
+		foreach(['maxHttpConnectionsPerIp', 'httpHeaderTimeoutSeconds', 'signalingTimeoutSeconds', 'connectTimeoutSeconds', 'maxHttpConnections', 'maxConnections', 'maxPendingNegotiations'] as $name){
+			self::assertSame($defaults->{$name}, $limits->{$name}, $name);
+		}
+		// raised on purpose, 256 dropped players after a 13 second stall
+		self::assertSame(4096, $limits->maxReceiveQueueMessages);
+	}
+
+	public function testAddressStunProxyAndLimitKeysAreApplied() : void{
+		$config = NetherNetConfig::fromArray([
+			'advertised-address' => ['203.0.113.7', '198.51.100.9:31000:20000'], 'stun-server' => 'stun.example.com:19302',
+			'proxy-protocol' => true, 'trusted-proxies' => ['10.0.0.0/8', '::1'],
+			'max-http-connections-per-ip' => 16, 'http-header-timeout' => 3, 'signaling-timeout' => 30, 'connect-timeout' => 20
+		], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+		self::assertSame(['203.0.113.7', '198.51.100.9:31000:20000'], $config->getAdvertisedAddresses());
+		self::assertSame('203.0.113.7', $config->getAdvertisedAddress());
+		self::assertSame('stun.example.com:19302', $config->getStunServer());
+		self::assertSame(['10.0.0.0/8', '::1'], $config->getTrustedProxies());
+		$limits = $config->createTransportConfig();
+		self::assertSame([16, 3, 30, 20], [$limits->maxHttpConnectionsPerIp, $limits->httpHeaderTimeoutSeconds, $limits->signalingTimeoutSeconds, $limits->connectTimeoutSeconds]);
+		// the list is ignored while the switch is off
+		$off = NetherNetConfig::fromArray(['trusted-proxies' => ['10.0.0.1']], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+		self::assertSame([], $off->getTrustedProxies());
+	}
+
+	/** @return iterable<string, array{array<string, mixed>}> */
+	public static function invalidNewKeys() : iterable{
+		yield 'proxy protocol without proxies' => [['proxy-protocol' => true]];
+		yield 'proxy protocol not boolean' => [['proxy-protocol' => 'yes']];
+		yield 'proxy hostname' => [['proxy-protocol' => true, 'trusted-proxies' => ['proxy.local']]];
+		yield 'proxy bad prefix' => [['proxy-protocol' => true, 'trusted-proxies' => ['10.0.0.0/40']]];
+		yield 'proxies not a list' => [['trusted-proxies' => '10.0.0.1']];
+		yield 'advertised hostname' => [['advertised-address' => 'play.example.com']];
+		yield 'advertised single port' => [['advertised-address' => ['203.0.113.7:31000']]];
+		yield 'advertised non string' => [['advertised-address' => [5]]];
+		yield 'advertised local port outside range' => [['advertised-address' => ['203.0.113.7:31000:19000']]];
+		yield 'stun with spaces' => [['stun-server' => 'stun example']];
+		yield 'stun bad port' => [['stun-server' => 'stun.example.com:0']];
+		yield 'timeout zero' => [['signaling-timeout' => 0]];
+		yield 'timeout too long' => [['connect-timeout' => 121]];
+		yield 'per ip zero' => [['max-http-connections-per-ip' => 0]];
+		yield 'tls certificate without key' => [['tls-cert-file' => 'cert.pem']];
+		yield 'tls key without certificate' => [['tls-key-file' => 'key.pem']];
+		yield 'tls required without files' => [['tls-required' => true]];
+		yield 'tls required not boolean' => [['tls-required' => 'yes']];
+		yield 'tls path not a string' => [['tls-cert-file' => 5, 'tls-key-file' => 'key.pem']];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('invalidNewKeys')]
+	public function testInvalidNewKeysFailAtStartup(array $settings) : void{
+		$this->expectException(\InvalidArgumentException::class);
+		NetherNetConfig::fromArray($settings, sys_get_temp_dir());
+	}
+
+	public function testMissingTlsFilesFailWhenTheListenerIsCreated() : void{
+		$config = NetherNetConfig::fromArray(['tls-cert-file' => 'missing-cert.pem', 'tls-key-file' => 'missing-key.pem'], sys_get_temp_dir()) ?? self::fail('NetherNet disabled');
+		$this->expectException(\InvalidArgumentException::class);
+		$config->createTlsConfig();
+	}
 }

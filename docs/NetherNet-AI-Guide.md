@@ -66,6 +66,49 @@ network:
     advertised-address: PUBLIC_IP
 ```
 
+### E. The forwarded UDP port has a different number outside
+Write the mapping as `PUBLIC_IP:PUBLIC_PORT:LOCAL_PORT`.
+```yaml
+network:
+  nethernet:
+    ice-udp-mux: true
+    ice-port-range: [LOCAL_PORT, LOCAL_PORT]
+    advertised-address: ["PUBLIC_IP:PUBLIC_PORT:LOCAL_PORT"]
+```
+
+### F. The public IP changes or is unknown
+Ask a STUN server for it. The forwarded UDP port must still reach the server.
+```yaml
+network:
+  nethernet:
+    stun-server: stun.cloudflare.com:3478
+```
+If the STUN server is unreachable, players time out while joining. Use `advertised-address` when the IP is fixed.
+
+### G. Behind a TCP proxy or tunnel (HAProxy, frp, playit)
+Without this every player shares the proxy IP and `max-per-ip` blocks the fifth one. The proxy must send PROXY protocol v1 or v2.
+```yaml
+network:
+  nethernet:
+    proxy-protocol: true
+    trusted-proxies: ["PROXY_IP"]
+```
+Only list proxies the owner controls. UDP game traffic does not go through a TCP proxy, the UDP port still has to be forwarded.
+
+### H. HTTPS signaling (optional)
+Plain HTTP works and is what players use when they join by IP and port; the game then asks them once to trust the server. With HTTPS and a domain there is no trust prompt.
+The owner needs a domain pointing to the server and a certificate from a public authority such as Let's Encrypt. Self-signed certificates are not trusted by the game.
+```yaml
+network:
+  nethernet:
+    tls-cert-file: fullchain.pem
+    tls-key-file: privkey.pem
+```
+- Paths are relative to the server folder, or absolute. Use the full chain file, and keep the key readable only by the server user.
+- HTTP and HTTPS share the same TCP port. Set `tls-required: true` only if every player joins by domain.
+- A renewed certificate is used on the next connection, no restart needed. The server warns when it expires in under 14 days.
+- Only signaling uses this. Game traffic is UDP and is always encrypted by WebRTC.
+
 ### Environment variables (Docker or panels)
 These replace the YAML above:
 - `AMBER_NETHERNET_PORT=P2` sets one UDP port and turns on `ice-udp-mux`.
@@ -81,7 +124,8 @@ Also set `network.nethernet.ice-bind-address` to the machine LAN IPv4 (for examp
    `NetherNet (26.60+) needs TCP <port> and UDP <ports> open`
    The ports must match what is open or forwarded.
 2. Join with a 26.60+ client using `IP:P`.
-3. If it fails, ask the owner for the console lines that contain `NetherNet`.
+3. Run `/nethernet` in the console. It shows the ports, the public address, connected players with ping, and why connections were closed.
+4. If it fails, ask the owner for the console lines that contain `NetherNet` and the `/nethernet` output.
 
 ## Troubleshooting
 
@@ -90,6 +134,13 @@ Also set `network.nethernet.ice-bind-address` to the machine LAN IPv4 (for examp
 | `connect_timeout` | UDP port closed, or `advertised-address` missing or wrong |
 | `failed authentication` | Ask the owner to update the game and retry |
 | `max-per-ip is reached` | Raise `network.nethernet.max-per-ip` |
+| `max-per-ip is reached` behind a proxy or tunnel | Use case G |
+| `signaling_timeout` ... `STUN server ... may be unreachable` | Fix or remove `stun-server`, or use `advertised-address` |
+| `proxy-protocol needs trusted-proxies` | List the proxy IPs in `trusted-proxies` |
+| `TLS private key does not belong to the certificate` | `tls-key-file` and `tls-cert-file` are from different certificates |
+| `TLS certificate is expired or not valid yet` | Renew the certificate, or fix the server clock |
+| `closed by the transport (backend_failed, native state FAILED)` | The UDP path to that player was lost |
+| `closed by the transport (backend_failed, native state DISCONNECTED)` or `CLOSED` | The player's game ended the connection |
 | `WebRTC runtime is missing or incompatible` | Install PHP binaries r3 or newer |
 | `must be a numeric IPv4 or IPv6 address` | `advertised-address` must be an IP, not a domain |
 | `ICE UDP mux requires one fixed ICE port` | Use `[P, P]`, both numbers equal |

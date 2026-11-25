@@ -84,11 +84,35 @@ network:
     #Public IP offered to players when the server sits behind port forwarding (containers and most hosting).
     #The forwarded UDP port must match the ICE port so use it with ice-udp-mux.
     #advertised-address: 203.0.113.7
+    #When the forwarded port differs from the local one, write ip:public-port:local-port. A list of entries is allowed.
+    #advertised-address: ["203.0.113.7:31000:20000"]
     #Containers and panels can set AMBER_NETHERNET_PORT (one UDP port with mux) and AMBER_NETHERNET_PUBLIC_IP instead.
+    #Ask a STUN server for the public address instead of writing it. Off by default.
+    #If the STUN server does not answer, joins time out, so prefer advertised-address when the public IP is fixed.
+    #stun-server: stun.cloudflare.com:3478
+    #Behind a TCP proxy or tunnel (HAProxy, frp, playit) every player arrives with the proxy address.
+    #Turn this on so the proxy tells the real address with PROXY protocol v1 or v2, and list the proxy addresses.
+    #Only list proxies you control: anything listed here can claim any player address.
+    #proxy-protocol: false
+    #trusted-proxies: ["10.0.0.5", "172.16.0.0/12"]
+    #HTTPS for signaling, on the same TCP port as plain HTTP. With HTTPS the game does not ask players to trust the server.
+    #Needs a certificate from a public authority (for example Let's Encrypt) for the domain players type. Use the full chain file.
+    #Keep the key readable only by the server user. Renewed files are picked up without a restart.
+    #tls-cert-file: fullchain.pem
+    #tls-key-file: privkey.pem
+    #Refuse plain HTTP. Players who join by IP and port use plain HTTP, so leave this off unless everyone joins by domain.
+    #tls-required: false
     max-connections: 128
     max-per-ip: 4
     max-http-connections: 64
     max-pending-negotiations: 32
+    #Signaling connections one address may hold at once, and timeouts in seconds.
+    #max-http-connections-per-ip: 4
+    #http-header-timeout: 5
+    #signaling-timeout: 15
+    #connect-timeout: 15
+    #Messages a player may have waiting while the main thread is busy. A full queue disconnects the player.
+    #max-receive-queue-messages: 4096
   #Threshold for batching packets, in bytes. Only these packets will be compressed
   #Set to 0 to compress everything, -1 to disable.
   batch-threshold: 256
