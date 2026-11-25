@@ -215,8 +215,8 @@ final class MinecraftIdentityHandlerTest extends TestCase{
 	public function testInvalidClaimsAndSignaturesFailClosed() : void{
 		$claims = self::claims();
 		foreach([
-			[self::token(array_replace($claims, ['exp' => time() - 1])), self::FINGERPRINTS, self::detached()],
-			[self::token(array_replace($claims, ['nbf' => time() + 300])), self::FINGERPRINTS, self::detached()],
+			[self::token(array_replace($claims, ['exp' => time() - 61])), self::FINGERPRINTS, self::detached()],
+			[self::token(array_replace($claims, ['nbf' => time() + 90])), self::FINGERPRINTS, self::detached()],
 			[self::token(array_replace($claims, ['iss' => 'https://attacker.test/'])), self::FINGERPRINTS, self::detached()],
 			[self::token(array_replace($claims, ['aud' => 'wrong'])), self::FINGERPRINTS, self::detached()],
 			[self::token() . 'x', self::FINGERPRINTS, self::detached()],
@@ -227,6 +227,22 @@ final class MinecraftIdentityHandlerTest extends TestCase{
 			$resolver->resolve(['https://issuer.test/', JwtUtils::emitDerPublicKey(self::$issuer)]);
 			$completed = 0;
 			self::handler(self::provider($resolver))->verifyClient($token, $fingerprints, $jws, static function(?PeerIdentity $peer, ?TransportException $error) use (&$completed) : void{ ++$completed; self::assertNull($peer); self::assertNotNull($error); });
+			self::assertSame(1, $completed);
+		}
+	}
+
+	public function testClockDriftToleranceMatchesTheLoginPath() : void{
+		$claims = self::claims();
+		// same 60s the login jwt check allows
+		foreach([['nbf' => time() + 30], ['exp' => time() - 30]] as $drifted){
+			$resolver = new PromiseResolver();
+			$resolver->resolve(['https://issuer.test/', JwtUtils::emitDerPublicKey(self::$issuer)]);
+			$completed = 0;
+			self::handler(self::provider($resolver))->verifyClient(self::token(array_replace($claims, $drifted)), self::FINGERPRINTS, self::detached(), static function(?PeerIdentity $peer, ?TransportException $error) use (&$completed) : void{
+				++$completed;
+				self::assertNull($error);
+				self::assertSame('player-123', $peer?->subject);
+			});
 			self::assertSame(1, $completed);
 		}
 	}

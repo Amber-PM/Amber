@@ -170,7 +170,7 @@ final class NetherNetConfig{
 			}
 			$keys[$kid] = $key;
 		}
-		$verifier = new ClientIdentityVerifier(static fn(?string $kid) => $kid !== null ? ($keys[$kid] ?? null) : array_values($keys), $this->settings['issuer'], $this->settings['audience']);
+		$verifier = new ClientIdentityVerifier(static fn(?string $kid) => $kid !== null ? ($keys[$kid] ?? null) : array_values($keys), $this->settings['issuer'], $this->settings['audience'], MinecraftIdentityHandler::CLOCK_DRIFT_MAX);
 		return new ClientServerIdentityHandler($verifier, $server, $this->createTransportConfig());
 	}
 

@@ -36,6 +36,9 @@ use pocketmine\network\mcpe\auth\ProcessOpenIdLoginTask;
 use pocketmine\network\mcpe\JwtUtils;
 
 final class MinecraftIdentityHandler implements IdentityHandler{
+	// same tolerance as the login jwt check
+	public const CLOCK_DRIFT_MAX = 60;
+
 	public function __construct(
 		private readonly AuthKeyProvider $provider,
 		private readonly ServerIdentity $server,
@@ -83,7 +86,7 @@ final class MinecraftIdentityHandler implements IdentityHandler{
 					[$issuer, $der] = $trusted;
 					// auth keys are der bytes rather than openssl handles
 					$key = JwtUtils::parseDerPublicKey($der);
-					$verifier = new ClientIdentityVerifier(static fn(?string $kid) => $key, $issuer, ProcessOpenIdLoginTask::MOJANG_AUDIENCE);
+					$verifier = new ClientIdentityVerifier(static fn(?string $kid) => $key, $issuer, ProcessOpenIdLoginTask::MOJANG_AUDIENCE, self::CLOCK_DRIFT_MAX);
 					$peer = $verifier->verify($identity, time());
 				}catch(\Throwable $e){
 					$error = $e instanceof TransportException ? $e : new TransportException('identity_trust_failed', 'Client identity verification failed', $e);
