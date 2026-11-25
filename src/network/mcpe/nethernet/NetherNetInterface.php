@@ -27,6 +27,7 @@ use amber\nethernet\Channel;
 use amber\nethernet\Connection;
 use amber\nethernet\ConnectionState;
 use amber\nethernet\identity\IdentityHandler;
+use amber\nethernet\internal\TransportCleanupException;
 use amber\nethernet\signaling\HttpServer;
 use amber\nethernet\signaling\HttpSignaling;
 use amber\nethernet\signaling\ServerMetadata;
@@ -140,17 +141,26 @@ final class NetherNetInterface implements AdvancedNetworkInterface, TransportLis
 		try{
 			$now = hrtime(true) / 1_000_000_000;
 			foreach($this->blocked as $ip => $until){ if($until <= $now){ unset($this->blocked[$ip]); } }
-			$this->transport?->poll();
-			$this->http?->poll(0); // never wait on the server tick
+			$this->isolate(fn() => $this->transport?->poll());
+			$this->isolate(fn() => $this->http?->poll(0)); // never wait on the server tick
 			if($now >= $this->nextStatsAt){
 				$this->nextStatsAt = $now + 1;
-				$this->sampleStats();
+				$this->isolate($this->sampleStats(...));
 			}
 		}catch(\Throwable $e){
 			$this->shutdown();
 			throw new \RuntimeException('Required NetherNet transport stopped after polling failure (' . get_class($e) . ')', 0, $e);
 		}finally{
 			$this->polling = false;
+		}
+	}
+
+	/** @param \Closure(): void $step */
+	private function isolate(\Closure $step) : void{
+		try{ $step(); }
+		catch(TransportCleanupException $e){
+			// that peer is already detached, the others keep playing
+			$this->logger->error('NetherNet native cleanup failed while closing a connection (' . get_class($e->getPrevious() ?? $e) . ')');
 		}
 	}
 
