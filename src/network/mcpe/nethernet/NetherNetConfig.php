@@ -99,7 +99,7 @@ final class NetherNetConfig{
 			ExtRtcPeer::assertAdvertisedAddress($advertised);
 		}
 		$settings['advertised-address'] = $advertised;
-		foreach(['max-connections' => [128, 1024], 'max-per-ip' => [4, 1024], 'max-http-connections' => [64, 1024], 'max-pending-negotiations' => [32, 1024]] as $name => [$default, $maximum]){
+		foreach(['max-connections' => [128, 1024], 'max-per-ip' => [4, 1024], 'max-http-connections' => [64, 1024], 'max-pending-negotiations' => [32, 1024], 'max-receive-queue-messages' => [4096, 65536]] as $name => [$default, $maximum]){
 			$value = $settings[$name] ?? $default;
 			if(!is_int($value) || $value < 1 || $value > $maximum){ throw new \InvalidArgumentException('NetherNet ' . $name . ' is outside its bounded integer range'); }
 			$settings[$name] = $value;
@@ -138,7 +138,11 @@ final class NetherNetConfig{
 		return new ExtWebRtcPeer($this->createTransportConfig(), $begin, $end, $this->settings['ice-bind-address'], $this->settings['ice-udp-mux']);
 	}
 	public function createTransportConfig() : TransportConfig{
-		return new TransportConfig(maxConnections: $this->settings['max-connections'], maxPendingNegotiations: $this->settings['max-pending-negotiations'], maxHttpConnections: $this->settings['max-http-connections']);
+		return new TransportConfig(
+			maxConnections: $this->settings['max-connections'], maxPendingNegotiations: $this->settings['max-pending-negotiations'], maxHttpConnections: $this->settings['max-http-connections'],
+			// clients send about 20 messages a second so 256 lasted under 13 seconds of a stalled main thread
+			maxReceiveQueueMessages: $this->settings['max-receive-queue-messages']
+		);
 	}
 
 	private function readPem(string $file) : string{
